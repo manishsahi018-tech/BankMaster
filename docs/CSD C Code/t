@@ -1,0 +1,428 @@
+
+processIndividualSaudiDetail()
+{
+	char tmpStr[200];
+	char currentAccInfo[15], savingsAccInfo[15], otherAccInfo[15];
+	char *pathName;
+	int  tmpCustLogFile;
+	struct keydesc  tmpCustLogKey;
+	char yearFileToRead[50], currentDateTime[20];
+	int  custLogRecFound = NO;
+
+	if ( extraDebug )
+	{
+		fprintf(logFp, "%s|%5d|[processIndividualSaudiDetail]\n", getDateTime(), PID);
+		fflush(logFp);
+	}
+
+	memset(currentAccInfo,' ',sizeof currentAccInfo);
+	memset(savingsAccInfo,' ',sizeof savingsAccInfo);
+	memset(otherAccInfo, ' ',sizeof otherAccInfo);
+
+	memset(responseMsg.saudiIndividualPendingDetail.msgLen,' ',sizeof responseMsg.saudiIndividualPendingDetail);
+
+	memset(&custTabRec.liveChar, ' ', sizeof custTabRec);
+	custTabRec.liveChar='@';
+	strncpy(custTabRec.custNo, receivedMsg.pendingDetail.branchCode, 7);
+
+	isindexinfo(custTabFile, &custTabKey, 1);
+
+	if ( isstart(custTabFile,&custTabKey,0,&custTabRec.liveChar,ISEQUAL) < 0 )
+	{
+		fprintf(logFp, "%s|%5d|[processIndividualSaudiDetail] ISSTART/ISEQUAL error %d occured on stcusttab for the customer number [%.7s] \n", getDateTime(), PID, iserrno, custTabRec.custNo);
+		fflush(logFp);
+		if ( iserrno == 110 || iserrno == 112 || iserrno == 111 )
+		     formatBranchResponse(END_OF_FILE, "No more Records to fetch....", "No more Records to fetch....");
+		else
+		{
+			sprintf(tmpStr, "CISAM Error %d occured on stcusttab", iserrno);
+			formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+		}
+     	sendResponse(responseMsg.pendingDetail.msgLen);
+		return FAILURE;
+	}
+
+	if ( readCustTabFile(ISEQUAL) < 0 )
+	{
+		sendResponse(responseMsg.pendingDetail.msgLen);
+		return FAILURE;
+	}
+
+	/* read crd0data for the said customer */
+	memset(&crdRec.liveChar, ' ', sizeof crdRec);
+	strncpy(crdRec.accNo, (char *)actualToBmCust(custTabRec.custNo, tmpStr), 6);
+	if ( isRead(crdFile, &crdRec.liveChar, ISEQUAL) < 0 )
+	{
+		fprintf(logFp, "%s|%5d|[processIndividualSaudiDetail] ISREAD/ISEQUAL error %d occured on crd0data for the customer number [%.7s] [%.6s]\n", getDateTime(), PID, iserrno, custTabRec.custNo, crdRec.accNo);
+		fflush(logFp);
+		if ( iserrno == 110 || iserrno == 112 || iserrno == 111 )
+		     formatBranchResponse(END_OF_FILE, "Not found in customer register....", "Not found in customer register....");
+		else
+		{
+			sprintf(tmpStr, "CISAM Error %d occured on crd0data", iserrno);
+			formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+		}
+     	sendResponse(responseMsg.pendingDetail.msgLen);
+		return FAILURE;
+	}
+
+	if ( getRestrictedFlag(crdRec.branchCode) == FAILURE )
+	{
+		sprintf(tmpStr, "Branch record is missing in ctlFile [%.4s]", ctlRec.branchCode);
+		formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+		sendResponse(responseMsg.customer.msgLen);
+		return FAILURE;
+	}
+
+	if ( receivedMsg.pendingDetail.updateFlag == '1' )
+	{
+		moveTabRecToLog(INDIVIDUAL_SAUDI);
+	}
+
+	responseMsg.saudiIndividualPendingDetail.restrictedBranchFlag = ctlRec.updateRestricted; 
+
+	responseMsg.saudiIndividualPendingDetail.updatedForSama = custTabRec.updatedForSama; /* MISYS */
+	strncpy(responseMsg.saudiIndividualPendingDetail.relationshipManager, custTabRec.relationshipManager, 25); /* MISYS */
+	strncpy(responseMsg.saudiIndividualPendingDetail.generalMemo, custTabRec.generalMemo, 25); /* MISYS */
+	strncpy(responseMsg.saudiIndividualPendingDetail.referenceReqdFor, custTabRec.referenceReqdFor, 10);
+	strncpy(responseMsg.saudiIndividualPendingDetail.marketingMemo, custTabRec.marketingMemo, 25); 
+	responseMsg.saudiIndividualPendingDetail.custOpenSource = custTabRec.custOpenSource;
+
+	strncpy(responseMsg.saudiIndividualPendingDetail.custNo,custTabRec.custNo,7);
+	/*strncpy(responseMsg.saudiIndividualPendingDetail.supervisorId, custTabRec.createdUserId,20);*/
+	/* If the customer created through quick pension customer opening screen, and the customer 
+	   visits a branch for updating the record, then move the home branch as customer branch code 
+	*/
+	if ( receivedMsg.pendingDetail.updateFlag == '1' && custTabRec.createdFromQuickScreen == '3' &&
+		 strncmp(custTabRec.samaMainCategory, "0099", 4) == 0 ) /* Pension customer */
+		strncpy(responseMsg.quickCustPendingDetail.custBranchCode, receivedMsg.pendingDetail.homeBranch,4);
+	else
+		strncpy(responseMsg.saudiIndividualPendingDetail.custBranchCode, crdRec.branchCode,4);
+	strncpy(responseMsg.saudiIndividualPendingDetail.samaMainCategory, custTabRec.samaMainCategory,  2);
+	strncpy(responseMsg.saudiIndividualPendingDetail.samaSubCategory, custTabRec.samaSubCategory, 2);
+
+	if  ( custTabRec.idType == 'I' )
+	{
+		strncpy(responseMsg.saudiIndividualPendingDetail.idNo, custTabRec.idNo, 15);
+		strncpy(responseMsg.saudiIndividualPendingDetail.idIssuedAt, custTabRec.idIssuedAt, 20);
+		responseMsg.saudiIndividualPendingDetail.idDateType = custTabRec.idDateType;
+		strncpy(responseMsg.saudiIndividualPendingDetail.idIssueDateH, custTabRec.idIssueDateH, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.idIssueDateG, custTabRec.idIssueDateG, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.idExpiryDateH, custTabRec.idExpiryDateH, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.idExpiryDateG, custTabRec.idExpiryDateG, 8);
+	}
+	else if ( custTabRec.idType == 'P' ) 
+	{
+		strncpy(responseMsg.saudiIndividualPendingDetail.passportNo, custTabRec.idNo, 15);
+		strncpy(responseMsg.saudiIndividualPendingDetail.ppIssuedAt, custTabRec.idIssuedAt, 20);
+		responseMsg.saudiIndividualPendingDetail.ppDateType = custTabRec.idDateType;
+		strncpy(responseMsg.saudiIndividualPendingDetail.ppIssueDateH, custTabRec.idIssueDateH, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.ppIssueDateG, custTabRec.idIssueDateG, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.ppExpiryDateH, custTabRec.idExpiryDateH, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.ppExpiryDateG, custTabRec.idExpiryDateG, 8);
+	}
+	else if ( custTabRec.idType == 'H' ) 
+	{
+		strncpy(responseMsg.saudiIndividualPendingDetail.hafizaNo, custTabRec.idNo, 15);
+		responseMsg.saudiIndividualPendingDetail.hafDateType = custTabRec.idDateType;
+		strncpy(responseMsg.saudiIndividualPendingDetail.hafIssuedAt, custTabRec.idIssuedAt, 20);
+		strncpy(responseMsg.saudiIndividualPendingDetail.hafIssueDateH, custTabRec.idIssueDateH, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.hafIssueDateG, custTabRec.idIssueDateG, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.hafExpiryDateH, custTabRec.idExpiryDateH, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.hafExpiryDateG, custTabRec.idExpiryDateG, 8);
+	}
+	/* Added by Arul on 06 Dec 03 to handle Family registration NO */
+	else if ( custTabRec.idType == 'F' ) /* Family Registration number details */
+	{
+		strncpy(responseMsg.saudiIndividualPendingDetail.familyRegnNo, custTabRec.idNo, 15);
+		strncpy(responseMsg.saudiIndividualPendingDetail.frIssuedAt, custTabRec.idIssuedAt, 20);
+		responseMsg.saudiIndividualPendingDetail.frDateType = custTabRec.idDateType;
+		strncpy(responseMsg.saudiIndividualPendingDetail.frIssueDateH, custTabRec.idIssueDateH, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.frIssueDateG, custTabRec.idIssueDateG, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.frExpiryDateH, custTabRec.idExpiryDateH, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.frExpiryDateG, custTabRec.idExpiryDateG, 8);
+	}
+	else if ( custTabRec.idType == 'S' || custTabRec.idType == 'E' ) /* Sama Authorization number/Succession deed number details */
+	{
+		strncpy(responseMsg.saudiIndividualPendingDetail.samaAuthNo, custTabRec.idNo, 15);
+		strncpy(responseMsg.saudiIndividualPendingDetail.samaAuthIssuedAt, custTabRec.idIssuedAt, 20);
+		responseMsg.saudiIndividualPendingDetail.samaAuthDateType = custTabRec.idDateType;
+		strncpy(responseMsg.saudiIndividualPendingDetail.samaAuthIssueDateH, custTabRec.idIssueDateH, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.samaAuthIssueDateG, custTabRec.idIssueDateG, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.samaAuthExpiryDateH, custTabRec.idExpiryDateH, 8);
+		strncpy(responseMsg.saudiIndividualPendingDetail.samaAuthExpiryDateG, custTabRec.idExpiryDateG, 8);
+	}
+
+	getDateTime();
+	sprintf(currentDateTime, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+
+	custLogRecFound=NO;
+	if ( strncmp(currentDateTime, custTabRec.createdDateTime, 4) )
+	{
+		sprintf(yearFileToRead, "custlog%.4s", custTabRec.createdDateTime);
+		pathName = getpath(yearFileToRead, "static");
+		if ( (tmpCustLogFile  = isopen(pathName, ISMANULOCK+ISINPUT)) < 0)
+		{
+			if ( extraDebug > 8 )
+			{
+				fprintf(logFp, "%s|%5d|[processIndividualSaudiDetail] ISOPEN error %d for %s File IGNORED\n",getDateTime(), PID, iserrno, pathName);
+				fflush(logFp);
+			}
+			free(pathName);
+		}
+		else
+		{
+			free(pathName);
+			isindexinfo(tmpCustLogFile, &tmpCustLogKey, 1); 
+			if ( extraDebug > 8 )
+			{
+				fprintf(logFp, "reading information from the file [%s]......\n", yearFileToRead);
+				fprintf(logFp, "branch code  : %.4s\n", custTabRec.branchCode);
+				fprintf(logFp, "user Id      : %.10s\n", custTabRec.createdUserId);
+				fprintf(logFp, "date Time    : %.14s\n", custTabRec.createdDateTime);
+			}
+			/* form the key for reading the custLogFile for getting the Card Information */
+			memset(&custLogRec.liveChar, ' ', sizeof custLogRec);
+			strncpy(custLogRec.branchCode, custTabRec.branchCode, 4);
+			strncpy(custLogRec.userId, custTabRec.createdUserId, 20);
+			strncpy(custLogRec.dateTime, custTabRec.createdDateTime, 14);
+
+			if ( isRead(tmpCustLogFile, &custLogRec.liveChar, ISEQUAL) < 0 )
+			{
+				if ( extraDebug > 8 )
+				{
+					fprintf(logFp, "%s|%5d|[processIndividualSaudiDetail] : ISREAD/ISEQUAL error %d on %s for key=%.38s IGNORED and trying to read from stcustlog file\n", getDateTime(), PID, iserrno, yearFileToRead, custLogRec.branchCode);
+					fflush(logFp);
+				}
+			}
+			else
+			{
+				custLogRecFound=YES;
+				responseMsg.saudiIndividualPendingDetail.cardType = custLogRec.cardType;
+				strncpy(&responseMsg.saudiIndividualPendingDetail.electronIntlRequired, &custLogRec.electronIntlRequired, 155);
+			}
+
+			isclose(tmpCustLogFile);
+		}
+	}
+
+	if ( custLogRecFound == NO )
+	{
+		/* form the key for reading the custLogFile for getting the Card Information */
+		memset(&custLogRec.liveChar, ' ', sizeof custLogRec);
+		custLogRec.liveChar='@';
+		strncpy(custLogRec.branchCode, custTabRec.branchCode,4);
+		strncpy(custLogRec.userId, custTabRec.createdUserId, 20);
+		strncpy(custLogRec.dateTime, custTabRec.createdDateTime,14);
+
+		isindexinfo(custLogFile, &custLogKey, 1);
+		isstart(custLogFile, &custLogKey, 0, &custLogRec.liveChar, ISGTEQ);
+		if ( extraDebug )
+			fprintf(logFp,"isstart[%d] on stcustlog during enquiry \n", iserrno);
+
+		if ( isRead(custLogFile, &custLogRec.liveChar, ISEQUAL) == 0 )
+		{
+			if ( extraDebug )
+			{
+				fprintf(logFp, "read customer info from custlog during enquiry success \n");
+				fprintf(logFp, "Card Info  : [%.155s]\n", &custLogRec.electronIntlRequired);
+			}
+			responseMsg.saudiIndividualPendingDetail.cardType = custLogRec.cardType;
+			strncpy(&responseMsg.saudiIndividualPendingDetail.electronIntlRequired, &custLogRec.electronIntlRequired, 155);
+		}
+	}
+   
+	/* form the key for reading the Acct File  */
+	memset(&acctLogRec.liveChar, ' ', sizeof acctLogRec);
+	acctLogRec.liveChar='@';
+	strncpy(acctLogRec.branchCode, custTabRec.branchCode,4);
+	strncpy(acctLogRec.userId, custTabRec.createdUserId, 20);
+	strncpy(acctLogRec.dateTime, custTabRec.createdDateTime,14);
+	memset(acctLogRec.accNo, ' ',14);
+	getAcctInfo(currentAccInfo,savingsAccInfo,otherAccInfo);
+
+	strncpy(responseMsg.saudiIndividualPendingDetail.currentAccInfo, currentAccInfo, 11);
+	strncpy(responseMsg.saudiIndividualPendingDetail.savingsAccInfo, savingsAccInfo, 11);
+	strncpy(responseMsg.saudiIndividualPendingDetail.otherAccInfo, otherAccInfo, 11);
+
+	memset(&idTabRec.liveChar, ' ', sizeof idTabRec);
+	idTabRec.liveChar='@';
+	strncpy(idTabRec.custNo, custTabRec.custNo, 7);
+	idTabRec.idCategory = 'C';
+
+	isindexinfo(idTabFile, &idTabKey, 6);
+	isstart(idTabFile, &idTabKey, 8, &idTabRec.liveChar, ISGTEQ);
+
+	while ( isRead(idTabFile, &idTabRec.liveChar, ISNEXT) == 0 )
+	{
+		if ( strncmp(idTabRec.custNo, custTabRec.custNo, 7) || idTabRec.idCategory != 'C' )
+			 break;
+
+		if ( idTabRec.idType == 'I' ) /* Saudi Id details */
+		{
+			strncpy(responseMsg.saudiIndividualPendingDetail.idNo, idTabRec.idNo, 15);
+			strncpy(responseMsg.saudiIndividualPendingDetail.idIssuedAt, idTabRec.idIssuedAt, 20);
+			responseMsg.saudiIndividualPendingDetail.idDateType = idTabRec.idDateType;
+			strncpy(responseMsg.saudiIndividualPendingDetail.idIssueDateH, idTabRec.idIssueDateH, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.idIssueDateG, idTabRec.idIssueDateG, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.idExpiryDateH, idTabRec.idExpiryDateH, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.idExpiryDateG, idTabRec.idExpiryDateG, 8);
+		}
+		else if ( idTabRec.idType == 'P' ) /* Passport details */
+		{
+			strncpy(responseMsg.saudiIndividualPendingDetail.passportNo, idTabRec.idNo, 15);
+			strncpy(responseMsg.saudiIndividualPendingDetail.ppIssuedAt, idTabRec.idIssuedAt, 20);
+			responseMsg.saudiIndividualPendingDetail.ppDateType = idTabRec.idDateType;
+			strncpy(responseMsg.saudiIndividualPendingDetail.ppIssueDateH, idTabRec.idIssueDateH, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.ppIssueDateG, idTabRec.idIssueDateG, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.ppExpiryDateH, idTabRec.idExpiryDateH, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.ppExpiryDateG, idTabRec.idExpiryDateG, 8);
+		}
+		else if ( idTabRec.idType == 'H' ) /* Hafiza No details */
+		{
+			strncpy(responseMsg.saudiIndividualPendingDetail.hafizaNo, idTabRec.idNo, 15);
+			responseMsg.saudiIndividualPendingDetail.hafDateType = idTabRec.idDateType;
+			strncpy(responseMsg.saudiIndividualPendingDetail.hafIssuedAt, idTabRec.idIssuedAt, 20);
+			strncpy(responseMsg.saudiIndividualPendingDetail.hafIssueDateH, idTabRec.idIssueDateH, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.hafIssueDateG, idTabRec.idIssueDateG, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.hafExpiryDateH, idTabRec.idExpiryDateH, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.hafExpiryDateG, idTabRec.idExpiryDateG, 8);
+		}
+		else if ( idTabRec.idType == 'F' ) /* Family Registration number details */
+		{
+			strncpy(responseMsg.saudiIndividualPendingDetail.familyRegnNo, idTabRec.idNo, 15);
+			strncpy(responseMsg.saudiIndividualPendingDetail.frIssuedAt, idTabRec.idIssuedAt, 20);
+			responseMsg.saudiIndividualPendingDetail.frDateType = idTabRec.idDateType;
+			strncpy(responseMsg.saudiIndividualPendingDetail.frIssueDateH, idTabRec.idIssueDateH, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.frIssueDateG, idTabRec.idIssueDateG, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.frExpiryDateH, idTabRec.idExpiryDateH, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.frExpiryDateG, idTabRec.idExpiryDateG, 8);
+		}
+		else if ( idTabRec.idType == 'S' || idTabRec.idType == 'E' ) /* Sama Authorization number/succession deed number */
+		{
+			strncpy(responseMsg.saudiIndividualPendingDetail.samaAuthNo, idTabRec.idNo, 15);
+			strncpy(responseMsg.saudiIndividualPendingDetail.samaAuthIssuedAt, idTabRec.idIssuedAt, 20);
+			responseMsg.saudiIndividualPendingDetail.samaAuthDateType = idTabRec.idDateType;
+			strncpy(responseMsg.saudiIndividualPendingDetail.samaAuthIssueDateH, idTabRec.idIssueDateH, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.samaAuthIssueDateG, idTabRec.idIssueDateG, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.samaAuthExpiryDateH, idTabRec.idExpiryDateH, 8);
+			strncpy(responseMsg.saudiIndividualPendingDetail.samaAuthExpiryDateG, idTabRec.idExpiryDateG, 8);
+		}
+	}
+	/* fields taken from crd0data */
+	responseMsg.saudiIndividualPendingDetail.preferredLang = crdRec.language;
+	if ( receivedMsg.pendingDetail.updateFlag == '1' )
+	{
+		/* Added on 19th Mar 2006 to avoid blank long name update to CRD during the update from branches who does not have name update privilege */
+		if ( crdRec.language == ARABIC )
+		{
+			if ( strncmp(custTabRec.aFirstName, "                                                              ", 60) == 0 )
+				responseMsg.saudiIndividualPendingDetail.preferredLang = ENGLISH;
+		}
+		else if ( crdRec.language == ENGLISH )
+		{
+			if ( strncmp(custTabRec.eFirstName, "                                                              ", 60) == 0 )
+				responseMsg.saudiIndividualPendingDetail.preferredLang = ARABIC;
+		}
+	}
+	strncpy(responseMsg.saudiIndividualPendingDetail.nationality, crdRec.nationality, 3);	
+	strncpy(responseMsg.saudiIndividualPendingDetail.titleCode, crdRec.titleCode, 2);
+	responseMsg.saudiIndividualPendingDetail.vipCode = crdRec.vipFlag;
+	responseMsg.saudiIndividualPendingDetail.residentStatus =crdRec.nonResident;
+	strncpy(responseMsg.saudiIndividualPendingDetail.businessType, crdRec.businessType, 3);	
+	responseMsg.saudiIndividualPendingDetail.packageAcc = crdRec.packageAcc;
+	strncpy(responseMsg.saudiIndividualPendingDetail.altBranchCode, crdRec.alternativeBranchCode,4);
+	/*strncpy(responseMsg.saudiIndividualPendingDetail.custBranchCode, crdRec.branchCode,4);commented by Rajesh on 8th Feb07 since the customer branch code is already moved in the beginning of this function*/
+	responseMsg.saudiIndividualPendingDetail.excludeFromAtmFees = crdRec.excludeFromAtmFees; /* Ver 8.2 */
+	responseMsg.saudiIndividualPendingDetail.excludeFromMinBalFees = crdRec.excludeFromMinBalFees; /* Ver 8.2 */
+	responseMsg.saudiIndividualPendingDetail.pkgStmtFreqOverride = crdRec.pkgStmtFreqOverride; /* Ver 8.7 */
+
+	responseMsg.saudiIndividualPendingDetail.internetBankAcc = custTabRec.internetBankAcc;
+	responseMsg.saudiIndividualPendingDetail.custAdviceFlag = custTabRec.custAdviceFlag;
+
+	responseMsg.saudiIndividualPendingDetail.dobDateType = custTabRec.dobDateType;
+	strncpy(responseMsg.saudiIndividualPendingDetail.dobDateH, custTabRec.dobDateH, 8);
+	strncpy(responseMsg.saudiIndividualPendingDetail.dobDateG, custTabRec.dobDateG, 8);
+	responseMsg.saudiIndividualPendingDetail.sexCode = custTabRec.sexCode;
+	responseMsg.saudiIndividualPendingDetail.maritalStatus = custTabRec.marritalStatus;
+	strncpy(responseMsg.saudiIndividualPendingDetail.noOfDependents, custTabRec.noOfDependents, 2);
+	strncpy(responseMsg.saudiIndividualPendingDetail.aFirstName, custTabRec.aFirstName, 180); /* from aFirstname to eShortName */
+	strncpy(responseMsg.saudiIndividualPendingDetail.certBirthNo, custTabRec.certificateOfBirthNo, 15);
+
+	memset(&addrTabRec.liveChar, ' ', sizeof addrTabRec);
+	strncpy(addrTabRec.custNo, custTabRec.custNo, 7);
+	strncpy(addrTabRec.addressType, "00", 2); /* local address; since only one address for saudi */
+	strncpy(addrTabRec.addressNo, "0000", 4);
+
+	isindexinfo(addrTabFile, &addrTabKey, 1);
+	isstart(addrTabFile, &addrTabKey, 0, &addrTabRec.liveChar, ISGTEQ);
+
+	if ( isRead(addrTabFile, &addrTabRec.liveChar, ISEQUAL) <  0 )
+	{
+		fprintf(logFp, "%s|%5d|[processIndividualSaudiDetail] ISREAD/ISEQUAL error %d on staddrtab for customer # [%.7s] , address type [%.2s], address number [%.4s] ; moving the address info from stcusttab \n", getDateTime(), PID, iserrno, addrTabRec.custNo, addrTabRec.addressType, addrTabRec.addressNo);
+		fflush(logFp);
+		strncpy(responseMsg.saudiIndividualPendingDetail.address1, custTabRec.address1, 30);
+		strncpy(responseMsg.saudiIndividualPendingDetail.address2, custTabRec.address2, 30);
+		strncpy(responseMsg.saudiIndividualPendingDetail.poBox, custTabRec.poBox, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.cityName, custTabRec.cityName, 20);
+		strncpy(responseMsg.saudiIndividualPendingDetail.zipCode, custTabRec.zipCode, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.country, custTabRec.country, 3);
+		responseMsg.saudiIndividualPendingDetail.addrType = custTabRec.addressType;
+		if ( custTabRec.addressType == '1' ) /* Saudi Postal address */
+			strncpy(responseMsg.saudiIndividualPendingDetail.poBox, custTabRec.unitNo, 5);
+		strncpy(responseMsg.saudiIndividualPendingDetail.telOffAreaCode, custTabRec.telOffAreaCode, 4);
+		strncpy(responseMsg.saudiIndividualPendingDetail.telOffNo, custTabRec.telOffNo, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.telOffExt, custTabRec.telOffExt, 4);
+		strncpy(responseMsg.saudiIndividualPendingDetail.telHomeAreaCode, custTabRec.telHomeAreaCode, 4);
+		strncpy(responseMsg.saudiIndividualPendingDetail.telHomeNo, custTabRec.telHomeNo, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.telHomeExt, custTabRec.telHomeExt, 4);
+		strncpy(responseMsg.saudiIndividualPendingDetail.faxAreaCode, custTabRec.faxAreaCode, 4);
+		strncpy(responseMsg.saudiIndividualPendingDetail.faxNo, custTabRec.faxNo, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.faxExt, custTabRec.faxExt, 4);
+		strncpy(responseMsg.saudiIndividualPendingDetail.mobileNo, custTabRec.mobileNo, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.pagerNo, custTabRec.pagerNo, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.eMail, custTabRec.eMail, 30);
+	}
+	else
+	{
+		strncpy(responseMsg.saudiIndividualPendingDetail.address1, addrTabRec.address1, 30);
+		strncpy(responseMsg.saudiIndividualPendingDetail.address2, addrTabRec.address2, 30);
+		strncpy(responseMsg.saudiIndividualPendingDetail.poBox, addrTabRec.poBox, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.cityName, addrTabRec.cityName, 20);
+		strncpy(responseMsg.saudiIndividualPendingDetail.zipCode, addrTabRec.zipCode, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.country, addrTabRec.country, 3);
+		responseMsg.saudiIndividualPendingDetail.addrType = addrTabRec.addrType;
+		if ( addrTabRec.addrType == '1' ) /* Saudi Postal address */
+			strncpy(responseMsg.saudiIndividualPendingDetail.poBox, addrTabRec.unitNo, 5);
+		strncpy(responseMsg.saudiIndividualPendingDetail.telOffAreaCode, addrTabRec.telOffAreaCode, 4);
+		strncpy(responseMsg.saudiIndividualPendingDetail.telOffNo, addrTabRec.telOffNo, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.telOffExt, addrTabRec.telOffExt, 4);
+		strncpy(responseMsg.saudiIndividualPendingDetail.telHomeAreaCode, addrTabRec.telHomeAreaCode, 4);
+		strncpy(responseMsg.saudiIndividualPendingDetail.telHomeNo, addrTabRec.telHomeNo, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.telHomeExt, addrTabRec.telHomeExt, 4);
+		strncpy(responseMsg.saudiIndividualPendingDetail.faxAreaCode, addrTabRec.faxAreaCode, 4);
+		strncpy(responseMsg.saudiIndividualPendingDetail.faxNo, addrTabRec.faxNo, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.faxExt, addrTabRec.faxExt, 4);
+		strncpy(responseMsg.saudiIndividualPendingDetail.mobileNo, addrTabRec.mobileNo, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.pagerNo, addrTabRec.pagerNo, 10);
+		strncpy(responseMsg.saudiIndividualPendingDetail.eMail, addrTabRec.eMail, 30);
+	}
+
+	strncpy(responseMsg.saudiIndividualPendingDetail.educationCode, custTabRec.educationCode, 109);/* from eduCode to employerzipcode*/
+	strncpy(responseMsg.saudiIndividualPendingDetail.documents, custTabRec.documentsSupplied, 60);
+	strncpy(responseMsg.saudiIndividualPendingDetail.documentOther, custTabRec.documentOther, 50);
+	responseMsg.saudiIndividualPendingDetail.singleJointAcc = custTabRec.singleJointAcc;
+	strncpy(responseMsg.saudiIndividualPendingDetail.noOfJointCustomer, custTabRec.noOfJointCustomer, 2);
+	strncpy(responseMsg.saudiIndividualPendingDetail.jointAccNameOnCheck, custTabRec.jointAccNameOnCheck, 60);
+	strncpy(responseMsg.saudiIndividualPendingDetail.jointAccNameOnReports, custTabRec.jointAccNameOnReports, 30);
+	responseMsg.saudiIndividualPendingDetail.signatureNature = custTabRec.signatureNature;
+	strncpy(responseMsg.saudiIndividualPendingDetail.referenceReqdFor, custTabRec.referenceReqdFor, 10);
+	responseMsg.saudiIndividualPendingDetail.foundInTList = '0';
+	responseMsg.saudiIndividualPendingDetail.details[0].englishName[0] = NULL;
+	strncpy(responseMsg.saudiIndividualPendingDetail.accFreezingGracePeriod, custTabRec.accFreezingGracePeriod, 3);
+
+	getCustomerOpenUpdateInfo(&responseMsg.saudiIndividualPendingDetail.openUpdateInfo);
+    formatSaudiIndividualDetailResponse(DONE,"Successful", "Successful"); 
+	sendResponse(responseMsg.saudiIndividualPendingDetail.msgLen);
+	return SUCCESS;
+}

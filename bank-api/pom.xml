@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- Aligned with the LoanOriginationSystem backend so both projects share one
+       Spring Boot / Spring Security version set (and one offline Maven cache):
+       Boot 4.1.0 -> Spring Framework 7 / Spring Security 7.1.x. -->
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.0</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.banksystem</groupId>
+  <artifactId>bank-api</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <name>bank-api</name>
+  <description>Enquiry API for the CSD revamp — replaces the legacy cbcmssrv TCP/IP server</description>
+
+  <properties>
+    <java.version>25</java.version>
+  </properties>
+
+  <dependencies>
+    <!-- Boot 4 renamed the servlet MVC starter: spring-boot-starter-web ->
+         spring-boot-starter-webmvc (matches the LoanOriginationSystem backend). -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webmvc</artifactId>
+    </dependency>
+    <!-- Authentication: Spring Security drives the JWT resource server (bearer
+         validation on every /api/** call) and the Active Directory bind at login.
+         Copied wholesale from the LoanOriginationSystem auth slice; managed
+         versions come from the Boot 3.4.1 BOM (Spring Security 6.4.x). These
+         resolve at build time on the dev machine and are bundled into the fat
+         jar, so the air-gapped target PC needs no Maven Central access. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+    <!-- JWT issue + validate (Nimbus JOSE), HS256. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+    <!-- ActiveDirectoryLdapAuthenticationProvider (bind auth). The LDAP transport
+         is JNDI, built into the JDK; spring-ldap-core arrives transitively. -->
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-ldap</artifactId>
+    </dependency>
+    <!-- JDBC layer for the two real databases; engines TBD, drivers added once known.
+         The default "mock" repositories need no database. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-jdbc</artifactId>
+    </dependency>
+    <!-- Swagger UI at /swagger-ui.html, generated from the controllers. -->
+    <dependency>
+      <groupId>org.springdoc</groupId>
+      <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+      <version>3.0.3</version>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Package the built bank-ui (if ../bank-ui/dist exists) into the jar
+           as static content, so one jar serves UI + API on the target PC.
+           Run `npm run build` in bank-ui first to refresh it. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>bundle-bank-ui</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${project.build.outputDirectory}/static</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../bank-ui/dist</directory>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <!-- ZIP layout switches the launcher to PropertiesLauncher so the
+             Denodo JDBC driver (not on Maven Central; ships with the Denodo
+             installation) can be added at runtime via -Dloader.path. -->
+        <configuration>
+          <layout>ZIP</layout>
+          <!-- For `mvn spring-boot:run` (dev / DB-health checks): add the Denodo
+               driver jar to the run classpath without installing it into the
+               local Maven repo or packaging a jar. Point this at the ACTUAL jar
+               file (not the folder). -Dloader.path still handles the packaged jar
+               on the target PC. -->
+          <additionalClasspathElements>
+            <additionalClasspathElement>${project.basedir}/../deploy/drivers/denodo-vdp-jdbcdriver.jar</additionalClasspathElement>
+          </additionalClasspathElements>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

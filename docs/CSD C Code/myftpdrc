@@ -1,0 +1,8 @@
+fn1=cbcmssrv
+fn2=cbcmssrv
+USERID=bmuser
+sftp $USERID@drcanb <<!
+cd /dcms/static
+put $fn1 $fn2
+bye
+!

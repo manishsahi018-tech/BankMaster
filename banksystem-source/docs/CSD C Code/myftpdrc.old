@@ -1,0 +1,12 @@
+fn1=cbcmssrv
+fn2=cbcmssrv
+USERID=bmuser
+UPW=ops2008drc
+ftp -v -n << !
+open 167.111.60.10
+user $USERID $UPW
+cd /static/cards/cbs
+put $fn1 $fn2
+close
+quit
+!

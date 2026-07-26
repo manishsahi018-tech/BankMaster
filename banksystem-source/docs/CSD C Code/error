@@ -1,0 +1,15 @@
+cc: "cbbranch2.c", line 3482: warning 604: Pointers are not assignment-compatible.
+cc: "cbbranch2.c", line 3482: warning 563: Argument #1 is not the correct type.
+cc: "cbbranch2.c", line 3485: warning 604: Pointers are not assignment-compatible.
+cc: "cbbranch2.c", line 3485: warning 563: Argument #1 is not the correct type.
+cc: "cbbranch2.c", line 7607: warning 604: Pointers are not assignment-compatible.
+cc: "cbbranch2.c", line 7607: warning 563: Argument #1 is not the correct type.
+cc: "cbbranch2.c", line 7607: warning 604: Pointers are not assignment-compatible.
+cc: "cbbranch2.c", line 7607: warning 563: Argument #2 is not the correct type.
+cc: "cbbranch2.c", line 7793: warning 527: Integral value implicitly converted to pointer in assignment.
+cc: "cbbranch2.c", line 7793: warning 563: Argument #2 is not the correct type.
+cc: "cbbranch2.c", line 7865: warning 527: Integral value implicitly converted to pointer in assignment.
+cc: "cbbranch2.c", line 7865: warning 563: Argument #2 is not the correct type.
+cc: "cbbranch2.c", line 9203: error 1588: "tmpStr" undefined.
+
+Stop.

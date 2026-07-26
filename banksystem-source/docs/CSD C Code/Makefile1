@@ -1,0 +1,39 @@
+DEST	      = .
+
+INSTALL	      = /etc/install
+
+CC	      	= cc -c  -I$(TUXDIR)/include
+
+LD	      = cc
+
+LIBS	      = -lisam725  /usr/local/lib/libanb.a  -lsec -L/tuxedo/lib -lwsc -lbuft -lwsc  -lgpnet  -lfml -lfml32 -lengine  -lpthread  -lnsl
+# -lwsc -lbuft -lwsc  -lgpnet  -lfml -lfml32 -lengine  -lpthread  -lnsl
+#LIBS	      = -lisam  /usr/local/lib/libanb.a  -lsec -L/tuxedo/lib 
+
+MAKEFILE      = Makefile
+
+PRINT	      = pr
+
+PROGRAM       = cbcmssrv
+
+SHELL	      = /bin/sh
+
+SOURCE	      = cbmaintenance.c cbsecurity.c cblogin.c cbrouter.c  cbbranch.c cbbranch2.c cbtuxint.c stjuristic.c cbreport.c 
+
+OBJS	      = cbmaintenance.o cbsecurity.o cblogin.o cbrouter.o  cbbranch.o cbbranch2.o cbtuxint.o  cbreport.o ../cbslib/usr_util.o ../cbslib/greghijri.o
+
+install:	$(PROGRAM)
+		@echo Installing $(PROGRAM) in $(DEST)
+
+$(PROGRAM):     $(OBJS) 
+		@echo "Linking $(PROGRAM) ..."
+		@$(LD) $(OBJS) $(LIBS) -o $(PROGRAM)
+		@echo "Building Tuxedo Client ...."
+		@bldcbcln
+		@echo "done"
+
+$(DEST)/$(PROGRAM): $(SOURCE) $(LIBS) $(HDRS) $(EXTHDRS)
+		@$(MAKE) -f $(MAKEFILE) ROOT=$(ROOT) DEST=$(DEST) install 
+
+.o : 		$(CC) $(SOURCE)
+

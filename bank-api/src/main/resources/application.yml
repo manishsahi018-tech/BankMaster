@@ -1,0 +1,111 @@
+server:
+  port: 8080
+
+# Authentication (ported from the LoanOriginationSystem auth slice): the SPA
+# sends the password AES-encrypted; the API verifies it via an Active Directory
+# bind (bank.ldap.*), then gates on the allow-list below, then issues an HS256
+# JWT the UI sends as a Bearer token on every /api call (validated by Spring
+# Security's resource server — see SecurityConfig).
+bank:
+  jwt:
+    # Set a strong secret (>= 32 chars) via BANK_JWT_SECRET in any real
+    # deployment; blank falls back to the dev key baked into SecurityConfig.
+    secret: ${BANK_JWT_SECRET:}
+    ttl-seconds: ${BANK_JWT_TTL_SECONDS:3600}
+    issuer: ${BANK_JWT_ISSUER:BankStaticData}
+    audience: ${BANK_JWT_AUDIENCE:BankClients}
+  auth:
+    # AES passphrase shared with the SPA (frontend PASSWORD_KEY_PASSPHRASE); the
+    # SPA derives the same key (SHA-256) so the plaintext never crosses the wire.
+    # Transport obfuscation only — TLS is the real control. Keep both in sync.
+    password-key-passphrase: ${BANK_AUTH_PASSPHRASE:BANK-CSD-Login-Key-2026}
+    # Interim single "admin" authority granted to EVERY authenticated user — it
+    # contains every ~NN code the app gates on, so it unlocks the whole enquiry
+    # application. NOTE: ~99 is deliberately EXCLUDED — it is the legacy
+    # "enquiry-only user" marker that DISABLES customer search (CustomerStaticData
+    # canSearchCustomer), so an admin must not carry it. Replace with per-user
+    # authority once that mapping is agreed.
+    admin-authority: ${BANK_ADMIN_AUTHORITY:~00~01~02~04~06~32~41~42~43~45~50~60~61~62~81~86~87~94~}
+    # Branch stamped on the session when no local profile supplies one (LDAP path).
+    admin-branch: ${BANK_ADMIN_BRANCH:0001}
+    # Comma-separated user IDs allowed in. A user who authenticates via LDAP but
+    # is NOT listed here is refused with "User is not allowed to access the
+    # application." EMPTY = allow all (dev convenience; a warning is logged).
+    # e.g. BANK_ALLOWED_USERS=DEVUSER,OPER1,ENQ1
+    allowed-users: ${BANK_ALLOWED_USERS:}
+  ldap:
+    # Active Directory bind authentication. OFF by default so machines with no
+    # domain (local dev) keep working on the local fallback ladder. Switch on per
+    # environment once url + domain are filled in.
+    enabled: ${BANK_LDAP_ENABLED:false}
+    # Accepts the ADsPath form the bank already uses — LDAP://host/DC=xx,DC=xx —
+    # and splits it, so paste it verbatim. Plain ldap://host:389 / ldaps://host:636
+    # also work; the port defaults to 389 (636 for ldaps) when omitted.
+    url: ${BANK_LDAP_URL:}
+    # AD domain, e.g. anb.com.sa — used to bind as user@domain. Required.
+    domain: ${BANK_LDAP_DOMAIN:}
+    # Search root. Blank = take the DC=... part of the ADsPath, or let Spring
+    # derive it from the domain when the URL carries no path.
+    root-dn: ${BANK_LDAP_ROOT_DN:}
+    # Allow the local fallback ladder when the directory is UNREACHABLE. A
+    # directory that answers "wrong password" is always final regardless of this.
+    fallback-to-local-users: ${BANK_LDAP_FALLBACK:true}
+  cors:
+    # Origins allowed to call /api/** (the Vite dev server). Comma-separated.
+    allowed-origins: ${BANK_CORS_ORIGINS:http://localhost:5173,http://localhost:5199}
+
+# Swagger/OpenAPI is OFF everywhere by default. Enable temporarily with
+# SPRINGDOC_ENABLED=true (e.g. `SPRINGDOC_ENABLED=true mvn spring-boot:run`
+# or `set SPRINGDOC_ENABLED=true` before run-denodo.bat).
+springdoc:
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:false}
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:false}
+
+spring:
+  profiles:
+    # "mock" serves fixtures with no database. Run with
+    # --spring.profiles.active=denodo on the target PC to use the real
+    # Denodo (Hive views) connections below.
+    default: mock
+
+---
+
+bank:
+  archival-db:            # DB #1 — BM archival schema via Denodo Hive views
+    jdbc-url: ${ARCHIVAL_DB_URL:jdbc:vdb://denodo-host:9999/archival}
+    username: ${ARCHIVAL_DB_USER:}
+    password: ${ARCHIVAL_DB_PASSWORD:}
+    driver-class-name: com.denodo.vdp.jdbc.Driver
+    read-only: true
+    maximum-pool-size: 4
+    # Denodo exposes the BM tables under an environment-specific prefix, e.g.
+    # stcusttab -> bv_impala_stg_bankmaster_stcusttab. Set it here and every
+    # query is rewritten automatically; blank means "views named like the
+    # legacy tables". Change this (not the SQL) when moving staging -> prod.
+    table-prefix: ${ARCHIVAL_DB_TABLE_PREFIX:bv_impala_stg_bankmaster_}
+    # Optional fixed restore snapshot (YYYYMMDD). Leave empty to use
+    # MAX(BankingDate) from stcusttab, resolved once at first query.
+    banking-date: ${ARCHIVAL_BANKING_DATE:}
+    # Customer-search clock, the legacy's SEARCHTIME (cbcmssrv.cfg = 30;
+    # cbrouter.c:92 default). A search is bounded by TIME, not row count: when
+    # it expires the rows already read are returned with an "incomplete" flag,
+    # exactly as the C's alarm(searchTimeOut) did (cbbranch.c:1728-1755).
+    search-timeout-seconds: ${ARCHIVAL_SEARCH_TIMEOUT_SECONDS:30}
+  online-db:              # DB #2 — replaces the cbcmssrv/Finacle online source.
+                          # Engine still undecided (may NOT be Denodo) — it is a
+                          # plain second JDBC connection: point the URL + driver
+                          # env vars at whatever it turns out to be, and drop
+                          # that engine's JDBC driver jar next to the Denodo one
+                          # in the -Dloader.path directory. Defaults to the
+                          # archival Denodo connection until then.
+    jdbc-url: ${ONLINE_DB_URL:${ARCHIVAL_DB_URL:jdbc:vdb://denodo-host:9999/archival}}
+    username: ${ONLINE_DB_USER:${ARCHIVAL_DB_USER:}}
+    password: ${ONLINE_DB_PASSWORD:${ARCHIVAL_DB_PASSWORD:}}
+    driver-class-name: ${ONLINE_DB_DRIVER:com.denodo.vdp.jdbc.Driver}
+    read-only: true
+    maximum-pool-size: 2
+    # Prefix for DB #2's views (defaults to the archival prefix until DB #2 has
+    # its own source). See archival-db.table-prefix above.
+    table-prefix: ${ONLINE_DB_TABLE_PREFIX:${ARCHIVAL_DB_TABLE_PREFIX:}}

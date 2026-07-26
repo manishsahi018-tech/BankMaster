@@ -1,0 +1,49 @@
+server:
+  port: 8080
+
+# Swagger/OpenAPI is OFF everywhere by default. Enable temporarily with
+# SPRINGDOC_ENABLED=true (e.g. `SPRINGDOC_ENABLED=true mvn spring-boot:run`
+# or `set SPRINGDOC_ENABLED=true` before run-denodo.bat).
+springdoc:
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:false}
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:false}
+
+spring:
+  profiles:
+    # "mock" serves fixtures with no database. Run with
+    # --spring.profiles.active=denodo on the target PC to use the real
+    # Denodo (Hive views) connections below.
+    default: mock
+
+---
+spring:
+  config:
+    activate:
+      on-profile: denodo
+
+bank:
+  archival-db:            # DB #1 — BM archival schema via Denodo Hive views
+    jdbc-url: ${ARCHIVAL_DB_URL:jdbc:vdb://denodo-host:9999/archival}
+    username: ${ARCHIVAL_DB_USER:}
+    password: ${ARCHIVAL_DB_PASSWORD:}
+    driver-class-name: com.denodo.vdp.jdbc.Driver
+    read-only: true
+    maximum-pool-size: 4
+    # Optional fixed restore snapshot (YYYYMMDD). Leave empty to use
+    # MAX(BankingDate) from stcusttab, resolved once at first query.
+    banking-date: ${ARCHIVAL_BANKING_DATE:}
+  online-db:              # DB #2 — replaces the cbcmssrv/Finacle online source.
+                          # Engine still undecided (may NOT be Denodo) — it is a
+                          # plain second JDBC connection: point the URL + driver
+                          # env vars at whatever it turns out to be, and drop
+                          # that engine's JDBC driver jar next to the Denodo one
+                          # in the -Dloader.path directory. Defaults to the
+                          # archival Denodo connection until then.
+    jdbc-url: ${ONLINE_DB_URL:${ARCHIVAL_DB_URL:jdbc:vdb://denodo-host:9999/archival}}
+    username: ${ONLINE_DB_USER:${ARCHIVAL_DB_USER:}}
+    password: ${ONLINE_DB_PASSWORD:${ARCHIVAL_DB_PASSWORD:}}
+    driver-class-name: ${ONLINE_DB_DRIVER:com.denodo.vdp.jdbc.Driver}
+    read-only: true
+    maximum-pool-size: 2

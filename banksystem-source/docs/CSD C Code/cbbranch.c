@@ -1,0 +1,2616 @@
+/*
+	Objective       :       Static data maintenance server 
+				            (St Branch Interface)
+
+	Date            :       17/07/2000.
+
+	Author          :       S. Rajesh.
+
+
+	Modification History :
+	---------------------
+Ver.	Author		Date			Details of description
+---------------------------------------------------------------------
+3.1		Rajesh		Apr'01			Modified for phase-II. 
+									i) Module readPendingList is modified 
+									   to get 20 pending records at a time 
+									   instead of getting one by one
+
+									ii) In processAcctRequest module, checked 
+										for the existance of account # in BM 
+										And , added some fields in stacclog
+
+									iii) Internet flag, customer advice flag, & 
+					 		 			 Alternative Branch code is added during
+										 customer updation and enquiry also
+
+									iv) In processCustRequest, moved spaces to 
+										those fields which are irrelevant to 
+										corporate/consumer 
+										( Reference : Andrew's mail dt. 06/08/2001 )
+
+									v) If customer is not found in stcusttab
+									   during enquiry by customer no, and if the
+									   customer is found in crd, then moved the 
+									   customer record from crd to stcusttab
+3.2		Mohit		06-12-2006		i) Modified for quick Pension account opening.
+								   ii) Bug fixing [processJointRequest()], that in case of 
+									   creating New or Update of Joint account, Id issue date,
+									   Id Expiry date and DobDate does not get populated 
+									   with its corresponding Hijri or Gregorian date.
+									   
+*/
+
+#include <stdio.h>
+#include <curses.h>
+#include <stdlib.h>
+#include <strings.h>
+#include <string.h>
+#include <isam.h>
+#include <time.h>
+#include <signal.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <ctype.h>
+#include <unistd.h>
+/*#include "../cbslib/cblayout.h"*/
+#include "../cbslib/stlayout.h"
+#include "../cbslib/layout.h"
+#include "../cbslib/hsmb24int.h"
+#include "cbserver.h"
+#include "cbrouter.h"
+
+#define YES              1
+#define NO               0
+
+#define HIJRI			'0'
+#define GREGORIAN		'1'
+
+#define ARABIC			'0'
+#define ENGLISH			'1'
+
+#define INDIVIDUAL_SAUDI		'1'
+#define INDIVIDUAL_OTHERS 		'2'
+#define JURISTIC		 		'3'
+#define EMBASSIES		 		'4'
+#define DIPLOMATS		 		'5'
+#define NON_RESIDENT_JURISTIC	'6'
+#define QUICK_CUSTOMER			'7'
+#define INTERNAL_CUSTOMER		'8'
+#define PENSION_CUSTOMER		'9'			/* Ver 3.2 */
+#define INDIVIDUAL_HEIR			'A'
+#define E_STMT_REGN				'E'
+
+#define NOT_STARTED 	0 
+#define STARTED 		1
+#define COMPLETED 		2
+
+#define SUP_ACCEPTED	'A'
+#define SUP_FORWARD		'F'
+#define SUP_REJECTED	'R'
+
+#define SUPERVISOR_ACTION	'S'
+#define TELLER_ACTION		'T'
+
+#define BM_REJECTED     '2'
+#define ST_REJECTED     '1'
+#define ACCEPTED        '0'
+
+#define SEARCH_BY_CUSTNO	'1'
+#define SEARCH_BY_ID		'2'
+#define SEARCH_BY_TEL		'3'
+#define SEARCH_BY_FIRSTNAME_A	'4'
+#define SEARCH_BY_FIRSTNAME_E	'5'
+#define	SEARCH_BY_LASTNAME_A	'6'
+#define	SEARCH_BY_LASTNAME_E	'7'
+#define SEARCH_BY_CATEGORY		'8'
+#define SEARCH_BY_BRANCH_CODE 	'9'
+#define SEARCH_BY_SECONDNAME_A	'A'
+#define SEARCH_BY_SECONDNAME_E	'B'
+#define SEARCH_BY_MOBILE		'C'
+
+char prefix[][10]       = { "Ÿ»œ",
+							"√»Ë",
+							"…",
+							"—",
+							"œ",
+							"¡",
+							"È",
+							"{",
+							"«»Ë",
+							"AL",
+							"BIN",
+							"BIND",
+							"ABU"
+							"\0"
+							};
+
+char suffix[][10]   = { "«‰‰Á",
+						"«‰Ÿ“Í“",
+						"«‰—ÕÂÊ",
+						"«‰Ê«’—",
+						"«‰⁄ÊÍ",
+						"«‰—ÕÍÂ",
+						"«‰„—ÍÂ",
+						"«‰—ƒË·",
+						"«‰ÕÂÍœ",
+						"}",
+						"\0"
+						};
+char ignoreIfLast[][15]   = { "«‰—Í«÷",
+							  ".",
+							  "0",
+   							  "«‰„‰Í…",
+							  "«‰„‰ÍÁ",
+							  "«‰„‰Í…«‰Õ—»Í…",
+							  "«‰œÂ«Â",
+							  "»—Íœ…",
+							  "«‰Œ»—",
+							  "Ãœ…",
+							  "ÃœÁ",
+							  "«‰ÂÍÊ…",
+							  "«‰ÂÊË—…",
+							  "\0",
+						    };
+char poBoxList[][20]   = { "PO."
+						   "PO ",
+						   "P.O.",
+						   "P. O",
+						   "P . O",
+						   "P .O",
+						   "P.",
+						   "’ »", 
+						   "’.»", 
+						   "’ .»", 
+						   "’. »", 
+						   "’ . »", 
+						   "’/»", 
+						   "’\\»", 
+						   "’ ", 
+						   "\0",
+						    };
+
+char firstName[200], secondName[200], thirdName[200], lastName[200];
+char idType, idNumber[30], zipCode[30], poBox[30], cityName[30];
+
+extern struct keydesc  userKey, custLogKey, jointLogKey, acctLogKey, ctlKey, sadadCtlKey, custTabKey, jointTabKey, crdKey, abcKey, cardTabKey, cardLogKey, cndKey, gldMemoKey, refreshKey, gldKey, tpinHistKey , idLogKey, addrLogKey, calendarKey , idTabKey, addrTabKey, cRefLogKey, cRefTabKey, fndTabKey, acctBmKey;
+struct dictinfo fileInfo;
+extern int   userFile, custLogFile,jointLogFile,acctLogFile, ctlFile, sadadCtlFile, custTabFile, jointTabFile, crdFile, abcFile, cardTabFile, cardLogFile, gldFile, gldMemoFile, cndFile, refreshFile, tpinHistFile, idLogFile, addrLogFile, calendarFile, idTabFile, addrTabFile, cRefLogFile, cRefTabFile, fndTabFile, acctBmFile; 
+extern int debug, extraDebug, checkAList, checkBList, checkCList, ahaerr, crdFile1, gldFile1;
+extern int hsmKey1, hsmKey2, b24Key1, b24Key2;
+extern char progName[30];
+extern int PID;
+extern char  *userFilePath, *userLogFilePath, *custLogFilePath, *jointLogFilePath, *acctLogFilePath, *ctlFilePath, *sadadCtlPath, *custTabFilePath, *jointTabFilePath, *crdFilePath, *abcFilePath, *cardTabFilePath, *cardLogFilePath, *gldFilePath, *o3dFilePath, *acctBmFilePath, *chqTabFilePath, *reqFilePath, *pensFilePath, *pennotFilePath, *sodFilePath, *pydFilePath, *sodLogFilePath, *stopChqLogFilePath, *gldMemoFilePath, *cndFilePath, *thdFilePath, *thd1FilePath, *brFilePath, *refFilePath, *brsFilePath, *ridFilePath, *secLogFilePath, *chqDelFilePath, *refreshFilePath, *penInhFilePath, *tpinHistFilePath, *idLogFilePath, *addrLogFilePath, *calendarFilePath, *idTabFilePath, *addrTabFilePath, *cRefLogFilePath, *cRefTabFilePath , *signLogFilePath, *signTabFilePath, *ownerLogFilePath, *ownerTabFilePath, *fndTabFilePath;
+
+extern  int page, line;
+extern  int searchTimeOut;
+extern  int searchEngineCallReqd;
+extern  char searchEngineLevel;
+int searchTimeoutFlag=0;
+extern 	char pinOffset[4], trk1[80], trk2[40];
+
+extern char bmAmtStr[50], dateTime[30], bankingDate[10];
+extern char clientIpAddress[30];
+char tCustNo[15];
+char displayWarningMsgOnDuplicateId=NO;
+
+struct branchInfo					ctlRec;
+struct sadadCtlInfo					sadadCtlRec;
+struct userProfile					userRec;
+struct refreshInfo					refreshRec;
+struct crd0data 					crdRec;
+struct gld0data						gldRec;
+struct cnd0dataBR 					cndRec;
+struct req0data 					reqRec;
+struct gld0data05 					gldMemoRec;
+struct cardInfo						cardTabRec, cardTabRec1;
+struct branchActivityOnCard			cardLogRec;
+struct hsmrequestmsg				hsmRequestMsg;
+struct hsmreplymsg					hsmReplyMsg;
+struct b24requestmsg				b24RequestMsg;
+struct b24replymsg					b24ReplyMsg;
+struct calendarInfo					calendarRec;
+struct branchInfo  					branchRec;
+struct acctBm						acctBmRec;
+struct idInfo						idTabRec;
+struct branchActivityOnId			idLogRec;
+struct addressInfo					addrTabRec;
+struct branchActivityOnAddress		addrLogRec;
+struct jointAccountInfo				jointTabRec;
+struct branchActivityOnJointAccounts jointLogRec, jointLogRec1;
+
+struct customerInfo					custTabRec;
+struct branchActivityOnCustomer		custLogRec;
+struct branchActivityOnAccounts		acctLogRec;
+struct abcList						abcRec;
+
+extern FILE *logFp, *errLogFp, *expPrtFp;
+
+extern struct tm   *systemDate;  /* structure declaration in time.h */
+extern time_t systime;
+
+void 			searchAlarm();
+char            *getpath();
+char            *getDateTime();
+double          bmAmtToDbl();
+char            *dblToBmAmt();
+char            *bmCustToAcutal();
+char            *doubleToPack();
+double          packToDouble();
+extern	void	serviceAlarm();
+extern int serviceTimeout, serviceTimeoutFlag;
+extern int transactionBegin;
+
+extern int errno;
+extern int optopt;
+extern char *optarg, authorisedUser[25];
+extern int debug, extraDebug, loginAuthorised, userFileOpen, custLogFileOpen, custTabFileOpen,	jointLogFileOpen, acctLogFileOpen,staticFileOpen, ctlFileOpen, sadadCtlFiloOpen, jointTabFileOpen,abcFileOpen, cardTabFileOpen, cardLogFileOpen, gldFileOpen, crdFileOpen, refreshFileOpen, idLogFileOpen, addrLogFileOpen, calendarFileOpen, idTabFileOpen, addrTabFileOpen, cRefLogFileOpen, cRefTabFileOpen,fndTabFileOpen, acctBmFileOpen;
+
+int stBranchInterface(headerBuf)
+char *headerBuf;
+{ 
+	int c, msgLen;
+	char tmpStr[60];
+
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[stBranchInterface]\n", getDateTime(), PID);
+
+	systime = time(NULL);                  /* get the system time */
+	systemDate = localtime( &systime );
+
+	sprintf(tmpStr, "%.6s", headerBuf);
+	msgLen = atoi(tmpStr);
+
+	/* receive the main details */
+
+	memset(receivedMsg.customer.msgLen, NULL, sizeof receivedMsg.customer);
+	memset(responseMsg.customer.msgLen,  ' ', sizeof responseMsg.customer);
+	strncpy(receivedMsg.customer.msgLen, headerBuf, 12);
+	if ( getMessage(receivedMsg.customer.userId, msgLen - 12) < 0 )
+	{
+		formatBranchResponse(COMMSERR, "Comms Error:Check your connnection or call Support ","Comms Error:Check your connnection or call Support ");
+		sendResponse(responseMsg.customer.msgLen);
+		return COMMSFAILURE;
+	}
+	     
+	if ( loginAuthorised == NO && strncmp(&headerBuf[6], "13", 2) )/* login not required for refresh */
+	{
+		formatBranchResponse(NOT_LOGIN, "Not yet logged in", "Not yet logged in");
+		sendResponse(responseMsg.customer.msgLen);
+		return FAILURE;
+	}
+
+	/*
+	serviceTimeoutFlag=0;
+	alarm(serviceTimeout);
+	signal(SIGALRM, serviceAlarm);
+	*/
+
+	if ( strncmp(&headerBuf[6], "10", 2) == 0 ) 
+					   /*New Customer Creation  Request*/
+	{
+	}
+	else if ( strncmp(&headerBuf[6], "11", 2) == 0 ) /* Pending Detail Request */ 
+	{
+		logPendingDetailReqDetails(); 
+		if ( strncmp(receivedMsg.pendingDetail.requestType,"02",2) == 0 )
+		{
+			if ( openCustTabFile(ISMANULOCK + ISINOUT) < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+			if( openCustLogFile(ISMANULOCK + ISINOUT) < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+			if ( openAcctLogFile(ISMANULOCK + ISINOUT)  < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+			if ( openCrdFile(ISMANULOCK + ISINOUT)  < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+			if ( openCtlFile(ISMANULOCK + ISINOUT)  < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+			if ( openIdTabFile(ISMANULOCK + ISINOUT) < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+			if ( openAddrTabFile(ISMANULOCK + ISINOUT) < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+			if ( receivedMsg.pendingDetail.screenSetNo == INDIVIDUAL_OTHERS )
+			{
+				if ( processIndividualOthersDetail() == FAILURE )
+					return FAILURE;
+			}
+			else if ( receivedMsg.pendingDetail.screenSetNo == INDIVIDUAL_SAUDI ||
+					  receivedMsg.pendingDetail.screenSetNo == INDIVIDUAL_HEIR )
+			{
+				if ( processIndividualSaudiDetail() == FAILURE )
+					return FAILURE;
+			}
+			else if ( receivedMsg.pendingDetail.screenSetNo == JURISTIC || receivedMsg.pendingDetail.screenSetNo == EMBASSIES ||                          receivedMsg.pendingDetail.screenSetNo == DIPLOMATS ||
+					  receivedMsg.pendingDetail.screenSetNo == NON_RESIDENT_JURISTIC )
+			{
+				if ( processJuristicDetail() == FAILURE )
+					return FAILURE;
+			}
+			else if ( receivedMsg.pendingDetail.screenSetNo == QUICK_CUSTOMER || 
+					  receivedMsg.pendingDetail.screenSetNo == INTERNAL_CUSTOMER ||
+					  receivedMsg.pendingDetail.screenSetNo == PENSION_CUSTOMER )    /* Ver 3.2 */
+			{
+				if ( processQuickCustDetail() == FAILURE )
+					return FAILURE;
+			}
+			else
+			{
+				if ( processCustomerInfo() == FAILURE )
+					return FAILURE;
+			}
+		}
+		else
+		{
+			if( openCustLogFile(ISMANULOCK + ISINOUT) < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+			if ( openAcctLogFile(ISMANULOCK + ISINOUT)  < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+			if ( openIdLogFile(ISMANULOCK + ISINOUT) < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+
+			if ( openAddrLogFile(ISMANULOCK + ISINOUT) < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+			if ( openCtlFile(ISMANULOCK+ISINOUT)  < 0 )
+			{
+				 sendResponse(responseMsg.refresh.msgLen);
+				 return FAILURE;
+			}
+			if ( processSupervisorAction() == FAILURE )
+				return FAILURE;
+		}
+	}
+	else if ( strncmp(&headerBuf[6], "13", 2) == 0 ) /* Refresh local Database*/
+	{
+		if ( openCtlFile(ISMANULOCK+ISINOUT)  < 0 )
+		{
+			 sendResponse(responseMsg.refresh.msgLen);
+		     return FAILURE;
+		}
+
+		if ( openSadadCtlFile(ISMANULOCK+ISINOUT)  < 0 )
+		{
+			 sendResponse(responseMsg.customer.msgLen);
+		     return FAILURE;
+		}
+
+		if ( openRefreshFile(ISMANULOCK+ISINOUT) < 0 )
+		{
+			sendResponse(responseMsg.refresh.msgLen);
+			return FAILURE;
+		}
+
+		if ( extraDebug )
+			logRefreshDetails();
+		if ( processRefreshRequest()  == FAILURE )
+		     return FAILURE;
+	}
+	else if ( strncmp(&headerBuf[6], "14", 2) == 0 ) 
+				/* New/Update Account Info request  */ 
+	{
+	}
+	else if ( strncmp(&headerBuf[6], "15", 2) == 0 ) 
+					   /* New/Update Joint Customer Info  Request */
+	{
+	}
+	else if ( strncmp(&headerBuf[6], "16", 2) == 0 ) /* Customer Info. Search */
+	{
+		logSearchDetails();
+		if ( openCustTabFile(ISMANULOCK + ISINOUT)  < 0 )
+		{
+			 sendResponse(responseMsg.customer.msgLen);
+		     return FAILURE;
+		}
+
+		if ( processSearchRequest()  == FAILURE )
+		     return FAILURE;
+	}
+	else if ( strncmp(&headerBuf[6],"18",2) == 0 ) /* Joint acc info request */
+	{
+		if ( strncmp(receivedMsg.jointDetail.requestType, "02",2) == 0 || 
+			 strncmp(receivedMsg.jointDetail.requestType, "04",2) == 0 )
+		{
+			logJointInfoReqDetails();
+			if ( openJointTabFile(ISMANULOCK + ISINOUT) < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+
+			if ( openIdTabFile(ISMANULOCK + ISINOUT) < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+
+			if ( openAddrTabFile(ISMANULOCK + ISINOUT) < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+
+			if ( readJointTabInfo() == FAILURE )
+				return FAILURE;
+		}
+		else
+		{
+			logJointInfoReqDetails(); 
+			if( openJointLogFile(ISMANULOCK + ISINOUT) < 0)
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+
+			if ( openIdLogFile(ISMANULOCK+ISINOUT) < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+
+			if ( openAddrLogFile(ISMANULOCK+ISINOUT) < 0 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+			if ( readJointLogInfo() == FAILURE)
+				return FAILURE;
+		}
+	}
+	return SUCCESS;
+}
+
+readJointTabInfo()
+{
+	char tmpStr[100], tmpAddressNo[10];
+
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[readJointTabInfo]\n", getDateTime(), PID);
+			
+	memset(responseMsg.jointDetail.msgLen,' ',sizeof responseMsg.jointDetail);
+
+	memset(&jointTabRec.liveChar, ' ', sizeof jointTabRec);
+	strncpy(jointTabRec.custNo, receivedMsg.jointDetail.custNo,7);
+	strncpy(jointTabRec.jointCustNo, receivedMsg.jointDetail.jointCustNo,2);
+	isindexinfo(jointTabFile,&jointTabKey,1);
+	if ( isstart(jointTabFile,&jointTabKey,0,&jointTabRec.liveChar,ISGTEQ) < 0 )
+	{
+		if ( iserrno == 110 || iserrno == 112 || iserrno == 111 )
+		     formatJointInfoResponse(END_OF_FILE,"No more Records to fetch....", "No more Records to fetch....");
+		else
+		{
+			sprintf(tmpStr, "CISAM Error %d occured on stjointtab", iserrno);
+			formatJointInfoResponse(INTERNALERR,tmpStr, tmpStr);
+		}
+     	sendResponse(responseMsg.jointDetail.msgLen);
+		return FAILURE;
+	}
+
+	while ( isRead(jointTabFile,&jointTabRec.liveChar,ISNEXT) == 0)
+	{
+		if (strncmp(receivedMsg.jointDetail.custNo,jointTabRec.custNo,7) != 0 )
+			break;
+
+		if ( strncmp(receivedMsg.jointDetail.requestType, "02", 2) == 0 ) /* If the request coming from frmcustomer2 */
+		{
+			if ( strncmp(jointTabRec.jointCustNo, receivedMsg.jointDetail.jointCustNo, 2) <= 0 )
+				continue;
+		}
+		else /* If the request is coming from SAR individual saudi/others customer form */
+		{
+			if ( strncmp(jointTabRec.jointCustNo, receivedMsg.jointDetail.jointCustNo, 2)  )
+				continue;
+		}
+
+		strncpy(responseMsg.jointDetail.custNo, jointTabRec.custNo,7);
+		strncpy(responseMsg.jointDetail.jointCustNo, jointTabRec.jointCustNo,2);
+		strncpy(responseMsg.jointDetail.supervisorId, jointTabRec.createdUserId, 10);
+		strncpy(responseMsg.jointDetail.idNo, jointTabRec.idNo,632);
+		responseMsg.jointDetail.addressType = jointTabRec.addressType;
+		if ( jointTabRec.addressType == '1' ) /* Saudi Postal address */
+			strncpy(responseMsg.jointDetail.poBox, jointTabRec.unitNo, 5);
+
+		if ( strncmp(receivedMsg.jointDetail.requestType, "02", 2) == 0 ) /* If the request coming from frmcustomer2 */
+		{
+			formatJointInfoResponse(DONE,"Successful..","Successful..");
+			sendResponse(responseMsg.jointDetail.msgLen);
+			return SUCCESS;
+		}
+		responseMsg.jointDetail.activeStatus = jointTabRec.activeStatus;
+		responseMsg.jointDetail.custOpenSource = jointTabRec.custOpenSource;
+
+		/* Read corresponding Id Tab */
+		memset(&idTabRec.liveChar, ' ', sizeof idTabRec);
+
+		strncpy(idTabRec.custNo, jointTabRec.custNo, 7);
+		idTabRec.idType = jointTabRec.idType;
+		strncpy(idTabRec.idNo, jointTabRec.idNo, 15);
+		idTabRec.idCategory = 'J'; /* Joint */
+
+		isindexinfo(idTabFile, &idTabKey, 1); /*Arul changed from 5 to 1*/
+		isstart(idTabFile, &idTabKey, 0, &idTabRec.liveChar, ISGTEQ);
+
+		if ( readIdTabFile(ISEQUAL) < 0 )
+		{
+			if ( iserrno != 111 )
+			{
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+			/* Arul added on 30 Nov to avoid 111 error */
+			fprintf(logFp, "%s|%5d|[readJointTabInfo] readIdTabFile() cameout with 111 and hence the record will be added to stidtab for custNo=%.7s, with id type, id No [%c, %.16s]\n", getDateTime(), PID, idTabRec.custNo, idTabRec.idType, idTabRec.idNo);
+			fflush(logFp);
+			memset(&idTabRec.liveChar, ' ', sizeof idTabRec);
+			strncpy(idTabRec.custNo, jointTabRec.custNo, 7);
+			idTabRec.idType = jointTabRec.idType;
+			strncpy(idTabRec.idNo, jointTabRec.idNo, 15);
+			idTabRec.idCategory = 'J'; /* Joint */
+			strncpy(idTabRec.idIssuedAt, jointTabRec.idIssuedAt, 20);
+			idTabRec.idDateType = jointTabRec.idDateType;
+			strncpy(idTabRec.idIssueDateH, jointTabRec.idIssueDateH, 8);
+			strncpy(idTabRec.idIssueDateG, jointTabRec.idIssueDateG, 8);
+			strncpy(idTabRec.idExpiryDateH, jointTabRec.idExpiryDateH, 8);
+			strncpy(idTabRec.idExpiryDateG, jointTabRec.idExpiryDateG, 8);
+			strncpy(idTabRec.idRefNo, "00000", 4);
+			strncpy(&idTabRec.idRefNo[2], jointTabRec.jointCustNo, 2);
+			idTabRec.newOrUpdate = 'N';
+			strncpy(idTabRec.createdUserId, jointTabRec.createdUserId, 10);
+			strncpy(idTabRec.createdDateTime, jointTabRec.createdDateTime, 14);
+			strncpy(idTabRec.lastUpdateUser, jointTabRec.lastUpdateUser, 10);
+			strncpy(idTabRec.lastUpdateDateTime, jointTabRec.lastUpdateDateTime, 14);
+			if ( isWrcurr(idTabFile, &idTabRec.liveChar) < 0 )
+			{
+				fprintf(logFp, "%s|%5d|[readJointTabInfo] ISWRCURR error %d on stidtab for customer number [%.7s] and id type, id No [%c, %.16s]\n", getDateTime(), PID, iserrno, idTabRec.custNo, idTabRec.idType, idTabRec.idNo);
+				fflush(logFp);
+				sprintf(tmpStr, "Error %d while writing joint A/c  Id in stidtab", iserrno);
+				formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+				return FAILURE;
+			}
+		}
+		strncpy(responseMsg.jointDetail.idNo, idTabRec.idNo, 15);
+		responseMsg.jointDetail.idType = idTabRec.idType;
+		responseMsg.jointDetail.idDateType = idTabRec.idDateType;
+		strncpy(responseMsg.jointDetail.idIssuedAt, idTabRec.idIssuedAt, 20); 
+		strncpy(responseMsg.jointDetail.idIssueDateH, idTabRec.idIssueDateH, 32); /* From idIssueDateH to idExpiryDateG */
+
+		/* Read corresponding Address tab */
+
+		memset(&addrTabRec.liveChar, ' ', sizeof addrTabRec);
+
+		strncpy(addrTabRec.custNo, jointTabRec.custNo, 7);
+		strncpy(addrTabRec.addressType, "00", 2); /* Only local address is available for Joint customers */
+		sprintf(tmpStr, "%.2s", jointTabRec.jointCustNo, 2);
+		sprintf(tmpAddressNo, "%04d", atoi(tmpStr));
+		strncpy(addrTabRec.addressNo, tmpAddressNo, 4);
+
+		isindexinfo(addrTabFile, &addrTabKey, 1);
+		isstart(addrTabFile, &addrTabKey, 0, &addrTabRec.liveChar, ISGTEQ);
+		if ( isRead(addrTabFile, &addrTabRec.liveChar, ISEQUAL) < 0 )
+		{
+			if ( iserrno != 111 )
+			{
+				fprintf(logFp, "%s|%5d|[readJointTabInfo] ISREAD/ISEQUAL error %d on staddrTab for customer # [%.7s] , address type [%.2s], address number [%.4s] \n", getDateTime(), PID, iserrno, addrTabRec.custNo, addrTabRec.addressType, addrTabRec.addressNo);
+				sprintf(tmpStr, "Error %d occured while reading staddrtab", iserrno);
+				formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+			/* Arul added on 30 Nov to avoid 111 error */
+			fprintf(logFp, "%s|%5d|[readJointTabInfo] ISREAD/ISEQUAL on staddrTab cameout with 111 for customer # [%.7s] , address type [%.2s], address number [%.4s]; and hence it is added using jointTabRec information\n", getDateTime(), PID, iserrno, addrTabRec.custNo, addrTabRec.addressType, addrTabRec.addressNo);
+			fflush(logFp);
+			memset(&addrTabRec.liveChar, ' ', sizeof addrTabRec);
+
+			strncpy(addrTabRec.custNo, jointTabRec.custNo, 7);
+			strncpy(addrTabRec.addressType, "00", 2); /* Only local address is available for Joint customers */
+			sprintf(tmpStr, "%.2s", jointTabRec.jointCustNo, 2);
+			sprintf(tmpAddressNo, "%04d", atoi(tmpStr));
+			strncpy(addrTabRec.addressNo, tmpAddressNo, 4);
+			strncpy(addrTabRec.address1, jointTabRec.address1, 30);
+			strncpy(addrTabRec.address2, jointTabRec.address2, 30);
+			strncpy(addrTabRec.poBox, jointTabRec.poBox, 10);
+			strncpy(addrTabRec.cityName, jointTabRec.cityName, 20);
+			strncpy(addrTabRec.zipCode, jointTabRec.zipCode, 10);
+			strncpy(addrTabRec.country, jointTabRec.country, 3);
+			strncpy(addrTabRec.telOffAreaCode, jointTabRec.telOffAreaCode, 4);
+			strncpy(addrTabRec.telOffNo, jointTabRec.telOffNo, 10);
+			strncpy(addrTabRec.telOffExt, jointTabRec.telOffExt, 4);
+			strncpy(addrTabRec.telHomeAreaCode, jointTabRec.telHomeAreaCode, 4);
+			strncpy(addrTabRec.telHomeNo, jointTabRec.telHomeNo, 10);
+			strncpy(addrTabRec.telHomeExt, jointTabRec.telHomeExt, 4);
+			strncpy(addrTabRec.faxAreaCode, jointTabRec.faxAreaCode, 4);
+			strncpy(addrTabRec.faxNo, jointTabRec.faxNo, 10);
+			strncpy(addrTabRec.faxExt, jointTabRec.faxExt, 4);
+			strncpy(addrTabRec.mobileNo, jointTabRec.mobileNo, 10);
+			strncpy(addrTabRec.pagerNo, jointTabRec.pagerNo, 10);
+			strncpy(addrTabRec.eMail, jointTabRec.eMail, 30);
+			strncpy(addrTabRec.lastUpdateBmDate, jointTabRec.lastUpdateBmDate, 8);
+			strncpy(addrTabRec.createdUserId, jointTabRec.createdUserId, 10);
+			strncpy(addrTabRec.createdDateTime, jointTabRec.createdDateTime, 14);
+			strncpy(addrTabRec.lastUpdateUser, jointTabRec.lastUpdateUser, 10);
+			strncpy(addrTabRec.lastUpdateDateTime, jointTabRec.lastUpdateDateTime, 14);
+			if ( isWrcurr(addrTabFile, &addrTabRec.liveChar) < 0 )
+			{
+				fprintf(logFp, "%s|%5d|[readJointTabInfo] ISWRITE error %d on staddrTab for customer # [%.7s] , address type [%.2s], address number [%.4s] \n", getDateTime(), PID, iserrno, addrTabRec.custNo, addrTabRec.addressType, addrTabRec.addressNo);
+				sprintf(tmpStr, "Error %d occured while inserting joint staddrtab", iserrno);
+				formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+				sendResponse(responseMsg.customer.msgLen);
+				return FAILURE;
+			}
+		}
+		strncpy(responseMsg.jointDetail.address1, addrTabRec.address1, 103); /* address1 to country */
+		strncpy(responseMsg.jointDetail.telOffAreaCode, addrTabRec.telOffAreaCode, 104); /* telOffAreaCode to email */
+		responseMsg.jointDetail.addressType = addrTabRec.addrType;
+		if ( addrTabRec.addrType == '1' ) /* Saudi Postal address */
+			strncpy(responseMsg.jointDetail.poBox, addrTabRec.unitNo, 5);
+
+    	formatJointInfoResponse(DONE,"Successful..","Successful..");
+		sendResponse(responseMsg.jointDetail.msgLen);
+		return SUCCESS;
+	}
+	formatJointInfoResponse(END_OF_FILE,"End of File encountered..","End of File encountered..");
+	sendResponse(responseMsg.jointDetail.msgLen);
+	return FAILURE;
+}
+
+readJointLogInfo() 
+{
+	char tmpStr[100], tmpAddressNo[10];
+	int addrLogFound=NO;
+			
+	memset(responseMsg.jointDetail.msgLen,' ',sizeof responseMsg.jointDetail);
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[stBranchInterface] key [%.38s] for joint customer # %.2s\n", getDateTime(), PID, receivedMsg.jointDetail.branchCode, receivedMsg.jointDetail.jointCustNo);
+
+	memset(&jointLogRec.liveChar, ' ', sizeof jointLogRec);
+	strncpy(jointLogRec.branchCode, receivedMsg.jointDetail.branchCode,4);
+	strncpy(jointLogRec.userId, receivedMsg.jointDetail.userId,10);
+	strncpy(jointLogRec.dateTime, receivedMsg.jointDetail.dateTime,14);
+	strncpy(jointLogRec.custNo,receivedMsg.jointDetail.custNo,7);
+	strncpy(jointLogRec.jointCustNo,receivedMsg.jointDetail.jointCustNo,2);
+	isindexinfo(jointLogFile,&jointLogKey,1);
+	isstart(jointLogFile,&jointLogKey,0,&jointLogRec.liveChar,ISGTEQ);
+
+	while(isRead(jointLogFile,&jointLogRec.liveChar,ISNEXT) == 0)
+	{
+		if (strncmp(receivedMsg.jointDetail.branchCode,jointLogRec.branchCode,4) != 0 || strncmp(receivedMsg.jointDetail.userId,jointLogRec.userId,10) != 0 || strncmp(receivedMsg.jointDetail.dateTime,jointLogRec.dateTime,14) != 0)
+			break;
+
+		if ( strncmp(receivedMsg.jointDetail.requestType, "01", 2) == 0 ) /* If the request coming from frmcustomer2 */
+		{
+			if ( strncmp(jointLogRec.jointCustNo, receivedMsg.jointDetail.jointCustNo, 2) <= 0 )
+				continue;
+		}
+		else /* if the request coming from sar individual others/saudi customer form  */
+		{
+			if ( strncmp(jointLogRec.jointCustNo, receivedMsg.jointDetail.jointCustNo, 2)  )
+				continue;
+		}
+
+		strncpy(responseMsg.jointDetail.jointCustNo, jointLogRec.jointCustNo, 669);
+		responseMsg.jointDetail.addressType = jointLogRec.addressType;
+		if ( jointLogRec.addressType == '1' ) /* Saudi Postal address */
+			strncpy(responseMsg.jointDetail.poBox, jointLogRec.unitNo, 5);
+
+		if ( strncmp(receivedMsg.jointDetail.requestType, "01", 2) == 0 ) /* If the request coming from frmcustomer2 */
+		{
+			formatJointInfoResponse(DONE,"Successful..","Successful..");
+			sendResponse(responseMsg.jointDetail.msgLen);
+			return SUCCESS;
+		}
+		responseMsg.jointDetail.activeStatus = jointLogRec.activeStatus;
+		responseMsg.jointDetail.custOpenSource = jointLogRec.custOpenSource;
+
+		/* Read corresponding Id Log */
+		memset(&idLogRec.liveChar, ' ', sizeof idLogRec);
+
+		strncpy(idLogRec.branchCode, jointLogRec.branchCode, 4);
+		strncpy(idLogRec.userId, jointLogRec.userId, 10);
+		strncpy(idLogRec.dateTime, jointLogRec.dateTime, 14);
+		idLogRec.idType = jointLogRec.idType;
+		strncpy(idLogRec.idNo, jointLogRec.idNo, 15);
+		idLogRec.idCategory = 'J'; /* Joint */
+
+		isindexinfo(idLogFile, &idLogKey, 1);
+		isstart(idLogFile, &idLogKey, 0, &idLogRec.liveChar, ISGTEQ);
+
+		if ( readIdLogFile(ISEQUAL) ==  0 )
+		{
+			strncpy(responseMsg.jointDetail.idNo, idLogRec.idNo, 15);
+			responseMsg.jointDetail.idType = idLogRec.idType;
+			responseMsg.jointDetail.idDateType = idLogRec.idDateType;
+			strncpy(responseMsg.jointDetail.idIssuedAt, idLogRec.idIssuedAt, 20); 
+			strncpy(responseMsg.jointDetail.idIssueDateH, idLogRec.idIssueDateH, 32); /* From idIssueDateH to idExpiryDateG */
+		}
+
+		/* Read corresponding Address log */
+
+		memset(&addrLogRec.liveChar, ' ', sizeof addrLogRec);
+
+		strncpy(addrLogRec.branchCode, jointLogRec.branchCode, 4);
+		strncpy(addrLogRec.userId, jointLogRec.userId, 10);
+		strncpy(addrLogRec.dateTime, jointLogRec.dateTime, 14);
+		strncpy(addrLogRec.custNo, jointLogRec.custNo, 7);
+		strncpy(addrLogRec.addressType, "00", 2); /* Only local address is available for Joint customers */
+		sprintf(tmpStr, "%.2s", jointLogRec.jointCustNo, 2);
+		sprintf(tmpAddressNo, "%04d", atoi(tmpStr));
+		strncpy(addrLogRec.addressNo, tmpAddressNo, 4);
+
+		isindexinfo(addrLogFile, &addrLogKey, 1);
+		isstart(addrLogFile, &addrLogKey, 28, &addrLogRec.liveChar, ISGTEQ);
+		addrLogFound=NO;
+		while(isRead(addrLogFile,&addrLogRec.liveChar,ISNEXT) == 0)
+		{
+			if (strncmp(receivedMsg.jointDetail.branchCode,addrLogRec.branchCode,4) != 0 || strncmp(receivedMsg.jointDetail.userId,addrLogRec.userId,10) != 0 || strncmp(receivedMsg.jointDetail.dateTime,addrLogRec.dateTime,14) != 0)
+				break;
+
+			if ( strncmp(&addrLogRec.addressNo[2], jointLogRec.jointCustNo, 2) )
+				continue;
+
+			addrLogFound = YES;
+			break;
+		}
+		if ( addrLogFound == YES )
+		{
+			strncpy(responseMsg.jointDetail.address1, addrLogRec.address1, 103);/* address1 to country */
+			strncpy(responseMsg.jointDetail.telOffAreaCode, addrLogRec.telOffAreaCode, 104); /* teloffareacode to email */
+			responseMsg.jointDetail.addressType = addrLogRec.addrType;
+			if ( addrLogRec.addrType == '1' ) /* Saudi Postal address */
+				strncpy(responseMsg.jointDetail.poBox, addrLogRec.unitNo, 5);
+		}
+
+    	formatJointInfoResponse(DONE,"Successful..","Successful..");
+		sendResponse(responseMsg.jointDetail.msgLen);
+		return SUCCESS;
+	}
+	formatJointInfoResponse(END_OF_FILE,"End of File encountered..","End of File encountered..");
+	sendResponse(responseMsg.jointDetail.msgLen);
+	return FAILURE;
+}
+
+formatPendingList2Response( responseCode, aRemarks, eRemarks)
+char *responseCode, *aRemarks,*eRemarks;
+{
+	char tmpStr[120], tmpARemarks[55], tmpERemarks[55];
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[formatPendingList2Response] formating the response\n", getDateTime(), PID);
+	sprintf(tmpARemarks, "%-50.50s", aRemarks);
+	sprintf(tmpERemarks, "%-50.50s", eRemarks);
+    
+	strncpy(responseMsg.pendingList1.status,responseCode,3);
+	strncpy(responseMsg.pendingList1.service,receivedMsg.pendingList1.service,2);
+	strncpy(responseMsg.pendingList1.aRemarks,tmpARemarks,50);
+	strncpy(responseMsg.pendingList1.eRemarks,tmpARemarks,50);
+    responseMsg.pendingList1.nullPad = '\0';
+	sprintf(tmpStr, "%06d", strlen(responseMsg.pendingList1.msgLen));
+	strncpy(responseMsg.pendingList1.msgLen, tmpStr, 6);
+	 if ( responseCode == COMMSERR )
+	 {
+	      iscleanup();
+		  fclose(logFp);
+	}
+	return SUCCESS;
+}
+
+
+formatJointInfoResponse(responseCode,aRemarks, eRemarks) 
+char *responseCode, *aRemarks, *eRemarks;
+{
+    char tmpStr[100],tmpARemarks[55], tmpERemarks[55];
+	
+	sprintf(tmpARemarks, "%-50.50s", aRemarks);
+	sprintf(tmpERemarks, "%-50.50s", eRemarks);
+
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[formatJointInfoResponse] formatting the response\n", getDateTime(), PID);
+
+	strncpy(responseMsg.jointDetail.status, responseCode,3);
+	strncpy(responseMsg.jointDetail.service, receivedMsg.jointDetail.service,2);
+	strncpy(responseMsg.jointDetail.aRemarks, tmpARemarks, 50 );
+	strncpy(responseMsg.jointDetail.eRemarks, tmpERemarks, 50 );
+	responseMsg.jointDetail.nullPad = '\0';
+	sprintf(tmpStr, "%06d", strlen(responseMsg.jointDetail.msgLen));
+	strncpy(responseMsg.jointDetail.msgLen, tmpStr, 6);
+	if ( responseCode == COMMSERR )
+	{
+		iscleanup();
+		fclose(logFp);
+	}
+	return SUCCESS;
+}
+
+
+formatSearchResponse(responseCode, aRemarks, eRemarks)
+char *responseCode, *aRemarks,*eRemarks;
+{
+	char tmpStr[120];
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[formatSearchResponse] formating the response\n", getDateTime(), PID);
+	strncpy(responseMsg.search.status, responseCode, 3);
+	sprintf(tmpStr, "%-50.50s", aRemarks);
+	strncpy(responseMsg.search.aRemarks,tmpStr,50);
+	sprintf(tmpStr, "%-50.50s", eRemarks);
+	strncpy(responseMsg.search.eRemarks,tmpStr,50);
+	strncpy(responseMsg.search.service, receivedMsg.search.service, 2);
+	responseMsg.search.nullPad = '\0';
+	sprintf(tmpStr, "%06d", strlen(responseMsg.search.msgLen));
+	strncpy(responseMsg.search.msgLen, tmpStr, 6);
+	if ( responseCode == COMMSERR )
+	{
+		iscleanup();
+		fclose(logFp);
+	}
+	return SUCCESS;
+}
+
+checkInGld(char *accNo)
+{
+	char tmpStr[100],bmAccNo[20];
+
+	
+	if ( openGldFile(ISMANULOCK + ISINOUT)  < 0 )
+	{
+		sendResponse(responseMsg.customer.msgLen);
+		return FAILURE;
+	}
+
+	memset(&gldRec.liveChar, ' ', sizeof gldRec);
+
+	isindexinfo(gldFile, &gldKey, 1);
+
+	strncpy(gldRec.accNo, actualToBmAcc(accNo, bmAccNo), 13);
+	isstart(gldFile, &gldKey, 13, &gldRec.liveChar, ISGTEQ);
+
+	if ( isRead(gldFile, &gldRec.liveChar, ISEQUAL) < 0 )
+	{
+		if ( iserrno != 111)
+		{
+			fprintf(logFp, "%s|%5d| [checkInGld] :ISREAD/ISEQUAL error %d while reading GLD file for account number [%.14s:%.13s]\n", getDateTime(), PID, iserrno, accNo, gldRec.accNo);
+			fflush(logFp);
+		}
+		return FAILURE;
+	}
+
+	return SUCCESS;
+}
+
+void searchAlarm()
+{
+	searchTimeoutFlag = 1;
+}
+
+formatAddNewCardReq(char *custNo, char cardType, char newOrReplacement, char primaryOrSupplementary, char *nameOnCard, char *dateTime, char *branchCode, char *userId , char *custBranchCode, char deliveryToBranchOrPO)
+{
+	char  tmpStr[50];
+	int tYear=0;
+	char monthDays[15][4] = {"31", "29", "31", "30", "31", "30", "31", "31", "30", "31", "30", "31"};
+
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[formatAddNewCardReq]\n", getDateTime(), PID);
+
+	memset(&cardTabRec.liveChar, ' ', sizeof cardTabRec);
+	cardTabRec.liveChar = '@';
+	if ( cardType == 'R' )
+	{
+		/* CBS 
+		if ( primaryOrSupplementary == 'P' ) /* Primary *
+			sprintf(tmpStr, "588848%c0%.7s001", custLogRec.branchCode[1], custNo);
+		else
+			sprintf(tmpStr, "588848%c0%.7s002", custLogRec.branchCode[1], custNo);*/
+		strncpy(cardTabRec.cardNo, tmpStr, 18);
+		cardTabRec.cardNo[18] = luhnCheckDigit(tmpStr)+'0';
+	}
+	else  /* Electron International or VIP*/
+	{
+		if ( primaryOrSupplementary == 'P' )
+			sprintf(tmpStr, "45503610%.7s", custNo);
+		else
+			sprintf(tmpStr, "45503620%.7s", custNo);
+		strncpy(cardTabRec.cardNo, tmpStr, 15);
+		cardTabRec.cardNo[15] = luhnCheckDigit(tmpStr)+'0';
+	}
+	strncpy(cardTabRec.requestDateTime, dateTime, 14);
+	cardTabRec.requestStatus = '1'; /* Approved */
+	cardTabRec.pinRequestStatus = '1'; /* Approved */
+	cardTabRec.requestType = '0';  /* Initial */
+	cardTabRec.source = 'S'; /* S - Static */
+	strncpy(cardTabRec.requestBranch, branchCode, 4);
+	strncpy(cardTabRec.requestUserId, userId, 10);
+	cardTabRec.cardType = cardType; 
+	cardTabRec.newOrReplacement=newOrReplacement;
+	cardTabRec.primaryOrSupplementary=primaryOrSupplementary;
+	cardTabRec.cardStatus='0';
+	cardTabRec.regionCode= custBranchCode[1];
+
+	sprintf(tmpStr, "01008%.7s00", custNo);
+	strncpy(cardTabRec.bmAccNo, tmpStr, 14);
+	cardTabRec.languageCode = '2'; /* Arabic/English */
+
+/* CBS
+	strncpy(cardTabRec.titleCode, custLogRec.titleCode, 2);
+	strncpy(cardTabRec.idNo, custLogRec.idNo, 15);
+	*/
+	if ( deliveryToBranchOrPO == 'B' )
+		cardTabRec.deliveryToBranchOrPO = 'C';
+	else
+		cardTabRec.deliveryToBranchOrPO = deliveryToBranchOrPO;
+	strncpy(cardTabRec.customerBranch, custBranchCode, 4);
+	strncpy(cardTabRec.nameOnTheCard, nameOnCard, 26);
+	/* CBS
+	strncpy(cardTabRec.address1, custLogRec.deliveryAddress1, 30);
+	strncpy(cardTabRec.address2, custLogRec.deliveryAddress2, 30);
+	strncpy(cardTabRec.poBox, custLogRec.deliveryPoBox, 10);
+	strncpy(cardTabRec.cityName, custLogRec.deliveryCity, 20);
+	strncpy(cardTabRec.zipCode, custLogRec.deliveryZip, 10);
+	*/
+	getDateTime();
+	sprintf(tmpStr, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+	strncpy(cardTabRec.firstIssueDate, tmpStr, 8);
+	strncpy(cardTabRec.renewalDate, tmpStr, 8);
+
+	sprintf(tmpStr,"%04d", systemDate->tm_year+1900+2);
+	tYear = atoi(tmpStr);
+
+	if ( tYear % 400 == 0 || (tYear % 4 == 0 && tYear % 100 == 0) )
+		strcpy(monthDays[1],"29");
+	else
+		strcpy(monthDays[1],"28");
+
+	sprintf(tmpStr, "%04d%02d%.2s", systemDate->tm_year+1900+2, systemDate->tm_mon+1, monthDays[systemDate->tm_mon]);
+	strncpy(cardTabRec.expireDate, tmpStr, 8);
+	/* CBS
+	strncpy(cardTabRec.lastUpdateUser,custLogRec.supervisorId, 10);	
+	*/
+	sprintf(tmpStr, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+	strncpy(cardTabRec.lastUpdateDateTime, tmpStr, 14);
+	if ( extraDebug > 4 )
+	{
+		fprintf(logFp, "%s|%5d| [formatAddNewCardReq] Before writing stcardtab file [%d] \n", getDateTime(), PID, cardTabFile);
+		fflush(logFp);
+	}
+	if ( isWrite(cardTabFile, &cardTabRec.liveChar) < 0 )
+	{
+		fprintf(logFp, "%s|%5d|[formatAddNewCardReq] ISWRITE error %d while writing card request into card file for card # %.19s\n", getDateTime(), PID, iserrno, cardTabRec.cardNo);
+		fflush(logFp);
+		fprintf(errLogFp, "%s :formatAddNewCardReq :ISWRITE error %d while writing card request into card file for card # %.19s\n", getDateTime(), iserrno, cardTabRec.cardNo);
+		fflush(errLogFp);
+		return FAILURE; /* no need to abort as this function is not that much critical */
+	}
+
+	memset(&cardLogRec.liveChar, ' ', sizeof cardLogRec);
+
+	cardLogRec.liveChar = '@';
+
+	strncpy(cardLogRec.branchCode, cardTabRec.requestBranch, 4);
+	strncpy(cardLogRec.userId, cardTabRec.requestUserId, 10);
+	strncpy(cardLogRec.dateTime, cardTabRec.requestDateTime, 14);
+
+	cardLogRec.newOrUpdate = 'N'; 
+	cardLogRec.bmUpdateStatus = '9'; /* Completed */
+	/* CBS
+	strncpy(cardLogRec.supervisorId, custLogRec.supervisorId, 10);
+	*/
+
+	strncpy(cardLogRec.cardNo, cardTabRec.cardNo, 19);
+
+	cardLogRec.requestStatus = cardTabRec.requestStatus;
+	strncpy(&cardLogRec.cardType, &cardTabRec.cardType, 374);
+	cardLogRec.pinRequestStatus = cardTabRec.pinRequestStatus;
+
+	cardLogRec.requestType = '0'; /* Initial */
+
+	/*CBS 
+	strncpy(cardLogRec.lastUpdateUser, custLogRec.supervisorId, 10);*/
+	getDateTime();
+	sprintf(tmpStr, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+	strncpy(cardLogRec.lastUpdateDateTime, tmpStr, 14);
+	strncpy(cardLogRec.processDateTime, cardTabRec.processDateTime,14);
+
+	if ( extraDebug > 4 )
+	{
+		fprintf(logFp, "%s|%5d| [formatAddNewCardReq] Before writing stcardlog file [%d] \n", getDateTime(), PID, cardLogFile);
+		fflush(logFp);
+	}
+	if ( isWrite(cardLogFile, &cardLogRec.liveChar) < 0 )
+	{
+		fprintf(logFp,"%s|%5d|[formatAddNewCardReq] ISWRITE error %d on stcardlog ,  key is [%.28s] and the card # is [%.19s] ignored \n", getDateTime(), PID,iserrno, cardLogRec.branchCode, cardLogRec.cardNo );
+		fflush(logFp);
+		fprintf(errLogFp,"%s|%5d| : formatAddNewCardReq :ISWRITE error %d on stcardlog ,  key is [%.28s] and the card # is [%.19s] ignored \n", getDateTime(), PID, iserrno, cardLogRec.branchCode, cardLogRec.cardNo );
+		fflush(errLogFp);
+	}
+	return SUCCESS;
+}
+
+updateCardRequest(char cardType, char newOrReplacement, char primaryOrSupplementary)
+{
+	char tmpStr[100];
+	int cardFound;
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[updateCardRequest] cardType [%c]; newOrReplacement [%c] ; primaryOrSupp [%c]\n", getDateTime(), PID, cardType, newOrReplacement, primaryOrSupplementary);
+
+	memset(&cardLogRec.liveChar, ' ', sizeof cardLogRec);
+
+	strncpy(cardLogRec.branchCode, receivedMsg.supDecision.homeBranch,4);
+	strncpy(cardLogRec.userId, receivedMsg.supDecision.userId,10);
+	strncpy(cardLogRec.dateTime, receivedMsg.supDecision.dateTime,14);
+
+	isindexinfo(cardLogFile, &cardLogKey, 1);
+	if ( isstart(cardLogFile,&cardLogKey,0,&cardLogRec.liveChar,ISGTEQ) < 0 )
+	{
+		fprintf(logFp, "%s|%5d|[updateCardRequest] ISSTART error %d on stcardlog for the key [%.28s] during updateCardRequest \n", getDateTime(), PID, iserrno, cardLogRec.branchCode);
+		fflush(logFp);
+		sprintf(tmpStr, "ISSTART error %d occured on stcardlog ", iserrno);
+		formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+		return FAILURE;
+	}
+
+	cardFound = NO;
+	while ( isRead(cardLogFile, &cardLogRec.liveChar, ISNEXT) == 0 )
+	{
+		if ( strncmp(cardLogRec.branchCode, receivedMsg.supDecision.homeBranch,4) ||
+			 strncmp(cardLogRec.userId, receivedMsg.supDecision.userId, 10) ||
+			 strncmp(cardLogRec.dateTime, receivedMsg.supDecision.dateTime, 14) )
+			break;
+
+		if ( cardLogRec.primaryOrSupplementary == primaryOrSupplementary )
+		{
+			cardFound = YES;
+			break;
+		}
+	}
+
+	if ( cardFound == NO )
+	{
+		fprintf(logFp, "%s|%5d|[updateCardRequest] No %s card found in stcardlog for the key [%.4s%.10s%.14s] \n", getDateTime(), PID, primaryOrSupplementary=='P'?"Primary":"Supplementary", receivedMsg.supDecision.homeBranch, receivedMsg.supDecision.userId, receivedMsg.supDecision.dateTime); 
+		sprintf(tmpStr, "No card found in stcardlog for the key [%.4s%.10s%.14s]", receivedMsg.supDecision.homeBranch, receivedMsg.supDecision.userId, receivedMsg.supDecision.dateTime);
+		formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+		return FAILURE;
+	}
+
+	cardLogRec.bmUpdateStatus = '9';
+
+	memset(&cardTabRec.liveChar, ' ',sizeof cardTabRec);
+
+	strncpy(cardTabRec.cardNo, cardLogRec.cardNo, 19);
+
+	isindexinfo(cardTabFile, &cardTabKey, 1);
+	if( isstart(cardTabFile, &cardTabKey, 0, &cardTabRec.liveChar,ISGTEQ ) < 0 )
+	{
+		fprintf(logFp, "%s|%5d|[updateCardRequest] ISSTART/ISGTEQ error %d occured on stcardtab file for card # [%.19s] during updateCardRequest()\n", getDateTime(), PID, iserrno, cardTabRec.cardNo);
+		fflush(logFp);
+		sprintf(tmpStr, "ISSTART/ISGTEQ error %d occured on stcardtab", iserrno);
+		formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+		return FAILURE;
+	}
+
+	if ( readCardTabFile(ISEQUAL) < 0 )
+	{
+		return FAILURE ;
+	}
+
+	if ( cardLogRec.requestType == '0' ) /* Initial Card */
+	{
+		strncpy(cardTabRec.nameOnTheCard, cardLogRec.nameOnTheCard, 26);
+		cardTabRec.deliveryToBranchOrPO = cardLogRec.deliveryToBranchOrPO;
+		strncpy(cardTabRec.address1, cardLogRec.address1,30);
+		strncpy(cardTabRec.address2, cardLogRec.address2,30);
+		strncpy(cardTabRec.poBox, cardLogRec.poBox, 10);
+		strncpy(cardTabRec.cityName, cardLogRec.cityName, 30);
+		strncpy(cardTabRec.zipCode, cardLogRec.zipCode, 10);
+		cardTabRec.requestStatus = '1'; /* Approved */
+		cardTabRec.pinRequestStatus = '1'; /* Approved */
+		memset(cardTabRec.processDateTime, ' ', sizeof cardTabRec.processDateTime);
+		cardTabRec.branchPinSelect = 'N';
+		cardTabRec.branchCardPrdn = 'N';
+		strncpy(cardTabRec.pinOffset, cardLogRec.pinOffset, 4);
+		strncpy(cardTabRec.cvv, cardLogRec.cvv, 3);
+		strncpy(cardTabRec.pvv, cardLogRec.pvv, 4);
+		strncpy(cardTabRec.requestBranch, cardLogRec.branchCode, 4);
+		strncpy(cardTabRec.requestUserId, cardLogRec.userId, 10);
+		strncpy(cardTabRec.requestDateTime, cardLogRec.dateTime, 14);
+		cardTabRec.requestType = '0'; /* Initial */
+	}
+
+	strncpy(cardTabRec.lastUpdateUser, receivedMsg.cardApproval.supervisorId, 10);	
+	sprintf(tmpStr, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+	strncpy(cardTabRec.lastUpdateDateTime, tmpStr, 14);
+
+	if ( updateCardTabFile() < 0 )
+	{
+		return FAILURE;
+	}
+
+	cardLogRec.newOrUpdate = 'N';
+	cardLogRec.bmUpdateStatus = '9'; /* Completed */
+	cardLogRec.requestStatus = cardTabRec.requestStatus;
+	strncpy(&cardLogRec.cardType, &cardTabRec.cardType, 374);
+	cardLogRec.pinRequestStatus = cardTabRec.pinRequestStatus;
+	strncpy(cardLogRec.processDateTime, cardTabRec.processDateTime,14);
+	strncpy(cardLogRec.supervisorId, receivedMsg.supDecision.supervisorId,10);
+	strncpy(cardLogRec.lastUpdateUser, receivedMsg.supDecision.supervisorId, 10);	
+	sprintf(tmpStr, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+	strncpy(cardLogRec.lastUpdateDateTime, tmpStr, 14);
+
+	if ( updateCardLogFile() < 0)
+	{
+		return FAILURE;
+	}
+
+	if ( primaryOrSupplementary == 'P' )
+	{
+		strncpy(responseMsg.superDecision.primaryCard.cardNo, cardTabRec.cardNo, 19);
+		strncpy(responseMsg.superDecision.primaryCard.nameOnTheCard, cardTabRec.nameOnTheCard, 26);
+		strncpy(responseMsg.superDecision.primaryCard.custBranchCode, cardTabRec.customerBranch, 4);
+		strncpy(responseMsg.superDecision.primaryCard.cardExpiryDate, cardTabRec.expireDate, 6);
+		getTrackInfo(cardTabRec.cvv, cardTabRec.pvv);
+		strncpy(responseMsg.superDecision.primaryCard.trk1, trk1, 75);
+		strncpy(responseMsg.superDecision.primaryCard.trk2, trk2, 37);
+		responseMsg.superDecision.primaryCard.branchPinSelect = cardLogRec.branchPinSelect;
+	}
+
+	if ( primaryOrSupplementary == 'S' )
+	{
+		strncpy(responseMsg.superDecision.suppCard.cardNo, cardTabRec.cardNo, 19);
+		strncpy(responseMsg.superDecision.suppCard.nameOnTheCard, cardTabRec.nameOnTheCard, 26);
+		strncpy(responseMsg.superDecision.suppCard.custBranchCode, cardTabRec.customerBranch, 4);
+		strncpy(responseMsg.superDecision.suppCard.cardExpiryDate, cardTabRec.expireDate, 6);
+		getTrackInfo(cardTabRec.cvv, cardTabRec.pvv);
+		strncpy(responseMsg.superDecision.suppCard.trk1, trk1, 75);
+		strncpy(responseMsg.superDecision.suppCard.trk2, trk2, 37);
+		responseMsg.superDecision.suppCard.branchPinSelect = cardLogRec.branchPinSelect;
+	}
+
+	return SUCCESS;
+}
+
+updateCardAddress(char *custNo)
+{
+	char tmpStr[50];
+
+	memset(&cardTabRec.liveChar, ' ', sizeof cardTabRec);
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[updateCardAddress]\n", getDateTime(), PID);
+
+	isindexinfo(cardTabFile, &cardTabKey, 4);
+	strncpy(&cardTabRec.bmAccNo[5], custNo, 7);
+	isstart(cardTabFile, &cardTabKey, 0, &cardTabRec.liveChar, ISGTEQ);
+
+	while ( isRead(cardTabFile, &cardTabRec.liveChar, ISNEXT) == 0 )
+	{
+		if ( strncmp(&cardTabRec.bmAccNo[5], custNo,7) )
+			break;
+
+		if ( cardTabRec.cardStatus == '9' || cardTabRec.cardStatus == '2' || cardTabRec.cardStatus == '3' ) /* ignore closed/deactivated cards */
+			continue;
+
+		if ( cardTabRec.deliveryToBranchOrPO == 'P' )
+		{
+			/* CBS
+			if ( strncmp(custLogRec.deliveryAddress1, "                                  ", 30) == 0 &&
+				 strncmp(custLogRec.deliveryPoBox, "                    ", 10) == 0 &&
+				 strncmp(custLogRec.deliveryCity, "                      ", 20) == 0 &&
+				 strncmp(custLogRec.deliveryZip, "               ", 10) == 0 )
+			{
+
+				strncpy(cardTabRec.address1, custLogRec.address1, 30);
+				strncpy(cardTabRec.poBox , custLogRec.poBox, 10);
+				strncpy(cardTabRec.cityName, custLogRec.cityName, 20);
+				strncpy(cardTabRec.zipCode, custLogRec.zipCode, 10);
+			}
+			else
+			{
+				strncpy(cardTabRec.address1, custLogRec.deliveryAddress1, 30);
+				strncpy(cardTabRec.poBox , custLogRec.deliveryPoBox, 10);
+				strncpy(cardTabRec.cityName, custLogRec.deliveryCity, 20);
+				strncpy(cardTabRec.zipCode, custLogRec.deliveryZip, 10);
+			}
+			*/
+		}
+		else
+			continue;
+
+		fprintf(logFp, "%s|%5d|[updateCardAddress] :About to update address for the card # [%.19s]\n", getDateTime(), PID, cardTabRec.cardNo);
+		if ( isRewcurr(cardTabFile, &cardTabRec.liveChar) < 0 )
+		{
+			fprintf(logFp, "%s|%5d|[updateCardAddress] ISREWCURR error %d occured while updating the delivery address in stcardtab for the card # [%.19s] IGNORED\n", getDateTime(), PID, iserrno, cardTabRec.cardNo);
+			fflush(logFp);
+			fprintf(errLogFp, "%s: updateCardAddress() : ISREWCURR error %d occured while updating the delivery address in stcardtab for the card # [%.19s] IGNORED\n", iserrno, cardTabRec.cardNo);
+			fflush(errLogFp);
+		}
+
+		/* Now, add a record in stcardlog for history purpose */
+
+		memset(&cardLogRec.liveChar, ' ', sizeof cardLogRec);
+		cardLogRec.liveChar = '@';
+		strncpy(cardLogRec.branchCode, cardTabRec.requestBranch, 4);
+		strncpy(cardLogRec.userId, "CUST_UPD    ", 10);
+		getDateTime();
+		sprintf(tmpStr, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+		strncpy(cardLogRec.dateTime, tmpStr, 14);
+		cardLogRec.newOrUpdate = 'U'; 
+		cardLogRec.bmUpdateStatus = '9'; /* completed */
+		strncpy(cardLogRec.supervisorId, "CUST_UPD     ", 10); 
+		strncpy(cardLogRec.cardNo, cardTabRec.cardNo, 19);
+		cardLogRec.requestStatus = cardTabRec.requestStatus;
+
+		strncpy(&cardLogRec.cardType, &cardTabRec.cardType, 374);
+		cardLogRec.requestType = '6'; /* Change address */
+		getDateTime();
+		sprintf(tmpStr, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+		strncpy(cardLogRec.processDateTime, tmpStr, 14);
+		memset(cardLogRec.cardGeneratedDate, ' ', 54);
+		memset(cardLogRec.pinGeneratedDate, ' ', 54);
+		strncpy(cardLogRec.lastUpdateUser, "CUST_UPD    ", 10);
+		getDateTime();
+		sprintf(tmpStr, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+		strncpy(cardLogRec.lastUpdateDateTime, tmpStr, 14);
+
+		if ( isWrite(cardLogFile, &cardLogRec.liveChar) < 0 )
+		{
+			fprintf(logFp, "%s|%5d|[updateCardAddress] ISWRITE error %d occured on stcardlog while inserting a record (while changing address) for history purpose IGNORED ; the key is [%.28s] & the card number is [%.19s]\n", getDateTime(), PID, iserrno, cardLogRec.branchCode, cardLogRec.cardNo);
+			fflush(logFp);
+		}
+	}
+	return SUCCESS;
+}
+
+formatAddCardRequest(char cardType, char newOrReplacement, char primaryOrSupplementary, char *nameOnCard , int primaryAcc)
+{
+	char  tmpStr[50];
+	char  tCardNo[25];
+	int   tYear=0;
+	char  monthDays[15][4] = {"31", "29", "31", "30", "31", "30", "31", "31", "30", "31", "30", "31"};
+
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[formatAddCardRequest]\n", getDateTime(), PID);
+
+	memset(&cardTabRec.liveChar, ' ', sizeof cardTabRec);
+	cardTabRec.liveChar = '@';
+	if ( cardType == 'R' )
+	{
+		/* CBS
+		if ( primaryOrSupplementary == 'P' ) /* Primary *
+			   sprintf(tmpStr, "588848%c0%.7s001", custLogRec.branchCode[1], custLogRec.custNo);
+		else
+			sprintf(tmpStr, "588848%c0%.7s002", custLogRec.branchCode[1], custLogRec.custNo);*/
+		strncpy(cardTabRec.cardNo, tmpStr, 18);
+		cardTabRec.cardNo[18] = luhnCheckDigit(tmpStr)+'0';
+	}
+	else  /* Electron International or VIP*/
+	{
+		/* CBS
+		if ( primaryOrSupplementary == 'P' )
+			sprintf(tmpStr, "45503601%.7s", custLogRec.custNo);
+		else
+			sprintf(tmpStr, "45503602%.7s", custLogRec.custNo);*/
+
+		strncpy(cardTabRec.cardNo, tmpStr, 15);
+		cardTabRec.cardNo[15] = luhnCheckDigit(tmpStr)+'0';
+	}
+	/*strncpy(cardTabRec.requestDateTime, custLogRec.dateTime, 14);*/
+	cardTabRec.requestStatus = '0'; /* Requested */
+	cardTabRec.pinRequestStatus = '0'; /* Requested */
+	cardTabRec.requestType = '0';  /* Initial */
+	cardTabRec.source = 'S'; /* S - Static */
+	/*strncpy(cardTabRec.requestBranch, custLogRec.branchCode, 4);*/
+	/*strncpy(cardTabRec.requestUserId, custLogRec.userId, 10);*/
+	cardTabRec.cardType = cardType; 
+	cardTabRec.newOrReplacement=newOrReplacement;
+	cardTabRec.primaryOrSupplementary=primaryOrSupplementary;
+	cardTabRec.cardStatus='0';/* Requested */
+	/*cardTabRec.regionCode = custLogRec.custBranchCode[1];*/
+
+	/*sprintf(tmpStr, "0100%d%.7s00", primaryAcc, custLogRec.custNo); */
+	strncpy(cardTabRec.bmAccNo, tmpStr, 14);
+	cardTabRec.languageCode = '2'; /* Arabic/English */
+	/*strncpy(cardTabRec.titleCode, custLogRec.titleCode, 2);*/
+	/*strncpy(cardTabRec.idNo, custLogRec.idNo, 15);*/
+	/* CBS
+	if ( cardLogRec.deliveryToBranchOrPO == 'B' )
+		cardTabRec.deliveryToBranchOrPO = 'C';
+	else
+		cardTabRec.deliveryToBranchOrPO = cardLogRec.deliveryToBranchOrPO;
+	*/
+	/*strncpy(cardTabRec.customerBranch, custLogRec.custBranchCode, 4);*/
+	strncpy(cardTabRec.nameOnTheCard, nameOnCard, 26);
+	/*CBS
+	strncpy(cardTabRec.address1, custLogRec.deliveryAddress1, 30);
+	strncpy(cardTabRec.address2, custLogRec.deliveryAddress2, 30);
+	strncpy(cardTabRec.poBox, custLogRec.deliveryPoBox, 10);
+	strncpy(cardTabRec.cityName, custLogRec.deliveryCity, 20);
+	strncpy(cardTabRec.zipCode, custLogRec.deliveryZip, 10);
+	*/
+	getDateTime();
+	sprintf(tmpStr, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+	strncpy(cardTabRec.firstIssueDate, tmpStr, 8);
+	strncpy(cardTabRec.renewalDate, tmpStr, 8);
+
+	sprintf(tmpStr,"%04d", systemDate->tm_year+1900+2);
+	tYear = atoi(tmpStr);
+
+	if ( tYear % 400 == 0 || (tYear % 4 == 0 && tYear % 100 == 0) )
+		strcpy(monthDays[1],"29");
+	else
+		strcpy(monthDays[1],"28");
+
+	sprintf(tmpStr, "%04d%02d%.2s", systemDate->tm_year+1900+2, systemDate->tm_mon+1, monthDays[systemDate->tm_mon]);
+	strncpy(cardTabRec.expireDate, tmpStr, 8);
+	/*strncpy(cardTabRec.lastUpdateUser,custLogRec.userId, 10);	*/
+	sprintf(tmpStr, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+	strncpy(cardTabRec.lastUpdateDateTime, tmpStr, 14);
+
+	memset(&cardLogRec.liveChar, ' ', sizeof cardLogRec);
+
+	cardLogRec.liveChar = '@';
+
+	strncpy(cardLogRec.branchCode, cardTabRec.requestBranch, 4);
+	/*strncpy(cardLogRec.userId, cardTabRec.requestUserId, 10);*/
+	strncpy(cardLogRec.userId, receivedMsg.customer.userId, 10);
+	/*strncpy(cardLogRec.dateTime, cardTabRec.requestDateTime, 14);*/
+	strncpy(cardLogRec.dateTime, receivedMsg.customer.dateTime, 14);
+	strncpy(cardLogRec.cardNo, cardTabRec.cardNo, 19);
+
+	if ( receivedMsg.customer.creationOrUpdate == 'U' )
+	{
+		isindexinfo(cardLogFile, &cardLogKey, 1);
+		isstart(cardLogFile, &cardLogKey, 0, &cardLogRec.liveChar, ISGTEQ);
+		if ( readCardLogFile(ISEQUAL) < 0 )
+			return FAILURE; 
+		/* CBS
+		strncpy(cardLogRec.userId, custLogRec.userId, 10); 
+		strncpy(cardLogRec.dateTime, custLogRec.dateTime, 14);
+		*/
+		strncpy(cardTabRec.pinOffset, cardLogRec.pinOffset, 4);
+		strncpy(cardTabRec.cvv, cardLogRec.cvv, 3);
+		strncpy(cardTabRec.pvv, cardLogRec.pvv, 4);
+	}
+
+	cardLogRec.newOrUpdate = 'N'; 
+	cardLogRec.bmUpdateStatus = ' '; 
+	/*strncpy(cardLogRec.supervisorId, custLogRec.supervisorId, 10);*/
+
+	cardLogRec.requestStatus = cardTabRec.requestStatus;
+
+	strncpy(&cardLogRec.cardType, &cardTabRec.cardType, 374);
+	cardLogRec.pinRequestStatus = cardTabRec.pinRequestStatus;
+	cardLogRec.requestType = '0'; /* Initial */
+
+	/*strncpy(cardLogRec.lastUpdateUser, custLogRec.userId, 10);*/
+	getDateTime();
+	sprintf(tmpStr, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+	strncpy(cardLogRec.lastUpdateDateTime, tmpStr, 14);
+	strncpy(cardLogRec.processDateTime, cardTabRec.processDateTime,14);
+
+	if ( receivedMsg.customer.creationOrUpdate == 'C' )
+	{
+		sprintf(tCardNo, "%.19s", cardTabRec.cardNo);
+		do
+		{
+			if ( checkExistance(tCardNo) == FAILURE )
+				break;
+
+			if ( cardLogRec.cardType == cardTabRec.cardType && cardLogRec.primaryOrSupplementary == 'P' && cardLogRec.cardType != 'A') /* check whether primary electron/intl/deposit card already exist */
+			{
+				if ( cardTabRec1.cardStatus != '1' && cardTabRec1.cardStatus != '4' && cardTabRec1.primaryOrSupplementary == 'P' )
+				{
+					if ( cardTabRec.primaryOrSupplementary == 'P' )
+						cardTabRec.newOrReplacement = 'R';
+				}
+			}
+
+			if ( incCard(cardTabRec.cardType, tCardNo) == FAILURE )
+			{
+				formatBranchResponse(INTERNALERR, "Card Range have been exhausted..", "Card Range have been exhausted..");
+				return FAILURE;
+			}
+		} while(1);
+
+		strncpy(cardTabRec.cardNo, tCardNo, 19);
+	}
+	strncpy(cardLogRec.cardNo, cardTabRec.cardNo, 19);
+
+	if ( receivedMsg.customer.creationOrUpdate == 'C' )
+	{
+		cardLogRec.branchPinSelect = 'N';
+		cardLogRec.branchCardPrdn  = 'N'; 
+		if ( extraDebug > 4 )
+		{
+			fprintf(logFp, "%s|%5d| [formatAddCardRequest] Before writing stcardlog file [%d] \n", getDateTime(), PID, cardLogFile);
+			fflush(logFp);
+		}
+		if ( isWrite(cardLogFile, &cardLogRec.liveChar) < 0 )
+		{
+			fprintf(logFp,"%s|%5d|[formatAddCardRequest] : ISWRITE error %d on stcardlog , key is [%.28s] and the card # is [%.19s] \n", getDateTime(), PID, iserrno, cardLogRec.branchCode, cardLogRec.cardNo );
+			fflush(logFp);
+			if  ( iserrno == 100 || iserrno == 108 )
+			{
+				sprintf(tmpStr, "Duplicate record [%.28s] on stcardlog",cardLogRec.branchCode);
+				formatBranchResponse(DUPLICATE, tmpStr, tmpStr);
+			}
+			else if ( iserrno == 107 || iserrno == 113 )
+			{
+				sprintf(tmpStr, "Record/File locked on stcardlog" );
+				formatBranchResponse( RECORD_LOCKED, tmpStr, tmpStr);
+			}
+			else
+			{
+				sprintf(tmpStr, "CISAM Error %d occured on stcardlog", iserrno);
+				formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+			}
+			return FAILURE;
+		}
+	}
+	else
+	{
+		if ( isRewcurr(cardLogFile, &cardLogRec.liveChar) < 0 )
+		{
+			fprintf(logFp,"%s|%5d|[formatAddCardRequest] ISREWCURR error %d on stcardlog , key is [%.28s] and the card # is [%.19s] \n", getDateTime(), PID, iserrno, cardLogRec.branchCode, cardLogRec.cardNo );
+			fflush(logFp);
+			if  ( iserrno == 100 || iserrno == 108 )
+			{
+				sprintf(tmpStr, "Duplicate record [%.28s] on stcardlog",cardLogRec.branchCode);
+				formatBranchResponse(DUPLICATE, tmpStr, tmpStr);
+			}
+			else if ( iserrno == 107 || iserrno == 113 )
+			{
+				sprintf(tmpStr, "Record/File locked on stcardlog" );
+				formatBranchResponse( RECORD_LOCKED, tmpStr, tmpStr);
+			}
+			else
+			{
+				sprintf(tmpStr, "CISAM Error %d occured on stcardlog", iserrno);
+				formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+			}
+			return FAILURE;
+		}
+	}
+
+	if ( receivedMsg.customer.newOrUpdate == 'N' && receivedMsg.customer.creationOrUpdate == 'C' )
+	{
+		cardTabRec.branchPinSelect = cardLogRec.branchPinSelect;
+		cardTabRec.branchCardPrdn = cardLogRec.branchCardPrdn;
+		strncpy(cardTabRec.pinOffset, cardLogRec.pinOffset, 4);
+		strncpy(cardTabRec.cvv, cardLogRec.cvv, 3);
+		strncpy(cardTabRec.pvv, cardLogRec.pvv, 4);
+
+		if ( extraDebug > 4 )
+		{
+			fprintf(logFp, "%s|%5d| [formatAddCardRequest] Before writing stcardtab file [%d] \n", getDateTime(), PID, cardTabFile);
+			fflush(logFp);
+		}
+		if ( isWrite(cardTabFile, &cardTabRec.liveChar) < 0 )
+		{
+			fprintf(logFp, "%s|%5d|[formatAddCardRequest] ISWRITE error %d while writing card request into card file for card # %.19s\n", getDateTime(), PID, iserrno, cardTabRec.cardNo);
+			fflush(logFp);
+			if  ( iserrno == 100 || iserrno == 108 )
+			{
+				sprintf(tmpStr, "Duplicate record [%.19s] on stcardtab", cardTabRec.cardNo);
+				formatBranchResponse(DUPLICATE, tmpStr, tmpStr);
+			}
+			else if ( iserrno == 107 || iserrno == 113 )
+			{
+				sprintf(tmpStr, "Record/File locked on stcardtab");
+				formatBranchResponse( RECORD_LOCKED, tmpStr, tmpStr);
+			}
+			else
+			{
+				sprintf(tmpStr, "CISAM Error %d occured on stcardtab", iserrno);
+				formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+			}
+			return FAILURE;
+		}
+	}
+	return SUCCESS;
+}
+
+processSearchRequest()
+{
+	int lastRecRcvd, recCount=0, recsInThisMsg = 0, searchType = 0, i, nameLen, nameLen1, nameLen2;
+	int readCount=0;
+	char tmpStr[100]; 
+	unsigned char tmpChar;
+
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[processSearchRequest]\n", getDateTime(), PID);
+
+	/* format the response message */
+
+	memset(responseMsg.search.msgLen, ' ', sizeof responseMsg.search);
+	responseMsg.search.nullPad = '\0';
+
+	sprintf(tmpStr, "%.5s", receivedMsg.search.lastRecCount);
+	lastRecRcvd = atoi(tmpStr);
+
+	memset(&custTabRec.liveChar, ' ', sizeof custTabRec);
+	if ( strncmp(receivedMsg.search.custNo, "       ", 7 ) )  
+	{ 
+		searchType = SEARCH_BY_CUSTNO;
+		isindexinfo(custTabFile, &custTabKey, 1);
+		strncpy(custTabRec.custNo, receivedMsg.search.custNo, 7);
+		isstart(custTabFile, &custTabKey, 0, &custTabRec.liveChar, ISGTEQ);
+	}
+	else if ( strncmp(receivedMsg.search.cardNo, "                     ", 19) )
+	{
+		if ( openCardTabFile(ISMANULOCK+ISINOUT) < 0 ) 
+		{
+			responseMsg.search.details[recsInThisMsg+1].custNo[0] = '\0';
+			sendResponse(responseMsg.search.msgLen);
+			return FAILURE;
+		}
+		memset(&cardTabRec.liveChar, ' ', sizeof cardTabRec);
+		strncpy(cardTabRec.cardNo, receivedMsg.search.cardNo,19);
+		isindexinfo(cardTabFile, &cardTabKey, 1);
+		isstart(cardTabFile, &cardTabKey, 0, &cardTabRec.liveChar, ISGTEQ);
+		if ( isRead(cardTabFile, &cardTabRec.liveChar, ISEQUAL) < 0 )
+		{
+			fprintf(logFp,"%s|%5d|: [processSearchRequest] ISREAD/ISEQUAL error %d while reading stcardtab.dat for key [%-19.19s]\n", getDateTime(), PID, iserrno, maskCardNo(cardTabRec.cardNo, tmpStr));
+			fflush(logFp);
+			if ( iserrno == 111 || iserrno == 110 )
+				sprintf(tmpStr,"Invalid card number entered.. Please check");
+			else
+				sprintf(tmpStr,"Error %d while reading stcardtab.dat ",iserrno);
+			responseMsg.search.details[recsInThisMsg+1].custNo[0] = '\0';
+			formatSearchResponse(INTERNALERR, tmpStr, tmpStr);
+			sendResponse(responseMsg.search.msgLen);
+			return FAILURE;
+		}
+		fprintf(logFp, "%s|%5d|[processSearchRequest] : Card sequence number [%.10s] \n", getDateTime(), PID, cardTabRec.sequenceNo);
+		fflush(logFp);
+
+		searchType = SEARCH_BY_CUSTNO;
+		isindexinfo(custTabFile, &custTabKey, 1);
+		strncpy(custTabRec.custNo, &cardTabRec.bmAccNo[5], 7);
+		strncpy(receivedMsg.search.custNo, custTabRec.custNo, 7);
+		isstart(custTabFile, &custTabKey, 0, &custTabRec.liveChar, ISGTEQ);
+	}
+	else if ( strncmp(receivedMsg.search.idNo, "          ", 5) || strncmp(receivedMsg.search.crNo, "                 ", 15) )
+	{
+		searchType = SEARCH_BY_ID;
+		isindexinfo(custTabFile, &custTabKey, 3);
+		if ( strncmp(receivedMsg.search.idNo, "                  ",15) )
+			strncpy(custTabRec.idNo, receivedMsg.search.idNo, 15);
+		else
+		{
+			strncpy(custTabRec.idNo, receivedMsg.search.crNo, 15);
+			strncpy(receivedMsg.search.idNo, receivedMsg.search.crNo, 15);
+		}
+		custTabRec.idType = receivedMsg.search.idType;
+		isstart(custTabFile, &custTabKey, 15, &custTabRec.liveChar, ISGTEQ);
+	}
+	else if ( strncmp(receivedMsg.search.telNo, "          ", 5) )
+	{
+		searchType = SEARCH_BY_TEL;
+		isindexinfo(custTabFile, &custTabKey, 4);
+		strncpy(custTabRec.telHomeNo, receivedMsg.search.telNo, 10);
+		strncpy(custTabRec.telHomeExt, receivedMsg.search.telExt, 4);
+		isstart(custTabFile, &custTabKey, 14, &custTabRec.liveChar, ISGTEQ);
+	}
+	else if ( strncmp(receivedMsg.search.firstName, "          ", 5) )
+	{
+		for (i=0; i < 5 && receivedMsg.search.firstName[i] == ' '; i++ );
+		tmpChar = receivedMsg.search.firstName[i];
+		for (i=14; i >=0 && receivedMsg.search.firstName[i] == ' '; i--);
+		nameLen = ++i;
+		fprintf(logFp, "FirstName = %.15s; length=%d\n", receivedMsg.search.firstName, nameLen);
+		fflush(logFp);
+		if ( tmpChar > 128 )
+		{
+			searchType = SEARCH_BY_FIRSTNAME_A;
+			isindexinfo(custTabFile, &custTabKey, 5);
+			strncpy(custTabRec.aFirstName, receivedMsg.search.firstName, 15);
+			isstart(custTabFile, &custTabKey, 15, &custTabRec.liveChar, ISGTEQ);
+		}
+		else
+		{
+			searchType = SEARCH_BY_FIRSTNAME_E;
+			isindexinfo(custTabFile, &custTabKey, 7);
+			strncpy(custTabRec.eFirstName, receivedMsg.search.firstName, 15);
+			isstart(custTabFile, &custTabKey, 15, &custTabRec.liveChar, ISGTEQ);
+		}
+		if ( strncmp(receivedMsg.search.secondName, "                 ", 15) )
+		{
+			for (i=14; i >=0 && receivedMsg.search.secondName[i] == ' '; i--);
+			nameLen1 = ++i;
+			fprintf(logFp, "SecondName = %.15s; length=%d\n", receivedMsg.search.secondName, nameLen1);
+		}
+
+		if ( strncmp(receivedMsg.search.lastName, "                 ", 15) )
+		{
+			for (i=14; i >=0 && receivedMsg.search.lastName[i] == ' '; i--);
+			nameLen2 = ++i;
+			fprintf(logFp, "LastName = %.15s; length=%d\n", receivedMsg.search.lastName, nameLen2);
+		}
+	}
+	else if ( strncmp(receivedMsg.search.secondName, "          ", 5) )
+	{
+		for (i=0; i < 5 && receivedMsg.search.secondName[i] == ' '; i++ );
+		tmpChar = receivedMsg.search.secondName[i];
+		for (i=14; i >=0 && receivedMsg.search.secondName[i] == ' '; i--);
+		nameLen = ++i;
+		fprintf(logFp, "SecondName = %.15s; length=%d\n", receivedMsg.search.secondName, nameLen);
+		if ( tmpChar > 128 )
+		{
+			searchType = SEARCH_BY_SECONDNAME_A;
+			isindexinfo(custTabFile, &custTabKey, 11);
+			strncpy(custTabRec.a2ndName, receivedMsg.search.secondName, 15);
+			isstart(custTabFile, &custTabKey, 15, &custTabRec.liveChar, ISGTEQ);
+		}
+		else
+		{
+			searchType = SEARCH_BY_SECONDNAME_E;
+			isindexinfo(custTabFile, &custTabKey, 12);
+			strncpy(custTabRec.e2ndName, receivedMsg.search.secondName, 15);
+			isstart(custTabFile, &custTabKey, 15, &custTabRec.liveChar, ISGTEQ);
+		}
+
+		if ( strncmp(receivedMsg.search.lastName, "                 ", 15) )
+		{
+			for (i=14; i >=0 && receivedMsg.search.lastName[i] == ' '; i--);
+			nameLen2 = ++i;
+			fprintf(logFp, "LastName = %.15s; length=%d\n", receivedMsg.search.lastName, nameLen2);
+		}
+	}
+	else if ( strncmp(receivedMsg.search.lastName, "          ", 5) )
+	{
+		for (i=0; i < 5 && receivedMsg.search.lastName[i] == ' '; i++ );
+		tmpChar = receivedMsg.search.lastName[i];
+		for (i=14; i >=0 && receivedMsg.search.lastName[i] == ' '; i--);
+		nameLen = ++i;
+		fprintf(logFp, "LastName = %.15s; length=%d\n", receivedMsg.search.lastName, nameLen);
+		if ( tmpChar > 128 )
+		{
+			searchType = SEARCH_BY_LASTNAME_A;
+			isindexinfo(custTabFile, &custTabKey, 6);
+			strncpy(custTabRec.aLastName, receivedMsg.search.lastName, 15);
+			isstart(custTabFile, &custTabKey, 15, &custTabRec.liveChar, ISGTEQ);
+		}
+		else
+		{
+			searchType = SEARCH_BY_LASTNAME_E;
+			isindexinfo(custTabFile, &custTabKey, 8);
+			strncpy(custTabRec.eLastName, receivedMsg.search.lastName, 15);
+			isstart(custTabFile, &custTabKey, 15, &custTabRec.liveChar, ISGTEQ);
+		}
+	}
+	else if ( strncmp(receivedMsg.search.mainCategoryCode, "       ", 4) )
+	{
+		searchType = SEARCH_BY_CATEGORY;
+		isindexinfo(custTabFile, &custTabKey, 10);
+		strncpy(custTabRec.samaMainCategory, receivedMsg.search.mainCategoryCode, 2);
+		strncpy(custTabRec.samaSubCategory, receivedMsg.search.subCategoryCode, 2);
+		isstart(custTabFile, &custTabKey, 4, &custTabRec.liveChar, ISGTEQ);
+	}
+	else if ( strncmp(receivedMsg.search.branchCode, "       ", 4) )
+	{
+		searchType = SEARCH_BY_BRANCH_CODE;
+		isindexinfo(custTabFile, &custTabKey, 2);
+		strncpy(custTabRec.branchCode, receivedMsg.search.branchCode, 4);
+		isstart(custTabFile, &custTabKey, 4, &custTabRec.liveChar, ISGTEQ);
+	}
+	else if ( strncmp(receivedMsg.search.mobileNo, "             ", 10) )
+	{
+		searchType = SEARCH_BY_MOBILE;
+		isindexinfo(custTabFile, &custTabKey, 13); 
+		strncpy(custTabRec.mobileNo, receivedMsg.search.mobileNo, 10);
+		isstart(custTabFile, &custTabKey, 0, &custTabRec.liveChar, ISGTEQ);
+	}
+
+	searchTimeoutFlag=0;
+	signal(SIGALRM, searchAlarm);
+	alarm(searchTimeOut);
+	/*while ( isRead(custTabFile, &custTabRec.liveChar, ISNEXT) == 0 )modified isRead to isread on 13/01/08 as it causes delay */
+	while ( isread(custTabFile, &custTabRec.liveChar, ISNEXT) == 0 )
+	{
+		/*
+		if ( readCount++ > 1000 )
+		{
+			sleep(1); /* to prevent "STATIC server" on top in CPU usage *
+			readCount=0;
+		}
+		*/
+
+		if ( searchTimeoutFlag )
+		{
+			fprintf(logFp, "%s|%5d| Search could not be completed within %d seconds; So, sending the incomplete response to client\n", getDateTime(), PID, searchTimeOut);
+			fflush(logFp);
+			sprintf(tmpStr, "%05d", lastRecRcvd+recsInThisMsg);
+			strncpy(responseMsg.search.lastRecCount, tmpStr, 5);
+			sprintf(tmpStr, "%02d", recsInThisMsg);
+			strncpy(responseMsg.search.noOfRecs, tmpStr, 2);
+			responseMsg.search.incompleteFlag = '1'; /* Search could not be completed */
+			responseMsg.search.details[recsInThisMsg+1].custNo[0] = '\0';
+			formatSearchResponse(DONE, "Successful", "Successful");
+			sendResponse(responseMsg.search.msgLen);
+			alarm(0);
+			return SUCCESS;
+		}
+
+		if ( searchType == SEARCH_BY_CUSTNO )
+		{
+			if ( strncmp(receivedMsg.search.custNo, custTabRec.custNo, 7) )
+				break;
+		}
+		else if ( searchType == SEARCH_BY_ID )
+		{
+			if ( strncmp(receivedMsg.search.idNo, custTabRec.idNo, 15) )
+				break;
+		}
+		else if ( searchType == SEARCH_BY_TEL )
+		{
+			if ( strncmp(receivedMsg.search.telNo, custTabRec.telHomeNo, 10) )
+				break;
+		}
+		else if ( searchType == SEARCH_BY_MOBILE )
+		{
+			if ( strncmp(receivedMsg.search.mobileNo, custTabRec.mobileNo, 10) )
+				break;
+		}
+		else if ( searchType == SEARCH_BY_FIRSTNAME_A )
+		{
+			if ( strncmp(receivedMsg.search.firstName, custTabRec.aFirstName, nameLen) )
+				break;
+
+			if ( strncmp(receivedMsg.search.secondName, "                 ", 15) )
+			{
+				if ( strncmp(receivedMsg.search.secondName, custTabRec.a2ndName, nameLen1) )
+					continue;
+			}
+
+			if ( strncmp(receivedMsg.search.lastName, "                 ", 15) )
+			{
+				if ( strncmp(receivedMsg.search.lastName, custTabRec.aLastName, nameLen2) )
+					continue;
+			}
+		}
+		else if ( searchType == SEARCH_BY_FIRSTNAME_E )
+		{
+			if ( strncmp(receivedMsg.search.firstName, custTabRec.eFirstName, nameLen) )
+				break;
+
+			if ( strncmp(receivedMsg.search.secondName, "                 ", 15) )
+			{
+				if ( strncmp(receivedMsg.search.secondName, custTabRec.e2ndName, nameLen1) )
+					continue;
+			}
+
+			if ( strncmp(receivedMsg.search.lastName, "                 ", 15) )
+			{
+				if ( strncmp(receivedMsg.search.lastName, custTabRec.eLastName, nameLen2) )
+					continue;
+			}
+		}
+		else if ( searchType == SEARCH_BY_SECONDNAME_A )
+		{
+			if ( strncmp(receivedMsg.search.secondName, custTabRec.a2ndName, nameLen) )
+				break;
+
+			if ( strncmp(receivedMsg.search.lastName, "                 ", 15) )
+			{
+				if ( strncmp(receivedMsg.search.lastName, custTabRec.aLastName, nameLen2) )
+					continue;
+			}
+
+		}
+		else if ( searchType == SEARCH_BY_SECONDNAME_E )
+		{
+			if ( strncmp(receivedMsg.search.secondName, custTabRec.e2ndName, nameLen) )
+				break;
+
+			if ( strncmp(receivedMsg.search.lastName, "                 ", 15) )
+			{
+				if ( strncmp(receivedMsg.search.lastName, custTabRec.eLastName, nameLen2) )
+					continue;
+			}
+		}
+		else if ( searchType == SEARCH_BY_LASTNAME_A )
+		{
+			if ( strncmp(receivedMsg.search.lastName, custTabRec.aLastName, nameLen) )
+				break;
+		}
+		else if ( searchType == SEARCH_BY_LASTNAME_E )
+		{
+			fprintf(logFp, "LastName =%.15s\n", custTabRec.eLastName);
+			if ( strncmp(receivedMsg.search.lastName, custTabRec.eLastName, nameLen) )
+				break;
+		}
+		else if ( searchType == SEARCH_BY_CATEGORY )
+		{
+			if ( strncmp(receivedMsg.search.mainCategoryCode, custTabRec.samaMainCategory, 4) )
+				break;
+		}
+		else if ( searchType == SEARCH_BY_BRANCH_CODE )
+		{
+			if ( strncmp(receivedMsg.search.branchCode, custTabRec.branchCode, 4) )
+				break;
+		}
+
+		if ( recCount++ < lastRecRcvd )
+			continue; /* read all records already sent */
+
+		strncpy(responseMsg.search.details[recsInThisMsg].custNo, custTabRec.custNo, 7);
+		responseMsg.search.details[recsInThisMsg].idType =  custTabRec.idType;
+		strncpy(responseMsg.search.details[recsInThisMsg].idNo, custTabRec.idNo, 15);
+		strncpy(responseMsg.search.details[recsInThisMsg].telNo, custTabRec.telHomeNo, 10);
+		strncpy(responseMsg.search.details[recsInThisMsg].telExt, custTabRec.telHomeExt, 4);
+		if ( searchType == SEARCH_BY_FIRSTNAME_A || searchType == SEARCH_BY_SECONDNAME_A || searchType == SEARCH_BY_LASTNAME_A)
+		{
+			strncpy(responseMsg.search.details[recsInThisMsg].lastName, custTabRec.aLastName, 15);
+			strncpy(responseMsg.search.details[recsInThisMsg].secondName, custTabRec.a2ndName, 15);
+			strncpy(responseMsg.search.details[recsInThisMsg].firstName, custTabRec.aFirstName, 15);
+		}
+		else
+		{
+			if ( custTabRec.preferredLang == ARABIC )
+			{
+				strncpy(responseMsg.search.details[recsInThisMsg].lastName, custTabRec.aLastName, 15);
+				strncpy(responseMsg.search.details[recsInThisMsg].secondName, custTabRec.a2ndName, 15);
+				strncpy(responseMsg.search.details[recsInThisMsg].firstName, custTabRec.aFirstName, 15);
+			}
+			else
+			{
+				strncpy(responseMsg.search.details[recsInThisMsg].lastName, custTabRec.eLastName, 15);
+				strncpy(responseMsg.search.details[recsInThisMsg].secondName, custTabRec.e2ndName, 15);
+				strncpy(responseMsg.search.details[recsInThisMsg].firstName, custTabRec.eFirstName, 15);
+			}
+		}
+		if ( custTabRec.preferredLang == ARABIC )
+		{
+			if ( custTabRec.custType != '1' && custTabRec.custType != '2' ) /* consumer */
+			{
+				if (strncmp(custTabRec.aShortName,"          ",10))
+					strncpy(responseMsg.search.details[recsInThisMsg].shortName, custTabRec.aShortName, 30);
+				else 
+					strncpy(responseMsg.search.details[recsInThisMsg].shortName, custTabRec.eShortName, 30);
+			}
+			else /* corporate */
+			{
+				if (strncmp(custTabRec.aOrgShortName,"          ",10))
+					strncpy(responseMsg.search.details[recsInThisMsg].shortName, custTabRec.aOrgShortName, 30);
+				else
+					strncpy(responseMsg.search.details[recsInThisMsg].shortName, custTabRec.eOrgShortName, 30);
+			}
+		}
+		else
+		{
+			if ( custTabRec.custType != '1' && custTabRec.custType != '2' ) /* consumer */
+			{
+				if (strncmp(custTabRec.eShortName,"          ",10))
+					strncpy(responseMsg.search.details[recsInThisMsg].shortName, custTabRec.eShortName, 30);
+				else
+					strncpy(responseMsg.search.details[recsInThisMsg].shortName, custTabRec.aShortName, 30);
+			}
+			else /* commercial or corporate */
+			{
+				if (strncmp(custTabRec.eOrgShortName,"          ",10))
+					strncpy(responseMsg.search.details[recsInThisMsg].shortName, custTabRec.eOrgShortName, 30);
+				else
+					strncpy(responseMsg.search.details[recsInThisMsg].shortName, custTabRec.aOrgShortName, 30);
+			}
+		}
+		strncpy(responseMsg.search.details[recsInThisMsg].branchCode, custTabRec.branchCode,4);
+		strncpy(responseMsg.search.details[recsInThisMsg].mainCategoryCode, custTabRec.samaMainCategory, 2);
+		strncpy(responseMsg.search.details[recsInThisMsg].subCategoryCode, custTabRec.samaSubCategory, 2);
+		if ( ++recsInThisMsg >=  20 )
+			break;
+	}
+
+	if ( extraDebug > 4 )
+	{
+		fprintf(logFp, "%s|%5d|[processSearchRequest] iserrno after while [%d]\n", getDateTime(), PID, iserrno);
+		fflush(logFp);
+	}
+	if ( searchType == SEARCH_BY_CUSTNO )
+	{
+		if ( recsInThisMsg == 0 )
+		{
+			if ( openCrdFile(ISINOUT+ISMANULOCK) < 0 )
+			{
+				fprintf(logFp, "Open error in CRD0DATA ignored..\n");
+				fflush(logFp);
+				sprintf(tmpStr, "%05d", lastRecRcvd+recsInThisMsg);
+				strncpy(responseMsg.search.lastRecCount, tmpStr, 5);
+				sprintf(tmpStr, "%02d", recsInThisMsg);
+				strncpy(responseMsg.search.noOfRecs, tmpStr, 2);
+				formatSearchResponse(DONE, "Successful", "Successful");
+				fflush(logFp);
+				sendResponse(responseMsg.search.msgLen);
+				alarm(0);
+				return SUCCESS;
+			}
+			memset(&crdRec.liveChar, ' ', sizeof crdRec);
+			strncpy(crdRec.accNo, (char *)actualToBmCust(receivedMsg.search.custNo, tmpStr), 6);
+			if ( isRead(crdFile, &crdRec.liveChar, ISEQUAL) < 0 )
+			{
+				fprintf(logFp, "%s|%5d| [processSearchRequest] ISREAD/ISEQUAL error %d occured while reading crd0data for the customer %.7s [%.6s] not found in stcusttab during enquiry option , IGNORED..\n", getDateTime(), PID, iserrno, receivedMsg.search.custNo, tmpStr);
+				fflush(logFp);
+				fprintf(errLogFp, "%s : processSearchRequest() : ISREAD/ISEQUAL error %d occured while reading crd0data for the customer %.7s [%.6s] not found in stcusttab during enquiry option , IGNORED..\n", getDateTime(), iserrno, receivedMsg.search.custNo, tmpStr);
+				fflush(errLogFp);
+			}
+			else /* Record Found in Crd0data. Write the record into stcusttab */
+			{
+			}
+		}
+	}
+	sprintf(tmpStr, "%05d", lastRecRcvd+recsInThisMsg);
+	strncpy(responseMsg.search.lastRecCount, tmpStr, 5);
+	sprintf(tmpStr, "%02d", recsInThisMsg);
+	strncpy(responseMsg.search.noOfRecs, tmpStr, 2);
+	responseMsg.search.details[recsInThisMsg+1].custNo[0] = '\0';
+	formatSearchResponse(DONE, "Successful", "Successful");
+	fflush(logFp);
+	sendResponse(responseMsg.search.msgLen);
+	alarm(0);
+	return SUCCESS;
+}
+
+processSupervisorAction()
+{
+	char tmpStr[200];
+	char *pathName;
+	int  tmpCustLogFile;
+	struct keydesc  tmpCustLogKey;
+	char yearFileToRead[50], currentDateTime[20];
+	char currentAccInfo[15],savingsAccInfo[15],otherAccInfo[15];
+	int  custLogRecFound = NO;
+
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[processSupervisorAction]\n", getDateTime(), PID);
+
+	memset(currentAccInfo,' ',sizeof currentAccInfo);
+	memset(savingsAccInfo,' ',sizeof savingsAccInfo);
+	memset(otherAccInfo, ' ',sizeof otherAccInfo);
+	memset(responseMsg.pendingDetail.msgLen,' ',sizeof responseMsg.pendingDetail);
+
+	memset(&custLogRec.liveChar, ' ', sizeof custLogRec);
+	strncpy(custLogRec.branchCode, receivedMsg.pendingDetail.branchCode,4);
+	strncpy(custLogRec.userId, receivedMsg.pendingDetail.userId,10);
+	strncpy(custLogRec.dateTime, receivedMsg.pendingDetail.dateTime,14);
+
+	getDateTime();
+	sprintf(currentDateTime, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+
+	custLogRecFound=NO;
+	if ( strncmp(currentDateTime, receivedMsg.pendingDetail.dateTime, 4) )
+	{
+		sprintf(yearFileToRead, "custlog%.4s", receivedMsg.pendingDetail.dateTime);
+		pathName = getpath(yearFileToRead, "static");
+		if ( (tmpCustLogFile  = isopen(pathName, ISMANULOCK+ISINPUT)) < 0)
+		{
+			if ( extraDebug > 8 )
+			{
+				fprintf(logFp, "%s|%5d|[processSupervisorAction] ISOPEN error %d for %s File IGNORED\n",getDateTime(), PID, iserrno, pathName);
+				fflush(logFp);
+			}
+			free(pathName);
+		}
+		else
+		{
+			free(pathName);
+			isindexinfo(tmpCustLogFile, &tmpCustLogKey, 1); 
+			if ( extraDebug )
+			{
+				fprintf(logFp, "reading information from the file [%s]......\n", yearFileToRead);
+				fprintf(logFp, "branch code  : %.4s\n", receivedMsg.pendingDetail.branchCode);
+				fprintf(logFp, "user Id      : %.10s\n", receivedMsg.pendingDetail.userId);
+				fprintf(logFp, "date Time    : %.14s\n", receivedMsg.pendingDetail.dateTime);
+			}
+
+			if ( isRead(tmpCustLogFile, &custLogRec.liveChar, ISEQUAL) < 0 )
+			{
+				fprintf(logFp, "%s|%5d|[processSupervisorAction] : ISREAD/ISEQUAL error %d on %s for key=%.38s IGNORED and trying to read from stcustlog file\n", getDateTime(), PID, iserrno, yearFileToRead, custLogRec.branchCode);
+				fflush(logFp);
+			}
+			else
+				custLogRecFound=YES;
+
+			isclose(tmpCustLogFile);
+		}
+	}
+
+	if ( custLogRecFound == NO )
+	{
+		isindexinfo(custLogFile, &custLogKey, 1);
+		if ( isstart(custLogFile,&custLogKey,0,&custLogRec.liveChar,ISGTEQ) < 0 )
+		{
+			fprintf(logFp, "%s|%5d| [processSupervisorAction] ISSTART/ISGTEQ error %d on stcustlog for the key value [%.38s]\n", getDateTime(), PID, iserrno, custLogRec.branchCode);
+			fflush(logFp);
+			if ( iserrno == 110 || iserrno == 112 || iserrno == 111 )
+				 formatBranchResponse(END_OF_FILE,"No more Records to fetch....", "No more Records to fetch....");
+			else
+			{
+				sprintf(tmpStr, "CISAM Error %d occured on stcustlog", iserrno);
+				formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+			}
+			sendResponse(responseMsg.pendingDetail.msgLen);
+			return FAILURE;
+		}
+		if ( extraDebug )
+		{
+			fprintf(logFp, "process Supervisor action entered......\n");
+			fprintf(logFp, "branch code  : %.4s\n", receivedMsg.pendingDetail.branchCode);
+			fprintf(logFp, "user Id      : %.10s\n", receivedMsg.pendingDetail.userId);
+			fprintf(logFp, "date Time    : %.14s\n", receivedMsg.pendingDetail.dateTime);
+		}
+
+		if ( readCustLogFile(ISEQUAL) < 0 )
+		{
+			sendResponse(responseMsg.pendingDetail.msgLen);
+			return FAILURE;
+		}
+	}
+
+	displayWarningMsgOnDuplicateId=NO;
+	if ( custLogRec.newOrUpdate == 'N' )  
+	{
+		getCtlDesc("BD", receivedMsg.pendingDetail.homeBranch);
+		strncpy(&branchRec.liveChar, &ctlRec.liveChar, sizeof ctlRec);
+		if ( branchRec.displayWarningFlag == '1' )
+			displayWarningMsgOnDuplicateId = YES ; /* Display Warning message only during 
+													  duplicate ID detection; otherwise; customer opening/update */
+	}
+	else
+		displayWarningMsgOnDuplicateId = YES;
+
+	if ( receivedMsg.pendingDetail.screenSetNo == INDIVIDUAL_OTHERS )
+	{
+		if ( processIndividualOthersPendingDetail() == FAILURE )
+			return FAILURE;
+		else
+			return SUCCESS;
+	}
+	else if ( receivedMsg.pendingDetail.screenSetNo == INDIVIDUAL_SAUDI ||
+			  receivedMsg.pendingDetail.screenSetNo == INDIVIDUAL_HEIR )
+	{
+		if ( processIndividualSaudiPendingDetail() == FAILURE )
+			return FAILURE;
+		else
+			return SUCCESS;
+	}
+	else if ( receivedMsg.pendingDetail.screenSetNo == JURISTIC || receivedMsg.pendingDetail.screenSetNo == EMBASSIES ||                          receivedMsg.pendingDetail.screenSetNo == DIPLOMATS ||
+			  receivedMsg.pendingDetail.screenSetNo == NON_RESIDENT_JURISTIC )
+	{
+		if ( processJuristicPendingDetail() == FAILURE )
+			return FAILURE;
+		else
+			return SUCCESS;
+	}
+	else if ( receivedMsg.pendingDetail.screenSetNo == QUICK_CUSTOMER ||
+			  receivedMsg.pendingDetail.screenSetNo == INTERNAL_CUSTOMER ||
+			  receivedMsg.pendingDetail.screenSetNo == PENSION_CUSTOMER )  /* Ver 3.2 */
+	{
+		if ( processQuickCustPendingDetail() == FAILURE )
+			return FAILURE;
+		else
+			return SUCCESS;
+	}
+
+	responseMsg.pendingDetail.foundInAList = '0';
+	responseMsg.pendingDetail.foundInBList = '0';
+	responseMsg.pendingDetail.foundInCList = '0';
+	responseMsg.pendingDetail.existingCustomer = '0';
+	if ( custLogRec.newOrUpdate == 'N' )
+	{
+		if ( custLogRec.custType == '0' ) /* Consumer Customer */
+		{
+			if ( getABCdetails() == FAILURE )
+				return FAILURE;
+
+			if ( getCustDetails() == FAILURE )
+				return FAILURE;
+		}
+	}
+
+	memset(&acctLogRec.liveChar, ' ', sizeof acctLogRec);
+	/* form the key for reading the Acct File  */
+	strncpy(acctLogRec.branchCode, receivedMsg.pendingDetail.branchCode, 4);
+	strncpy(acctLogRec.userId, receivedMsg.pendingDetail.userId, 10);
+	strncpy(acctLogRec.dateTime, receivedMsg.pendingDetail.dateTime, 14);
+	memset(acctLogRec.accNo, ' ',14);
+	getAcctInfo(currentAccInfo,savingsAccInfo,otherAccInfo);
+
+    formatSuperActionResponse(DONE,currentAccInfo,savingsAccInfo,otherAccInfo,"Successful", "Successful"); /* Successful response */
+	sendResponse(responseMsg.pendingDetail.msgLen);
+	return SUCCESS;
+}
+
+openCardRequestFile(int mode )
+{
+	char tmpStr[80];
+
+	if ( cardTabFileOpen == YES )
+		return SUCCESS;
+
+	if ( (cardTabFile  = isopen(cardTabFilePath, mode )) < 0)
+	{
+		printf("ISOPEN error %d for %s file\n", iserrno, cardTabFilePath);
+		fprintf(logFp, "%s|%5d|[openCardRequestFile] ISOPEN error %d for %s File\n", getDateTime(), PID, iserrno, cardTabFilePath);
+		sprintf(tmpStr,"Error  %d occured while opening stcardtab.dat", iserrno);
+		formatRefreshResponse(INTERNALERR, tmpStr, tmpStr );
+		return FAILURE;
+	}
+	isindexinfo(cardTabFile, &cardTabKey, 1);
+	cardTabFileOpen=YES;
+
+	if ( extraDebug > 4 )
+	{
+		fprintf(logFp, "%s|%5d| Card Tab File (%d) successfully opened....\n", getDateTime(), PID, cardTabFile);
+		fflush(logFp);
+	}
+
+	return SUCCESS;
+}
+
+getABCdetails()
+{
+	char tmpStr[100],tmpStr1[50];;
+
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[getABCdetails]\n", getDateTime(), PID);
+
+	memset(tmpStr1, ' ', sizeof tmpStr1);
+
+	if ( extraDebug )
+	{
+		fprintf(logFp, "getABCdetails  entered.....\n");
+		fprintf(logFp, "key from custlog is %.16s\n", custLogRec.idNo, 16);
+	}
+
+	if ( openABCFile(ISMANULOCK+ISINOUT) < 0 )
+	{
+		sendResponse(responseMsg.customer.msgLen);
+		return FAILURE;
+	}
+
+	isindexinfo(abcFile, &abcKey, 1);
+
+	strncpy(abcRec.idNo, custLogRec.idNo, 15);
+	abcRec.idType = custLogRec.idType;
+
+	if ( isstart(abcFile,&abcKey,16,&abcRec.liveChar,ISGTEQ) < 0 )
+	{
+		fprintf(logFp,"%s : isstart error %d on stabclist for %.16s ignored\n ", getDateTime(), iserrno, custLogRec.idNo);
+		if ( iserrno == 110 || iserrno == 112 || iserrno == 111 )
+			return SUCCESS;
+		else
+		{
+			sprintf(tmpStr, "CISAM Error %d occured on stabclist", iserrno);
+			formatSuperActionResponse(INTERNALERR,tmpStr1,tmpStr1,tmpStr1,tmpStr, tmpStr);
+			sendResponse(responseMsg.pendingDetail.msgLen);
+			return FAILURE;
+		}
+	}
+
+	while ( isRead(abcFile, &abcRec.liveChar, ISNEXT) == 0 )
+	{
+		if ( abcRec.idType != custLogRec.idType || strncmp(abcRec.idNo,custLogRec.idNo,15) != 0 )
+			break;
+
+		if ( abcRec.abcListType == 'A' && checkAList )
+			responseMsg.pendingDetail.foundInAList = '1';
+
+		if ( abcRec.abcListType == 'B' && checkBList )
+			responseMsg.pendingDetail.foundInBList = '1';
+		
+		if ( abcRec.abcListType == 'C' && checkCList )
+			responseMsg.pendingDetail.foundInCList = '1';
+
+		strncpy(responseMsg.pendingDetail.reportedBank, abcRec.reportedBank,4);
+		strncpy(responseMsg.pendingDetail.nameInABCList, abcRec.custName,30);
+	}
+
+	return SUCCESS;
+}
+
+processCustomerInfo()
+{
+	char tmpStr[200];
+	char currentAccInfo[15],savingsAccInfo[15],otherAccInfo[15];
+	char *pathName;
+	int  tmpCustLogFile;
+	struct keydesc  tmpCustLogKey;
+	char yearFileToRead[50], currentDateTime[20];
+	int  custLogRecFound = NO;
+
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[processCustomerInfo]\n", getDateTime(), PID);
+
+	memset(currentAccInfo,' ',15);
+	memset(savingsAccInfo,' ',15);
+	memset(otherAccInfo, ' ',15);
+
+	strncpy(custTabRec.custNo, receivedMsg.pendingDetail.branchCode, 7);
+
+	memset(responseMsg.pendingDetail.msgLen,' ',sizeof responseMsg.pendingDetail);
+	isindexinfo(custTabFile, &custTabKey, 1);
+
+	if ( isstart(custTabFile,&custTabKey,0,&custTabRec.liveChar,ISEQUAL) < 0 )
+	{
+		if ( iserrno == 110 || iserrno == 112 || iserrno == 111 )
+		     formatBranchResponse(END_OF_FILE, "No more Records to fetch....", "No more Records to fetch....");
+		else
+		{
+			sprintf(tmpStr, "CISAM Error %d occured on stcusttab", iserrno);
+			formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+		}
+     	sendResponse(responseMsg.pendingDetail.msgLen);
+		return FAILURE;
+	}
+
+	if ( extraDebug )
+	{
+		fprintf(logFp, "process customer info entered......\n");
+		fprintf(logFp, "customer number : %.7s\n", receivedMsg.pendingDetail.branchCode);
+	}
+
+	if ( readCustTabFile(ISEQUAL) < 0 )
+	{
+		sendResponse(responseMsg.pendingDetail.msgLen);
+		return FAILURE;
+	}
+
+	/* read crd0data for the said customer */
+	memset(&crdRec.liveChar, ' ', sizeof crdRec);
+	strncpy(crdRec.accNo, (char *)actualToBmCust(custTabRec.custNo, tmpStr), 6);
+	if ( isRead(crdFile, &crdRec.liveChar, ISEQUAL) < 0 )
+	{
+		if ( iserrno == 110 || iserrno == 112 || iserrno == 111 )
+		     formatBranchResponse(END_OF_FILE, "Not found in customer register....", "Not found in customer register....");
+		else
+		{
+			sprintf(tmpStr, "CISAM Error %d occured on crd0data", iserrno);
+			formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+		}
+     	sendResponse(responseMsg.pendingDetail.msgLen);
+		return FAILURE;
+	}
+
+	/* The following if statement is  added after giving the source code to MISYS */
+	if ( getRestrictedFlag(crdRec.branchCode) == FAILURE )/* MISYS */
+	{
+		sprintf(tmpStr, "Branch record is missing in ctlFile [%.4s]", ctlRec.branchCode);
+		formatBranchResponse(INTERNALERR, tmpStr, tmpStr);
+		sendResponse(responseMsg.customer.msgLen);
+		return FAILURE;
+	}/* MISYS */
+
+	responseMsg.pendingDetail.restrictedBranchFlag = ctlRec.updateRestricted; /* This line is added after giving the source to 
+																				 MISYS */
+
+	responseMsg.pendingDetail.updatedForSama = custTabRec.updatedForSama; /* MISYS */
+	strncpy(responseMsg.pendingDetail.relationshipManager, custTabRec.relationshipManager, 25); /* MISYS */
+	strncpy(responseMsg.pendingDetail.generalMemo, custTabRec.generalMemo, 25); /* MISYS */
+
+	strncpy(responseMsg.pendingDetail.custNo, custTabRec.custNo, 7);
+	strncpy(responseMsg.pendingDetail.supervisorId, custTabRec.createdUserId,20);
+	strncpy(responseMsg.pendingDetail.custBranchCode, crdRec.branchCode,4);
+
+	getDateTime();
+	sprintf(currentDateTime, "%04d%02d%02d%02d%02d%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+
+	custLogRecFound=NO;
+	if ( strncmp(currentDateTime, custTabRec.createdDateTime, 4) )
+	{
+		sprintf(yearFileToRead, "custlog%.4s", custTabRec.createdDateTime);
+		pathName = getpath(yearFileToRead, "static");
+		if ( (tmpCustLogFile  = isopen(pathName, ISMANULOCK+ISINPUT)) < 0)
+		{
+			if ( extraDebug > 8 )
+			{
+				fprintf(logFp, "%s|%5d|[processCustomerInfo] ISOPEN error %d for %s File IGNORED\n",getDateTime(), PID, iserrno, pathName);
+				fflush(logFp);
+			}
+			free(pathName);
+		}
+		else
+		{
+			free(pathName);
+			isindexinfo(tmpCustLogFile, &tmpCustLogKey, 1); 
+			if ( extraDebug )
+			{
+				fprintf(logFp, "reading information from the file [%s]......\n", yearFileToRead);
+				fprintf(logFp, "branch code  : %.4s\n", custTabRec.branchCode);
+				fprintf(logFp, "user Id      : %.10s\n", custTabRec.createdUserId);
+				fprintf(logFp, "date Time    : %.14s\n", custTabRec.createdDateTime);
+			}
+			/* form the key for reading the custLogFile for getting the Card Information */
+			memset(&custLogRec.liveChar, ' ', sizeof custLogRec);
+			strncpy(custLogRec.branchCode, custTabRec.branchCode, 4);
+			strncpy(custLogRec.userId, custTabRec.createdUserId, 20);
+			strncpy(custLogRec.dateTime, custTabRec.createdDateTime, 14);
+
+
+			if ( isRead(tmpCustLogFile, &custLogRec.liveChar, ISEQUAL) < 0 )
+			{
+				fprintf(logFp, "%s|%5d|[processCustomerInfo] : ISREAD/ISEQUAL error %d on %s for key=%.38s IGNORED and trying to read from stcustlog file\n", getDateTime(), PID, iserrno, yearFileToRead, custLogRec.branchCode);
+				fflush(logFp);
+			}
+			else
+			{
+				custLogRecFound=YES;
+				strncpy(&responseMsg.pendingDetail.electronCardRequired, &custLogRec.electronCardRequired, 209);
+			}
+
+			isclose(tmpCustLogFile);
+		}
+	}
+
+	if ( custLogRecFound == NO )
+	{
+		/* form the key for reading the custLogFile for getting the Card Information */
+		memset(&custLogRec.liveChar, ' ', sizeof custLogRec);
+		strncpy(custLogRec.branchCode, custTabRec.branchCode, 4);
+		strncpy(custLogRec.userId, custTabRec.createdUserId, 20);
+		strncpy(custLogRec.dateTime, custTabRec.createdDateTime, 14);
+		isindexinfo(custLogFile, &custLogKey, 1);
+		isstart(custLogFile, &custLogKey,0, &custLogRec.liveChar, ISGTEQ);
+		if ( extraDebug )
+			fprintf(logFp,"isstart[%d] on stcustlog during enquiry \n", iserrno);
+
+		if ( isRead(custLogFile, &custLogRec.liveChar, ISEQUAL) == 0 )
+		{
+			if ( extraDebug )
+			{
+				fprintf(logFp, "read customer info from custlog during enquiry success \n");
+				fprintf(logFp, "Card Info  : [%.209s]\n", &custLogRec.electronCardRequired);
+			}
+			strncpy(&responseMsg.pendingDetail.electronCardRequired, &custLogRec.electronCardRequired, 209);
+		}	
+	}
+   
+	/* form the key for reading the Acct File  */
+	memset(&acctLogRec.liveChar, ' ', sizeof acctLogRec);
+	strncpy(acctLogRec.branchCode, custTabRec.branchCode,4);
+	strncpy(acctLogRec.userId, custTabRec.createdUserId, 20);
+	strncpy(acctLogRec.dateTime, custTabRec.createdDateTime,14);
+	memset(acctLogRec.accNo, ' ',14);
+	getAcctInfo(currentAccInfo,savingsAccInfo,otherAccInfo);
+
+	if ( extraDebug )
+	{
+		fprintf(logFp,"current acct info  [%.11s]  \n", currentAccInfo);
+		fprintf(logFp,"savings acct info  [%.11s] \n", savingsAccInfo);
+		fprintf(logFp,"other acct info    [%.11s] \n", otherAccInfo);
+	}
+
+    formatSuperActionResponse(DONE,currentAccInfo,savingsAccInfo,otherAccInfo,"Successful","Successful"); /* Successful response */
+	sendResponse(responseMsg.pendingDetail.msgLen);
+	return SUCCESS;
+}
+
+formatSuperActionResponse(responseCode,currentAccInfo,savingsAccInfo,otherAccInfo,aRemarks, eRemarks)
+char *responseCode, *currentAccInfo,*savingsAccInfo,*otherAccInfo, *aRemarks, *eRemarks;
+{
+    char tmpStr[100],tmpARemarks[55],tmpERemarks[55];
+
+	sprintf(tmpARemarks, "%-50.50s", aRemarks);
+	sprintf(tmpERemarks, "%-50.50s", eRemarks);
+
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[formatSuperActionResponse] formating the response\n", getDateTime(), PID);
+
+    strncpy(responseMsg.pendingDetail.status,responseCode,3);
+	strncpy(responseMsg.pendingDetail.service,receivedMsg.pendingDetail.service,2);
+	strncpy(responseMsg.pendingDetail.aRemarks, tmpARemarks,50);
+	strncpy(responseMsg.pendingDetail.eRemarks, tmpERemarks,50);
+
+
+	if ( strncmp(receivedMsg.pendingDetail.requestType,"01",2) == 0 ) 
+								/* 01 - to read customer info from stcustlog */ 
+								/* 02 - to read customer info from stcusttab */
+	{
+
+		if( strncmp(responseCode,"000",3) == 0 )
+		{
+			strncpy(responseMsg.pendingDetail.custNo, custLogRec.custNo,1478);
+			responseMsg.pendingDetail.custType = custLogRec.custType;
+			responseMsg.pendingDetail.newOrUpdate = custLogRec.newOrUpdate;
+			responseMsg.pendingDetail.internetBankAcc = custLogRec.internetBankAcc;
+			responseMsg.pendingDetail.custAdviceFlag = custLogRec.custAdviceFlag;
+			strncpy(responseMsg.pendingDetail.altBranchCode, custLogRec.altBranchCode, 4);
+			strncpy(responseMsg.pendingDetail.orgAlphaSearchCode, custLogRec.orgAlphaSearchCode, 6);
+			responseMsg.pendingDetail.updatedForSama = custLogRec.updatedForSama; /* MISYS */
+			strncpy(responseMsg.pendingDetail.relationshipManager, custLogRec.relationshipManager, 25); /* MISYS */
+			strncpy(responseMsg.pendingDetail.generalMemo, custLogRec.generalMemo, 25);
+		}
+		else
+		{
+			memset(&responseMsg.pendingDetail.custNo, ' ', 1478);
+			responseMsg.pendingDetail.custType = ' ';
+			responseMsg.pendingDetail.newOrUpdate = ' ';
+		}
+	}
+	else
+	{
+		if( strncmp(responseCode,"000",3) == 0 )
+		{
+			strncpy(responseMsg.pendingDetail.idNo, custTabRec.idNo, 1024);
+			/* fields taken from crd0data */
+			responseMsg.pendingDetail.preferredLang = crdRec.language;
+			strncpy(responseMsg.pendingDetail.nationality, crdRec.nationality, 3);	
+			strncpy(responseMsg.pendingDetail.titleCode, crdRec.titleCode, 2);
+			responseMsg.pendingDetail.vipCode = crdRec.vipFlag;
+			responseMsg.pendingDetail.residentStatus =crdRec.nonResident;
+			strncpy(responseMsg.pendingDetail.businessType, crdRec.businessType, 3);	
+			responseMsg.pendingDetail.packageAcc = crdRec.packageAcc;
+
+			responseMsg.pendingDetail.custType = custTabRec.custType;
+			responseMsg.pendingDetail.internetBankAcc = custTabRec.internetBankAcc;
+			responseMsg.pendingDetail.custAdviceFlag = custTabRec.custAdviceFlag;
+			strncpy(responseMsg.pendingDetail.altBranchCode, crdRec.alternativeBranchCode,4);
+			strncpy(responseMsg.pendingDetail.orgAlphaSearchCode, crdRec.alphaSearchCode, 6);
+		}
+		else
+		{
+			memset(&responseMsg.pendingDetail.idNo, ' ',1071);
+			responseMsg.pendingDetail.custType = ' ';
+		}
+	}
+
+	strncpy(responseMsg.pendingDetail.currentAccInfo, currentAccInfo,11);
+	strncpy(responseMsg.pendingDetail.savingsAccInfo, savingsAccInfo,11);
+	strncpy(responseMsg.pendingDetail.otherAccInfo, otherAccInfo,11);
+
+	responseMsg.pendingDetail.nullPad = '\0';
+	sprintf(tmpStr, "%06d", strlen(responseMsg.pendingDetail.msgLen));
+	strncpy(responseMsg.pendingDetail.msgLen, tmpStr, 6);
+	if ( responseCode == COMMSERR )
+	{
+		iscleanup();
+		fclose(logFp);
+	}
+	return SUCCESS;
+}
+
+logSearchDetails()
+{
+	char tmpStr[50];
+
+	if ( debug == 0  )
+		return SUCCESS;
+	fprintf(logFp, "%s : INCOMMING MESSAGE from %s\n", getDateTime(), authorisedUser);
+	fprintf(logFp, "===================================\n");
+	fprintf(logFp, "Service				: %.2s[Enquiry]\n", receivedMsg.search.service);
+	fprintf(logFp, "Last Record			: %.5s\n", receivedMsg.search.lastRecCount);
+	fprintf(logFp, "Cust Number			: %.7s\n", receivedMsg.search.custNo);
+	fprintf(logFp, "Card Number			: %-19.19s\n", maskCardNo(receivedMsg.search.cardNo, tmpStr));
+	fprintf(logFp, "ID Type & NO        : %c %.15s\n", receivedMsg.search.idType, receivedMsg.search.idNo);
+	fprintf(logFp, "Tel # & Ext			: %.10s-%.4s\n", receivedMsg.search.telNo, receivedMsg.search.telExt);
+	fprintf(logFp, "Last & FirstName    : %.15s-%.15s\n", receivedMsg.search.lastName, receivedMsg.search.firstName);
+	fprintf(logFp, "Second Name			: %.15s\n", receivedMsg.search.secondName);
+	fprintf(logFp, "CR  NO				: %.15s\n", receivedMsg.search.crNo);
+	fprintf(logFp, "SAMA main category  : %.2s\n", receivedMsg.search.mainCategoryCode);
+	fprintf(logFp, "SAMA sub  category  : %.2s\n", receivedMsg.search.subCategoryCode);
+	fprintf(logFp, "Branch Code			: %.4s\n", receivedMsg.search.branchCode);
+	fprintf(logFp, "Mobile Number       : %.10s\n", receivedMsg.search.mobileNo);
+	fflush(logFp);
+}
+
+logPendingDetailReqDetails()
+{
+	if ( debug == 0  )
+		return SUCCESS;
+	fprintf(logFp, "%s : INCOMMING MESSAGE from %s\n", getDateTime(), authorisedUser);
+	fprintf(logFp, "===================================\n");
+	fprintf(logFp, "Service			: %.2s[PendingRequestDetail]\n", receivedMsg.pendingDetail.service);
+	fprintf(logFp, "Request Type	: %.2s\n", receivedMsg.pendingDetail.requestType);
+	fprintf(logFp, "Branch Code		: %.4s\n", receivedMsg.pendingDetail.branchCode);
+	fprintf(logFp, "User Id			: %.10s\n", receivedMsg.pendingDetail.userId);
+	fprintf(logFp, "Date & Time		: %.14s\n", receivedMsg.pendingDetail.dateTime);
+	fprintf(logFp, "Screen No		: %c\n", receivedMsg.pendingDetail.screenSetNo);
+
+	fflush(logFp);
+}
+
+logJointInfoReqDetails()
+{
+	if ( debug == 0  )
+		return SUCCESS;
+	fprintf(logFp, "%s : INCOMMING MESSAGE from %s\n", getDateTime(), authorisedUser);
+	fprintf(logFp, "===================================\n");
+	fprintf(logFp, "Service 		: %.2s[JointInfoEnquiry]\n", receivedMsg.jointDetail.service);
+	fprintf(logFp, "Request Type	: %.2s\n", receivedMsg.jointDetail.requestType);
+
+	fprintf(logFp, "Branch Code 	: %.4s\n", receivedMsg.jointDetail.branchCode);
+	fprintf(logFp, "userId			: %.10s\n", receivedMsg.jointDetail.userId);
+	fprintf(logFp, "dateTime		: %.14s\n", receivedMsg.jointDetail.dateTime);
+	fprintf(logFp, "Customer No		: %.7s\n", receivedMsg.jointDetail.custNo);
+	fprintf(logFp, "Joint Cust No	: %.2s\n", receivedMsg.jointDetail.jointCustNo);
+
+	fflush(logFp);
+}
+
+getCustDetails()
+{
+	char tmpStr[100], tmpStr1[100];
+
+	if ( extraDebug )
+		fprintf(logFp, "%s|%5d|[getCustDetails]\n", getDateTime(), PID);
+
+	memset( tmpStr1, ' ', sizeof tmpStr1 );
+
+	if ( openCustTabFile(ISMANULOCK + ISINOUT) < 0 )
+	{
+		sendResponse(responseMsg.customer.msgLen);
+		return FAILURE;
+	}
+
+	strncpy(custTabRec.idNo, custLogRec.idNo,15);
+	custTabRec.idType = custLogRec.idType;
+
+	isindexinfo(custTabFile, &custTabKey, 3);
+
+	if ( isstart(custTabFile,&custTabKey,0,&custTabRec.liveChar,ISEQUAL) < 0 )
+	{
+		fprintf(logFp,"%s|%d|[getCustDetails]  isstart error %d on stcusttab for ID=%.16s ignored\n", getDateTime(), PID, iserrno, custTabRec.idNo);
+		if ( iserrno == 110 || iserrno == 112 || iserrno == 111 )
+			return SUCCESS; 
+		else
+		{
+			sprintf(tmpStr, "CISAM Error %d occured on stcusttab", iserrno);
+			formatSuperActionResponse(INTERNALERR,tmpStr1,tmpStr1,tmpStr1,tmpStr, tmpStr);
+			sendResponse(responseMsg.pendingDetail.msgLen);
+			return FAILURE;
+		}
+	}
+
+	while ( isread(custTabFile, &custTabRec.liveChar, ISNEXT) == 0 )
+	{
+		if ( custTabRec.idType != custLogRec.idType || strncmp(custTabRec.idNo,custLogRec.idNo,15) != 0 )
+			break;
+
+		responseMsg.pendingDetail.existingCustomer = '1';
+		strncpy(responseMsg.pendingDetail.existCustNo, custTabRec.custNo, 7);
+		if ( custTabRec.preferredLang == ARABIC )
+		{
+			if ( strncmp(custTabRec.aShortName,"          ",10) )
+				strncpy(responseMsg.pendingDetail.existCustName, custTabRec.aShortName,30);
+			else
+				strncpy(responseMsg.pendingDetail.existCustName, custTabRec.eShortName,30);
+		}
+		else
+		{
+			if ( strncmp(custTabRec.eShortName,"          ",10) )
+				strncpy(responseMsg.pendingDetail.existCustName, custTabRec.eShortName,30);
+			else
+				strncpy(responseMsg.pendingDetail.existCustName, custTabRec.aShortName,30);
+		}
+	}
+
+	if ( extraDebug > 4 )
+	{
+		fprintf(logFp, "%s|%5d|[getCustDetails] iserrno after while [%d]\n", getDateTime(), PID, iserrno);
+		fflush(logFp);
+	}
+	
+	return SUCCESS;
+}

@@ -1,0 +1,358 @@
+package com.banksystem.api.infrastructure.persistence.jdbc;
+
+import com.banksystem.api.domain.model.BmForms;
+import com.banksystem.api.domain.model.TransactionDetail;
+import com.banksystem.api.domain.model.TransactionSummary;
+import com.banksystem.api.domain.model.TransferDetail;
+import com.banksystem.api.domain.model.TransferSummary;
+import com.banksystem.api.domain.repository.TransferRepository;
+import java.util.List;
+import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Profile;
+import org.springframework.dao.DataAccessException;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+/**
+ * SARIE transfers (rid0data) and BM transactions (thd0data) from
+ * the Denodo views — QUERY-SPECS.md §17–18, legacy cbswift.c
+ * processTransferEnq/processTransferDetail and
+ * processBmTransEnq/processBmTransDetail.
+ *
+ * <p>Schema notes (rid0data.ts / thd0data.ts win over the spec):
+ * <ul>
+ *   <li>rid0data.crAccNo/drAccNo and thd0data.accNo are 14 chars in the
+ *       archival schema (the spec's "index on BM accNo (13)" refers to the
+ *       live ISAM key; the views carry the actual form). A 13-char BM-form
+ *       argument is converted with {@link BmForms#actualAcc} defensively.</li>
+ *   <li>The spec's recycled-name warning ("applicantName is stored in
+ *       totAmt") is superseded by the workbook: totAmt became numeric and a
+ *       dedicated {@code applicantName} column was added 14/08/2025. The
+ *       beneficiary block however still lives in recycled pension fields:
+ *       benefName in {@code penProxyName}, benefAddr1 in
+ *       {@code pensionerName} (per §17), benefAddr2 in
+ *       {@code benefAddress2}, bank in {@code benefBank1}.</li>
+ *   <li>thd0data has no {@code recType} column — the workbook folded the
+ *       legacy recType '1' continuation narratives (narrative2/3) into the
+ *       thd0data view itself, so the header row carries all three
+ *       narratives. thd0data1 is the recType 2/3 rate-change record family
+ *       (its narrative2 is a rate stamp) and is NOT read here.</li>
+ * </ul>
+ */
+@Repository
+@Profile("denodo")
+public class JdbcTransferRepository implements TransferRepository {
+
+    private static final Logger log = LoggerFactory.getLogger(JdbcTransferRepository.class);
+
+    /** Repositories return complete result lists (services page in memory);
+     *  this cap only guards against runaway scans on the Hive views. */
+    static final int MAX_ROWS = 1000;
+
+    /** Correlated scalar subquery (Denodo has no LATERAL) for the customer
+     *  short name: Arabic short name unless blank, else English, else the
+     *  juristic organisation short names — legacy display rule (§20/§22). */
+    private static final String CUST_NAME_SUBQUERY = """
+            (SELECT COALESCE(NULLIF(TRIM(c.aShortName), ''),
+                             NULLIF(TRIM(c.eShortName), ''),
+                             NULLIF(TRIM(c.aOrgShortName), ''),
+                             c.eOrgShortName)
+             FROM stcusttab c
+             WHERE c.BankingDate = %s.BankingDate
+               AND c.custNo = SUBSTR(%s.%s, 6, 7))""";
+
+    private final NamedParameterJdbcTemplate jdbc;
+    private final BankingDateProvider bankingDate;
+
+    public JdbcTransferRepository(
+            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
+            BankingDateProvider bankingDate) {
+        this.jdbc = jdbc;
+        this.bankingDate = bankingDate;
+    }
+
+    // ------------------------------------------------------------------
+    // §17 SARIE transfer enquiry — rid0data, legacy index 4 on issueDate
+    // ------------------------------------------------------------------
+
+    @Override
+    public List<TransferSummary> sarieTransfers(
+            String accNo, String fromDate, String toDate, String refNo, String status) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT transRef, issueDate, valueDate, drAccNo, transCurrCode,
+                       netAmt, payCurrCode, payAmt, statusFlag
+                FROM   rid0data
+                WHERE  BankingDate = :bankingDate
+                  AND  crAccNo = :accNo
+                  AND  issueDate BETWEEN :fromDate AND :toDate
+                """);
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("bankingDate", bankingDate.bankingDate())
+                .addValue("accNo", actualAccForm(accNo))
+                .addValue("fromDate", fromDate)
+                .addValue("toDate", toDate);
+        // Legacy (cbswift.c:455-467): the refNo and status filters are
+        // MUTUALLY EXCLUSIVE — when a refNo is supplied the C matches on
+        // transRef only and ignores recordStatus entirely; the statusFlag
+        // filter applies only on the else branch (and is skipped for 'A').
+        if (!isBlank(refNo)) {
+            sql.append("  AND  transRef = :refNo\n");
+            params.addValue("refNo", refNo.trim());
+        } else if (!isBlank(status) && !"A".equals(status.trim())) {
+            sql.append("  AND  statusFlag = :status\n");
+            params.addValue("status", status.trim());
+        }
+        sql.append("""
+                ORDER  BY issueDate, transRef
+                FETCH FIRST %d ROWS ONLY
+                """.formatted(MAX_ROWS));
+        return jdbc.query(sql.toString(), params, (rs, i) -> new TransferSummary(
+                scrub(rs.getString("transRef")),
+                scrub(rs.getString("issueDate")),
+                scrub(rs.getString("valueDate")),
+                scrub(rs.getString("drAccNo")),
+                scrub(rs.getString("transCurrCode")),
+                scrub(rs.getString("netAmt")),
+                scrub(rs.getString("payCurrCode")),
+                scrub(rs.getString("payAmt")),
+                scrub(rs.getString("statusFlag"))));
+    }
+
+    // ------------------------------------------------------------------
+    // §17 SARIE transfer detail — rid0data point read by transRef
+    // ------------------------------------------------------------------
+
+    @Override
+    public Optional<TransferDetail> transferDetail(String refNo, String transDate) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT r.transRef, r.issueDate, r.valueDate, r.crAccNo, r.drAccNo,
+                       r.transCurrCode, r.payCurrCode, r.netAmt, r.payAmt,
+                       r.applicantName,
+                       r.penProxyName, r.pensionerName, r.benefAddress2, r.benefBank1,
+                       r.paymentStatus, r.statusFlag, r.branchCode,
+                       r.transferPurpose, r.exchangeRate, r.message1,
+                       """
+                + CUST_NAME_SUBQUERY.formatted("r", "r", "crAccNo") + " AS custName\n"
+                + """
+                FROM   rid0data r
+                WHERE  r.BankingDate = :bankingDate
+                  AND  r.transRef = :refNo
+                """);
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("bankingDate", bankingDate.bankingDate())
+                .addValue("refNo", refNo);
+        if (!isBlank(transDate)) {
+            sql.append("  AND  r.issueDate = :transDate\n");
+            params.addValue("transDate", transDate.trim());
+        }
+        sql.append("FETCH FIRST 1 ROWS ONLY\n");
+        List<TransferDetail> rows = jdbc.query(sql.toString(), params, (rs, i) -> new TransferDetail(
+                scrub(rs.getString("transRef")),
+                scrub(rs.getString("issueDate")),
+                scrub(rs.getString("valueDate")),
+                scrub(rs.getString("crAccNo")),
+                scrub(rs.getString("drAccNo")),
+                scrub(rs.getString("transCurrCode")),
+                scrub(rs.getString("payCurrCode")),
+                scrub(rs.getString("netAmt")),
+                scrub(rs.getString("payAmt")),
+                // Dedicated column since the 14/08/2025 workbook (was: totAmt).
+                scrub(rs.getString("applicantName")),
+                // Recycled legacy pension fields — mapped by MEANING (§17):
+                scrub(rs.getString("penProxyName")),     // benefName
+                scrub(rs.getString("pensionerName")),    // benefAddr1
+                scrub(rs.getString("benefAddress2")),    // benefAddr2
+                scrub(rs.getString("benefBank1")),       // benefBank
+                // Legacy field recycling (cbswift.c:1453-1454):
+                //   transType   = ridRec.paymentStatus (1-Direct, 2-SWIFT/
+                //                 Telex, 3-Postal/Fax, 4-Telephone)
+                //   paymentType = ridRec.statusFlag (S/I/V/C/D/P/O/R/T) —
+                //                 NOT rid0data.payMethod, which is a distinct
+                //                 column the C never sends.
+                scrub(rs.getString("paymentStatus")),    // transType
+                scrub(rs.getString("statusFlag")),       // paymentType
+                scrub(rs.getString("branchCode")),
+                scrub(rs.getString("custName")),
+                scrub(rs.getString("transferPurpose")),
+                scrub(rs.getString("exchangeRate")),
+                scrub(rs.getString("message1"))));
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        // Legacy: requestType '01' checks stswiftlog and blocks the enquiry
+        // while a SWIFT update is still pending. checkSwiftPendingStatus
+        // (cbswift.c:2355-2382) keys on transRefNo + the FOUND row's
+        // issueDate and treats only bmUpdateStatus '1'/'2' as pending.
+        TransferDetail detail = rows.get(0);
+        if (hasPendingSwiftUpdate(refNo, detail.issueDate())) {
+            log.warn("Transfer {} has a pending stswiftlog update — blocking detail enquiry", refNo);
+            return Optional.empty();
+        }
+        return Optional.of(detail);
+    }
+
+    // ------------------------------------------------------------------
+    // §18 BM transaction enquiry — thd0data
+    // ------------------------------------------------------------------
+
+    @Override
+    public List<TransactionSummary> bmTransactions(
+            String accNo, String fromDate, String toDate, String transType) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT transRef, postDate, valueDate, userId, transAmt,
+                       transCounter, transType
+                FROM   thd0data
+                WHERE  BankingDate = :bankingDate
+                  AND  accNo = :accNo
+                  AND  postDate BETWEEN :fromDate AND :toDate
+                """);
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("bankingDate", bankingDate.bankingDate())
+                .addValue("accNo", actualAccForm(accNo))
+                .addValue("fromDate", fromDate)
+                .addValue("toDate", toDate);
+        // Three-way legacy branch: blank = all, 'RR' = reversals only
+        // (statmentFlag > '1'), anything else = exact match.
+        if (!isBlank(transType)) {
+            if ("RR".equals(transType.trim())) {
+                sql.append("  AND  statmentFlag > '1'\n");
+            } else {
+                sql.append("  AND  transType = :transType\n");
+                params.addValue("transType", transType.trim());
+            }
+        }
+        sql.append("""
+                ORDER  BY postDate, transCounter
+                FETCH FIRST %d ROWS ONLY
+                """.formatted(MAX_ROWS));
+        return jdbc.query(sql.toString(), params, (rs, i) -> new TransactionSummary(
+                scrub(rs.getString("transRef")),
+                scrub(rs.getString("postDate")),
+                scrub(rs.getString("valueDate")),
+                scrub(rs.getString("userId")),
+                scrub(rs.getString("transAmt")),
+                scrub(rs.getString("transCounter")),
+                scrub(rs.getString("transType"))));
+    }
+
+    // ------------------------------------------------------------------
+    // §18 BM transaction detail — thd0data header (carries all narratives)
+    // ------------------------------------------------------------------
+
+    @Override
+    public Optional<TransactionDetail> bmTransactionDetail(String accNo, String refNo) {
+        String actualAcc = actualAccForm(accNo);
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("bankingDate", bankingDate.bankingDate())
+                .addValue("accNo", actualAcc)
+                .addValue("refNo", refNo);
+        // Legacy index 2 (accNo + transRef), recType '0' header. The C reads
+        // narratives 2/3 from a separate recType '1' continuation record
+        // (thd1data layout, keyed accNo + transCounter — cbswift.c:2019-2037),
+        // but the archival workbook folded those narrative columns into the
+        // thd0data view itself (thd0data.ts narrative2/narrative3 carry the
+        // posting-narrative semantics), so the header row is the sole source.
+        // thd0data1 is the recType 2/3 rate-change record family — NOT the
+        // narrative continuation — and must not be consulted here.
+        List<TransactionDetail> rows = jdbc.query("""
+                SELECT t.accNo, t.transRef, t.postDate, t.valueDate, t.transAmt,
+                       t.transType, t.userId, t.supervisorId, t.statmentFlag,
+                       t.narrative1, t.narrative2, t.narrative3,
+                       """
+                + CUST_NAME_SUBQUERY.formatted("t", "t", "accNo") + " AS custName\n"
+                + """
+                FROM   thd0data t
+                WHERE  t.BankingDate = :bankingDate
+                  AND  t.accNo = :accNo
+                  AND  t.transRef = :refNo
+                ORDER  BY t.postDate, t.transCounter
+                FETCH FIRST 1 ROWS ONLY
+                """, params, (rs, i) -> new TransactionDetail(
+                scrub(rs.getString("accNo")),
+                scrub(rs.getString("transRef")),
+                scrub(rs.getString("custName")),
+                scrub(rs.getString("postDate")),
+                scrub(rs.getString("valueDate")),
+                scrub(rs.getString("transAmt")),
+                scrub(rs.getString("transType")),
+                scrub(rs.getString("userId")),
+                scrub(rs.getString("supervisorId")),
+                scrub(rs.getString("statmentFlag")),
+                scrub(rs.getString("narrative1")),
+                scrub(rs.getString("narrative2")),
+                scrub(rs.getString("narrative3"))));
+        return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
+    }
+
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
+
+    /**
+     * Pending-update check against stswiftlog (legacy processTransferDetail,
+     * requestType '01' → checkSwiftPendingStatus, cbswift.c:2355-2382): key 3
+     * is transRefNo + issueDate, and a row counts as pending ONLY when
+     * bmUpdateStatus is '1' (pending with supervisor) or '2' (pending with
+     * CSO) — '3' Rejected / '9' Completed rows must NOT block the enquiry.
+     *
+     * <p>The stswiftlog view is NOT in the archival workbook (no bank-ui
+     * schema file exists for it); the column names below follow the C record
+     * layout (stlayout.h struct stswiftlog: transRefNo, issueDate,
+     * bmUpdateStatus) but are unverified against the Denodo view, so any
+     * failure — including the view being absent or a column-name mismatch —
+     * is treated as not-pending with a warn log, per the port notes.
+     */
+    private boolean hasPendingSwiftUpdate(String refNo, String issueDate) {
+        try {
+            Integer count = jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM   stswiftlog
+                    WHERE  BankingDate = :bankingDate
+                      AND  transRefNo = :refNo
+                      AND  issueDate = :issueDate
+                      AND  bmUpdateStatus IN ('1', '2')
+                    """,
+                    new MapSqlParameterSource()
+                            .addValue("bankingDate", bankingDate.bankingDate())
+                            .addValue("refNo", refNo)
+                            .addValue("issueDate", issueDate),
+                    Integer.class);
+            return count != null && count > 0;
+        } catch (DataAccessException e) {
+            log.warn("stswiftlog pending-update check unavailable ({}); treating transfer {} as not pending",
+                    e.getMostSpecificCause().getMessage(), refNo);
+            return false;
+        }
+    }
+
+    /**
+     * The archival views store the 14-char actual account form (rid0data.ts /
+     * thd0data.ts size 14 — overrides the spec's 13-char BM index note).
+     * Convert defensively if a caller hands us the 13-char BM form.
+     */
+    private static String actualAccForm(String accNo) {
+        String a = accNo == null ? "" : accNo.trim();
+        return a.length() == 13 ? BmForms.actualAcc(a) : a;
+    }
+
+    /** Legacy NUL/non-printable scrubbing, done per-row in Java. */
+    private static String scrub(String value) {
+        if (value == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            sb.append(ch < 0x20 ? ' ' : ch);
+        }
+        return sb.toString().trim();
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+}

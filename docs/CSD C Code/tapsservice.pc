@@ -1,0 +1,4950 @@
+/*****************************************************************************************************
+
+Program Name:   TAPSSERVICE
+
+Input       :   INBUF1
+
+Output      :   OUTBUF1
+
+Objective   :   This tuxedo adopter accepts the request from client, in turn fetch the required data
+				from TAPS database and return the same to the client. The connection to the TAPS
+				database is established at the time of booting of server in which this service is
+				advertised and if required, also on each request to this service.
+
+Author      :   Mohit Mehrotra
+
+Date        :   27-Jul-04
+
+Modification History:
+---------------------
+Ver.    Date    Author                  Details of Modifications
+===========================================================================
+1.0    27/07/04 Mohit Mehrotra              Initial version
+1.1    05/02/06 Mohit Mehrotra              Set of code to display the service elapse time
+											in milliseconds.
+1.2	   26/06/06 Mohit Mehrotra				1. Under service code "02", (i.e. SWIFT payment 
+											advice) the data in fields 'F_50A_NameAndAddress' 
+											and 'F_59_Customer' is to be stored with new line 
+											(\n) after every 35 charaters.
+											2. Removing any spaces in incoming reference no.
+											to service code "00", "01", "02" and "03".
+1.3	   22/04/07 Mohit Mehrotra				1. Under service code "02", (i.e. SWIFT payment 
+											advice) the Beneficiary Name, Address1, Address2
+											and Address3 will also be stored in field 
+											'F_57A_NameAndAddress' with new line (\n) after 
+											every 35 charaters.
+											2. 'Beneficiary Bank Clearing Code' is added under 
+											service code "02". Value of this will be stored in
+											'F_51A_ACCOUNTNUMBER' database table.
+1.4	   02/01/08 Mohit Mehrotra				1. For SARIE/ SWIFT payment advice, Ordering Customer 
+											Name, without address, has to be stored in Customer_Rem 
+											field of database table BRAID_SAMA_MIS.
+											2. For SARIE/ SWIFT payment advice, Beneficiary Customer
+											Name, without address, has to be stored in Customer_Name 
+											field of database table BRAID_SAMA_MIS
+1.5	   12/07/08 Mohit Mehrotra				Amendment of language flag in SARIE Participant code
+											("04") service to return language dependent Bank Name. 
+1.6	   06/10/08 Mohit Mehrotra				Ordered by SARIE Participant code & Beneficiary Bank 
+											country code. 
+1.7	   11/11/09 Mohit Mehrotra				UTI number from TAPs for SARIE to be returned in SARIE
+											payment advice message. (As requested by Zak through
+											mail dated 9-Nov-2009.)
+1.8	   10/04/10 Mohit Mehrotra      		Credt Card masking under PCI project.
+2.0    10/05/10 B.M.Ali                  	Passwd encryption
+2.1    31/07/10 Mohit Mehrotra	          	Modifications due to Itanium
+2.2    30/03/2011  B.M.Ali                  Message header validation.
+2.3    04/08/2012  B.M.Ali                  F_77B, beneficiary_bank_country field of braid_fpq table was populated
+											during swift payment request.
+2.4    14/04/2014  S. Rajesh                As User(Fahed Edris) wants to more characters to be entered in Ordering Customer name & 
+											eneficiary customer name,the swift payment layout has been entirely changed.. hence, 
+											created new service 10 & 11 for swift payment request in addition to service 02 & 03;
+											(mail from Arul on 05-May-14 to Emerald)
+2.5    18/11/2015  S. Rajesh                Remove the junk characters as per the email from Shaik Shabeer on 18NOV15.
+2.6    06/11/2017  S. Rajesh                To handle UTI number if it exceeds 9999 in such a way by padding Alpha char in the first digit.
+2.7    04/02/2018  S. Rajesh                To filter deplication in sarie_participant_bank by 8 digit bic_code in service "04".                             
+2.8	   28/08/2018  S. Rajesh			    Modified to call Message broker and send the response for SARIE/SWIFT payment service only
+*****************************************************************************************************/
+
+/* C Include Files      	*/
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <netdb.h>
+#include <pwd.h>
+#include <time.h>
+#include <errno.h>
+
+/* Tuxedo Header FIles          */
+#include <atmi.h>
+#include <userlog.h>	
+#include <fml32.h>
+#include "field.tbl.h"
+#include "decrypwd.h"
+
+#define RECORD_LEN	1000
+#define BNF_MAX_REC_PER_REQ		80
+
+/* Oracle Header files  */
+#include "sqlca.h"
+
+/* Application Header Files  */
+#include "fn_ecorp.h"
+#include "debug.h"
+
+/*	MQ Series Header Files	*/
+#include <cmqc.h>            /* includes for MQI          */ 
+#include <cmqxc.h>           /* For MQCD definition       */ 
+
+char *getDateTime();
+void tpsvrdone(void);
+void error_exit( char* );
+void establishTAPSCon();
+void establishCPDBCon();
+void establishTUXDBCon();
+char *removeJunk(unsigned char *, int);
+
+int TimeoutFlag;
+struct tm   *systemDate;  /* structure declaration in time.h */
+time_t systime;
+int tapsTimeOut = 20;
+
+void   toAlarm1();
+
+char dateTime[30], logFileName[200], junkChars[1000], logFileDate[20] ;
+
+/* MQCONNX */
+   MQCNO   Connect_options = {MQCNO_DEFAULT};       /* MQCONNX options           */ 
+   MQCD    ClientConn = {MQCD_CLIENT_CONN_DEFAULT}; /* Client connection channel */ 
+/* MQCONNX */
+
+
+/*   Declare MQI structures needed   */
+MQOD     od = {
+	MQOD_DEFAULT};    /* Object Descriptor             */
+MQMD     md = {
+	MQMD_DEFAULT};    /* Message Descriptor            */
+MQPMO   pmo = {
+	MQPMO_DEFAULT};   /* put message options           */
+/** note, sample uses defaults where it can **/
+
+/* THIS IS FOR GET QUEUE		*/
+MQOD     od1 = {
+	MQOD_DEFAULT};    /* Object Descriptor             */
+MQLONG   CompCode1;               /* completion code               */
+MQLONG   OpenCode1;               /* MQOPEN completion code        */
+MQLONG   Reason1;                 /* reason code                   */
+MQLONG   CReason1;                /* reason code for MQCONN        */
+MQHOBJ   Hobj1;                   /* object handle                 */
+MQHCONN  Hcon;                   /* connection handle             */
+MQHOBJ   Hobj;                   /* object handle                 */
+MQLONG   O_options;              /* MQOPEN options                */
+MQLONG   C_options;              /* MQCLOSE options               */
+MQLONG   CompCode;               /* completion code               */
+MQLONG   OpenCode;               /* MQOPEN completion code        */
+MQLONG   Reason;                 /* reason code                   */
+MQLONG   CReason;                /* reason code for MQCONN        */
+MQLONG   messlen;                /* message length                */
+unsigned char     MQBuffer[1048576];        /* message MQBuffer              */
+
+char     QMName[MQ_Q_MGR_NAME_LENGTH+1];      /* queue manager name            */
+MQGMO    gmo = {
+	MQGMO_DEFAULT};   /* get message options           */
+MQLONG   BufLen ;
+
+/* global Variables Sent from the Config File  */
+char globWaitPeriod[10];
+char msgExpiry[10];
+char globQMgrName[MQ_Q_MGR_NAME_LENGTH+1];
+char globReqQ[MQ_Q_NAME_LENGTH+1];
+char globReplyToQ[MQ_Q_NAME_LENGTH+1];
+char globReplyToQMgrName[MQ_Q_MGR_NAME_LENGTH+1];
+char channelName[MQ_CHANNEL_NAME_LENGTH+1]; 
+char QMHostName[1024]; 
+
+char requestQName[99][50];
+int  noOfRequestQ=0;
+char responseQName[99][50];
+int  noOfResponseQ=0;
+
+char messageLengths[1000];
+char channelIds[1000];
+char functionIds[1000];
+char agentId[20];
+char passwd[80];
+char channelVersions[1000];
+
+char svcRoutedToMB[100];
+
+int		retfnCallMq=0;
+int     mqOpened= -1;
+
+char mbChannelId[10];
+char mbFunctionId[20];
+char mbChannelVersion[10];
+
+struct mbrequestheder
+{
+	char channelId[4];
+	char functionId[8];
+	char agentPassword[64];
+	char agentPasswordType;
+	char agentId[15];
+	char clientDateTime[19];
+	char nullPad;
+}mbReqHdr;
+
+/*** Service level declarations  ***/
+
+struct st_res_sarie_participiant_list
+{
+	short int si_tot_participiant;
+	char c_bank_code[11+1];
+	char c_bank_name[35+1];
+};
+typedef struct st_res_sarie_participiant_list Res_Sarie_Participiant;
+
+struct st_res_purpose_of_transfer_code
+{
+	short int si_tot_trnf_code;
+	char c_trnf_code[2+1];
+	char c_trnf_desc_eng[45+1];
+	char c_trnf_desc_arb[45+1];
+};
+typedef struct st_res_purpose_of_transfer_code Res_Purpose_Of_Transfer;
+
+struct st_res_beneficiary_bank_country_code
+{
+	short int si_tot_country_code;
+	char c_cntry_code[3+1];
+	char c_cntry_name_eng[45+1];
+	char c_cntry_name_arb[45+1];
+};
+typedef struct st_res_beneficiary_bank_country_code Res_Benf_Bnk_Cntry;
+
+struct st_res_sarie_cutoff
+{
+	short int si_tot_record;
+	char c_trans_type[10+1];
+	char c_day_name[10+1];
+	char c_cutoff_time[6+1];
+};
+typedef struct st_res_sarie_cutoff Res_Sarie_Cutoff;
+
+struct st_res_sarie_dates
+{
+	short int si_tot_record;
+	long l_date_row;
+	char c_working_date[10+1];
+};
+typedef struct st_res_sarie_dates Res_Sarie_Dates;
+
+char calledFrom[10+1];
+int tapsConFlg = -1;
+int cpdbConFlg = -1;
+int phdbConFlg = -1;
+char hdrChkFlag = 'N';
+int debugLevel = 3;
+
+EXEC SQL BEGIN DECLARE SECTION; 
+	char tapsUserId[20];
+	char tapsPasswd[20];
+	char tapsDbString[20];
+	char cpdbUserId[20];
+	char cpdbPasswd[20];
+	char cpdbDbString[20];
+	char phdbUserId[20];
+	char phdbPasswd[20];
+	char phdbDbString[20];
+EXEC SQL END DECLARE SECTION; 
+
+EXEC SQL DECLARE TAPS DATABASE;
+EXEC SQL DECLARE CPDB DATABASE;
+EXEC SQL DECLARE TUXDB DATABASE;
+
+
+FBFR32 *inbuf;
+FBFR32 *outbuf;
+
+FILE *logFp;
+
+struct timeval  first, second, lapsed;  /* Ver 1.1 */
+struct timezone tzp;                    /* Ver 1.1 */
+
+/* Informaton for what */
+char    whatmsg1[80] = "@(#)Tux. TAPS (SARIE & SWIFT) Advise & Enquiry Adaptor  S.Rajesh Ver 2.8";
+char    whatmsg2[80] = "@(#)Arab National Bank                                            Aug'18";
+
+tpsvrinit(int argc, char *argv[])
+{
+    extern int optind;
+    extern char *optarg;
+	int n=0;
+	int Ret=0;
+
+	/* Some compilers warn if argc and argv aren't used. */
+	argc = argc;
+	argv = argv;
+
+    /*
+	strcpy(host, argv[optind]);
+	strcpy(port, argv[optind+1]);
+	timeOut=atoi(argv[optind+2]);
+	*/
+
+    if ( readParam(argv[0]) < 0 )
+	      exit(1);
+    decryptPwd(tapsPasswd);
+    decryptPwd(cpdbPasswd);
+    decryptPwd(phdbPasswd);
+
+	timeStamp();
+
+    fprintf(logFp, "Process started with logFileName=%s; \n",logFileName);
+    fflush(logFp);
+
+    /*establishCon();*/
+
+	return(0);
+}
+
+TAPSSERVICE(TPSVCINFO *rqst)
+{
+	char tmpStr[100];
+    char charInbuf[5000];
+    char pciInbuf[5000]; /* Ver 1.8 */
+    char *charOutbuf; 
+	char charTempbuf[200];
+	char c_count[3];
+	char s_tran_ref_num[16+1];
+	char errMsg[ERR_MSG_LEN];
+	char s_uti_yyddd[8];
+	char s_ord_cust_nm_addr[150+1];
+	char s_ord_cust_name[50+1];		/* Ver 1.4 */
+
+	int msgLen = 0; 
+	char    tmpStr1[100],tmpBuf[5000];
+    char    *tmpPtr, respStatus[10];
+	char 	serviceMsg[5000], channelId[10], serviceCode[10], eaiStatusCode[10], strMsgLen[10];
+	struct timeval tv;
+	struct timezone tz;
+	int retStatus=0;
+
+
+	char fld1[50], fld2[50], fld3[50], fld4[50];
+
+	char custRemark[150+1];
+	char recvBank[11+1];
+	char sendBic[11+1];
+	char recvBic[11+1];
+	char interBic[11+1];
+	char benefBic[11+1];
+
+	char s_bnf_cust_nm_addr[150+1];
+	char s_bnf_cust_name[50+1];		/* Ver 1.4 */
+	char s_pur_trnf_code[102+1];
+	char s_uti_seq_num[8+1];
+	char s_uti[16 +1];
+
+	char s_receiver[11+1];
+	char s_bnf_bnk_nm[35+1];	
+	char s_bnf_bnk_addr1[35+1];	
+	char s_bnf_bnk_addr2[35+1];	
+	char s_bnf_bnk_dtls[150+1];	/* Ver 1.3 */
+	char s_bnf_bnk_clr_cd[35+1]; /* Ver 1.3 */
+	char s_amount[15+1];
+	char s_currency[3+1];
+	char s_value_dt[8+1];
+	char s_ord_cust_acc[35+1];
+	char s_bnf_cust_acc[35+1];
+	char s_inmdte_acc[16+1];
+	char s_charges_flag[3+1];
+	char s_bnf_bnk_country_cd[2+1];
+
+	char c_ss_status;
+	varchar select_stmt[1500]; /* Ver 1.5 */
+
+	long l_uti_seq_num;
+	long l_fpq_uniq_ref;
+	long l_samamis_uniq_ref;
+	long l_space_rqd;
+	long l_space_avl;
+	long l_bufferlength;
+
+	int i_count=0, t_count=1;
+	int i_last_bnf_ptr;
+	int i_rownum;
+	int i_decimal_places;
+	int Ret=0;
+	int noTries=0;
+
+	varchar varTmpStr[10]; /* Ver 2.6 */
+
+	MSSG_HEADER msgHdr;
+	Res_Sarie_Participiant sarie_participiant;
+	Res_Purpose_Of_Transfer purpose_of_trnf;
+	Res_Benf_Bnk_Cntry benf_bnk_cntry;
+	Res_Sarie_Cutoff sarie_cutoff;
+	Res_Sarie_Dates sarie_dates;
+
+	/** Calling UNIX system function to get the time at miliseconds.   Ver 1.1**/
+	gettimeofday (&first, &tzp);
+
+    memset(tmpStr,'\0',sizeof tmpStr);
+	systime = time(NULL);
+	systemDate = localtime( &systime );
+	sprintf(tmpStr, "%02d%02d%04d", systemDate->tm_mday, systemDate->tm_mon +1, systemDate->tm_year+1900);
+	if ( strcmp(logFileDate, tmpStr) )
+	{
+		fclose(logFp);
+		strcpy(logFileDate, tmpStr);
+		sprintf(tmpStr, "%s.%s", logFileName, logFileDate);
+		if ( ( logFp = fopen ( tmpStr, "a+" )) == NULL ) 
+		{
+			printf ( "Error %d while opening %s file for Logging!!\n", errno, tmpStr) ;
+			perror ( tmpStr);
+			fprintf (stderr, "%s | Error %d : Could not open logFile file %s; fatal error.. Job aborted !!\n", getDateTime(), errno, tmpStr);
+			return  -1;
+		}
+	}
+
+	tapsConFlg = -1;
+	cpdbConFlg = -1;
+	phdbConFlg = -1;
+
+	TimeoutFlag=0;
+
+	/**** Getting the input FML Buffer value. ***/
+	inbuf=(FBFR32 *)rqst->data;
+
+	memset(charInbuf,'\0',sizeof(charInbuf) );
+	if ( Fget32(inbuf,INBUF1, 0,charInbuf, (FLDLEN32)0 ) == -1 )
+	{
+		timeStamp();
+	    fprintf(logFp,"Error while getting field from FML buffer; ERROR =[%s]\n", FMLMSG);
+		fflush(logFp);
+		tpfree((char *)inbuf);
+		tpreturn(TPFAIL,0,NULL,0L,0);
+	}
+
+	/* Ver 1.8 */
+	sprintf(pciInbuf, "%s", charInbuf);
+	if ( strncmp(&pciInbuf[17], "00", 2) == 0 )
+		strncpy(&pciInbuf[248+6], "xxxxxx", 6);
+	/* Ver 1.8 */
+
+	timeStamp();
+	fprintf(logFp,"Request Recvd : [%s]\n",pciInbuf);
+	fflush(logFp);
+
+	if((outbuf=(FBFR32 *)tpalloc("FML32",NULL,10000))==NULL)
+	{
+		timeStamp();
+		fprintf(logFp,"Tpalloc Failed; ERROR=[%s]\n", TPMSG); 
+		fflush(logFp);
+		tpfree((char *)inbuf);
+		tpreturn(TPFAIL,0,NULL,0L,0);
+	}
+
+	/*memset(charOutbuf,'\0',sizeof(charOutbuf) ); Commented by ali due to SIGBUS core dump*/
+	charOutbuf = (char *) malloc( MIN_BUF_LEN );
+	if( charOutbuf == NULL)
+	{
+		timeStamp();
+		fprintf(logFp,"Error while allocation a memory for OutPut Buffer; ERROR =[%s]\n", UNXMSG);
+		fflush(logFp);
+		tpfree((char *)inbuf);
+		tpreturn(TPFAIL, 0, NULL, 0, 0);
+	}
+
+	getMsgHeader(charInbuf, &msgHdr);
+
+	if( msgHdr.i_message_length != strlen(charInbuf) )
+	{
+        timeStamp();
+		fprintf(logFp,"Incorrect Message; ERROR =[03]\n");
+		fflush(logFp);
+		setResponseMessage(charOutbuf,charInbuf,"03");
+
+		error_exit(charOutbuf);	
+	}
+
+    /*Ver 2.2*/
+	if( hdrChkFlag == 'Y' && (strncmp(&charInbuf[5], "            ", 10) == 0 || strncmp(&charInbuf[15], "     ", 2) == 0))
+	{
+        timeStamp();
+	    fprintf(logFp,"Incorrect Message. Requested Branch Or Source is Null\n");
+		fflush(logFp);
+		setResponseMessage(charOutbuf,charInbuf,"03");
+
+		error_exit(charOutbuf);	
+	}
+	
+	msgHdr.s_branch_name[10] = '\0';
+	trim(msgHdr.s_branch_name);
+	msgHdr.s_branch_name[strlen(msgHdr.s_branch_name)]='\0';
+
+	strncpy(calledFrom,msgHdr.s_branch_name,10);
+
+	/*** 
+	Checking if database connections are NOT established at server boot then, trying to re-established. 
+
+	if( (tapsConFlg != 0) || (cpdbConFlg != 0) || (phdbConFlg != 0) )
+	{
+		establishCon();
+
+		if( (tapsConFlg != 0) || (cpdbConFlg != 0) || (phdbConFlg != 0) )
+		{
+			fprintf(logFp,"cpdbConFlg [%d]\n tapsConFlg [%d]\n phdbConFlg [%d]\n",cpdbConFlg,tapsConFlg,phdbConFlg);
+			fflush(logFp);
+			setResponseMessage(charOutbuf,charInbuf,"12");
+			error_exit(charOutbuf);
+		}
+	}
+	**************/
+
+	if(strncmp(msgHdr.s_service, "00", 2) == 0) /*********************************** SARIE Payment Request **/
+	{
+		/** Ver 1.2 ** 
+		strncpy(s_tran_ref_num,&charInbuf[21],16);
+		s_tran_ref_num[16]='\0'; ****/
+
+		sprintf(s_tran_ref_num,"%.16s", &charInbuf[21]);	/* Ver 1.2 */
+		trim(s_tran_ref_num); 								/* Ver 1.2 */
+		s_tran_ref_num[strlen(s_tran_ref_num)] = '\0'; 		/* Ver 1.2 */
+
+		strncpy(s_currency,&charInbuf[62],3);
+		s_currency[3]='\0';
+
+
+		/* Validating input message */
+		if( strncmp(s_currency,"SAR",3) != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Request for SARIE payment advise failed. Invalid currency code; ERROR=[03]\n",calledFrom);
+			fflush(logFp);
+			setResponseMessage(charOutbuf,charInbuf,"03");
+			error_exit(charOutbuf);
+		}
+
+		sprintf(tmpBuf,"%s",removeJunk(charInbuf, strlen(charInbuf)));
+		sprintf(charInbuf,"%s",tmpBuf);
+
+		sprintf(tmpStr, "%.2s", &charInbuf[17]);
+		if ( strstr(svcRoutedToMB, tmpStr) )
+		{
+			sprintf(channelId, "%.2s", &charInbuf[15]);
+			sprintf(serviceCode, "%.2s", &charInbuf[17]);
+
+			/* Get the MB channel Id from configuration */
+			sprintf(tmpStr, "~%.2s~", channelId);
+			memset(mbChannelId,' ', sizeof mbChannelId);
+			if ( (tmpPtr = strstr(channelIds, tmpStr)) )
+			{
+				sprintf(tmpStr, "%.4s", (tmpPtr+4));
+				if ( tmpStr[3] == '~' )    /* channel id is configured as 3 characters only */
+					tmpStr[3] = NULL;
+				sprintf(mbChannelId, "%-4.4s", tmpStr);
+			}
+
+			if ( mbChannelId[0] == ' ' )
+			{
+				timeStamp();
+				fprintf(logFp,"Channel is not defined in CFG file.. Please check.. \n");
+				fflush(logFp);
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);	
+			}
+
+			/* Get the Host version for the channel from configuration */
+
+			sprintf(tmpStr, "~%.2s~", channelId);
+			memset(mbChannelVersion,' ', sizeof mbChannelVersion);
+			if ( (tmpPtr = strstr(channelVersions, tmpStr)) )
+			{
+				sprintf(tmpStr, "%.5s", (tmpPtr+4));
+				if ( tmpStr[4] == '~' )    /* channel version is configured as 4 characters only */
+					tmpStr[4] = NULL;
+				sprintf(mbChannelVersion, "%-5.5s", tmpStr);
+			}
+
+			/* Get the service request message length from configuration */
+			sprintf(tmpStr, "~%.2s~", serviceCode);
+			if ( (tmpPtr = strstr(messageLengths, tmpStr)) )
+				sprintf(strMsgLen, "%.5s", (tmpPtr+4));
+
+			timeStamp();
+			fprintf(logFp, "Request message length for the service [%.2s] is [%s] \n", serviceCode, strMsgLen);
+			fflush(logFp);
+
+			msgLen=atol(strMsgLen);
+
+			timeStamp();
+			fprintf(logFp, "Incoming message length [%ld]; message length defined in CFG [%ld] \n", strlen(charInbuf), msgLen);
+
+			sprintf(charInbuf, "%-*.*s",msgLen, msgLen, charInbuf);
+
+			timeStamp();
+			fprintf(logFp, "After formatting; message length [%ld]\n", strlen(charInbuf));
+			fflush(logFp);
+
+			/* Format the service specific message from Incoming message */
+
+			memset(serviceMsg, ' ', sizeof serviceMsg);
+			sprintf(serviceMsg, "%.14s", &charInbuf[5]);  /* From BranchName to service */
+			gettimeofday (&tv,&tz);
+			srand(tv.tv_usec);
+			strcpy(tmpStr1, mbChannelId);
+			trim(tmpStr1);
+			sprintf (tmpStr,"%s%X%X%X", tmpStr1,tv.tv_sec, tv.tv_usec, rand());
+
+			sprintf(tmpStr, "%-36.36s", tmpStr);
+
+			strncpy(&serviceMsg[14], tmpStr, 36);
+			strncpy(&serviceMsg[50], mbChannelVersion, 5);
+
+			strncpy(&serviceMsg[55], &charInbuf[21], 504); /* From transaction reference no to purpose of transfer */
+			strncpy(&serviceMsg[559], &charInbuf[526], 150); /* Customer remarks */
+			serviceMsg[1209] = NULL; /* Filler 500 spaces */
+
+			memset(charOutbuf, ' ', sizeof charOutbuf);
+			retStatus = mbInterface("TAPSSERVICE", serviceMsg, channelId, serviceCode);
+
+			if ( retStatus < 0 )
+			{
+				timeStamp();
+				fprintf(logFp, "Error with MQ interface; Please contact MB Support");
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);	
+			}
+
+			/* Format the response message to be sent to channel */
+
+			memset(charOutbuf, ' ', sizeof charOutbuf);
+			strcpy(charOutbuf,charInbuf);
+			strncpy(&charOutbuf[19],"00",2);
+
+			sprintf(eaiStatusCode, "%.7s", (char *)&MQBuffer[14]);
+
+			if ( strncmp(eaiStatusCode, "I000000", 7) )
+			{
+				if ( strncmp(eaiStatusCode, "E830008", 7) == 0 )  /* Duplicate transmission */
+					strncpy(&charOutbuf[19],"20",2);
+				else if ( strncmp(eaiStatusCode, "E999976", 7) == 0 ) /* Database timeout */
+					strncpy(&charOutbuf[19],"12",2);
+				else if ( strncmp(eaiStatusCode, "E830037", 7) == 0 ) /* XferPurpose code is invalid  */
+					strncpy(&charOutbuf[19],"03",2);
+				else
+					strncpy(&charOutbuf[19],"13",2);
+			}
+
+			if ( strncmp(&charOutbuf[5], "                   ", 14) == 0 )
+				strncpy(&charOutbuf[5], &charInbuf[5], 14);
+
+			/* Ver 1.7; UTI number */
+			strncpy(&charOutbuf[676], (char *) &MQBuffer[314], 16);
+		}
+		else
+		{
+			TimeoutFlag = 0;
+			signal(SIGALRM, toAlarm1);
+			alarm(tapsTimeOut);
+
+			/* Validating input message */
+			if( strncmp(s_currency,"SAR",3) != 0 )
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Request for SARIE payment advise failed. Invalid currency code; ERROR=[03]\n",calledFrom);
+				fflush(logFp);
+				setResponseMessage(charOutbuf,charInbuf,"03");
+				error_exit(charOutbuf);
+			}
+
+			/** Establish TAPS Database connection **/
+
+			establishTAPSCon();
+
+			if( tapsConFlg != 0 )
+			{
+				fprintf(logFp,"tapsConFlg [%d]\n", tapsConFlg);
+				fflush(logFp);
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SARIE transfer; ERROR = [12]-1\n");
+				fflush(logFp);
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-1;\n");
+				fflush(logFp);
+			}
+
+			/** Checking for a duplicate Transaction reference number. **/	
+			EXEC SQL AT TAPS
+				SELECT COUNT(f_20)
+				INTO	:i_count
+				FROM	braid_sama_mis
+				WHERE	f_20 = :s_tran_ref_num
+				AND		sender  = TRIM(:msgHdr.s_branch_name);
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-2;\n");
+				fflush(logFp);
+			}
+
+			if( SQLCODE != 0 && SQLCODE != NO_DATA_FOUND)
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Request for SARIE payment advise failed; SQL error [%d] while duplicate checking; ERROR=[%s]\n",calledFrom, SQLCODE, SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+			if( i_count > 0 ) /* means, transaction exisist. */
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Request for SARIE payment advise failed; Duplicate transaction found... ERROR=[20]\n",calledFrom);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"20");
+				error_exit(charOutbuf);
+			}
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SARIE transfer; ERROR = [12]-2\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			/** Establish CPDB Database connection **/
+
+			establishCPDBCon();
+
+			if( cpdbConFlg != 0 )
+			{
+				fprintf(logFp,"cpdbConFlg [%d]\n", cpdbConFlg);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SARIE transfer; ERROR = [12]-3\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-3;\n");
+				fflush(logFp);
+			}
+
+			/* Getting the decimal places as per the currency type. */
+			EXEC SQL AT CPDB
+				SELECT	NVL(ccy_decimal_places,0)
+				INTO	:i_decimal_places
+				FROM	currency
+				WHERE	iso_currency_alpha_code = :s_currency;
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-4;\n");
+				fflush(logFp);
+			}
+
+			if( SQLCODE != 0 )
+			{
+				timeStamp();
+				if(SQLCODE == NO_DATA_FOUND)
+				{
+					fprintf(logFp,"%s|Request for SARIE payment advise failed. Invalid currency code; ERROR=[03] Database Error [%s]\n",calledFrom,SQLMSG);
+					fflush(logFp);
+					setResponseMessage(charOutbuf,charInbuf,"03");
+				}
+				else
+				{
+					fprintf(logFp,"%s|Request for SARIE payment advise failed; SQL error [%d] while getting decimal place for the currency [%s] ;ERROR=[%s]\n",calledFrom, SQLCODE, s_currency, SQLMSG);
+					fflush(logFp);
+					setResponseMessage(charOutbuf,charInbuf,"99");
+				}
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+				error_exit(charOutbuf);
+			}
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SARIE transfer; ERROR = [12]-4\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			/** Concatinating Ordering Customer Name and its 3 address fields of 35 character each with
+			carrage return at the end of each. **/
+
+			memset(s_ord_cust_nm_addr,'\0',sizeof(s_ord_cust_nm_addr));
+
+			sprintf(fld1,"%-35.35s",removeJunk(&charInbuf[108], 35));
+			sprintf(fld2,"%-35.35s",removeJunk(&charInbuf[143], 35));
+			sprintf(fld3,"%-35.35s",removeJunk(&charInbuf[178], 35));
+			sprintf(fld4,"%-35.35s",removeJunk(&charInbuf[213], 35));
+
+			//sprintf(s_ord_cust_nm_addr,"%-35.35s\n%-35.35s\n%-35.35s\n%-35.35s",removeJunk(&charInbuf[108], 35),
+			//													 removeJunk(&charInbuf[143], 35),
+			//													 removeJunk(&charInbuf[178], 35),
+			//													 removeJunk(&charInbuf[213], 35));
+
+			sprintf(s_ord_cust_nm_addr,"%-35.35s\n%-35.35s\n%-35.35s\n%-35.35s", fld1, fld2, fld3, fld4);
+
+			s_ord_cust_nm_addr[150]='\0';
+			trim(s_ord_cust_nm_addr);
+			s_ord_cust_nm_addr[strlen(s_ord_cust_nm_addr)]='\0';
+
+			/* Ver 1.4 */
+			sprintf(s_ord_cust_name, "%-35.35s", removeJunk(&charInbuf[108], 35));
+			/*fprintf(logFp,"Received [%.35s]  Removed [%.35s]\n",&charInbuf[108], s_ord_cust_name); */
+			trim(s_ord_cust_name);
+			s_ord_cust_name[strlen(s_ord_cust_name)]='\0';
+			/* Till here */
+
+			memset(custRemark,'\0',sizeof(custRemark));
+
+			sprintf(fld1,"%-35.35s",removeJunk(&charInbuf[526], 35));
+			sprintf(fld2,"%-35.35s",removeJunk(&charInbuf[561], 35));
+			sprintf(fld3,"%-35.35s",removeJunk(&charInbuf[596], 35));
+			sprintf(fld4,"%-35.35s",removeJunk(&charInbuf[631], 35));
+
+			//sprintf(custRemark,"%-35.35s\n%-35.35s\n%-35.35s\n%-35.35s",
+			//													 removeJunk(&charInbuf[526], 35),
+			//													 removeJunk(&charInbuf[561], 35),
+			//													 removeJunk(&charInbuf[596], 35),
+			//													 removeJunk(&charInbuf[631], 35);
+
+			sprintf(custRemark,"%-35.35s\n%-35.35s\n%-35.35s\n%-35.35s", fld1, fld2, fld3, fld4);
+
+			custRemark[150]='\0';
+			trim(custRemark);
+			custRemark[strlen(custRemark)]='\0';
+
+			/** Concatinating Beneficiary Customer Name and its 3 address fields of 35 character each with
+			carrage return at the end of each. **/
+
+			memset(s_bnf_cust_nm_addr,'\0',sizeof(s_bnf_cust_nm_addr));
+
+			sprintf(fld1,"%-35.35s",removeJunk(&charInbuf[283], 35));
+			sprintf(fld2,"%-35.35s",removeJunk(&charInbuf[318], 35));
+			sprintf(fld3,"%-35.35s",removeJunk(&charInbuf[353], 35));
+			sprintf(fld4,"%-35.35s",removeJunk(&charInbuf[388], 35));
+
+			//sprintf(s_bnf_cust_nm_addr,"%-35.35s\n%-35.35s\n%-35.35s\n%-35.35s",removeJunk(&charInbuf[283], 35),
+			//													 removeJunk(&charInbuf[318], 35),
+			//													 removeJunk(&charInbuf[353], 35),
+			//													 removeJunk(&charInbuf[388], 35));
+
+			sprintf(s_bnf_cust_nm_addr,"%-35.35s\n%-35.35s\n%-35.35s\n%-35.35s", fld1, fld2, fld3, fld4);
+
+			s_bnf_cust_nm_addr[150]='\0';
+			trim(s_bnf_cust_nm_addr);
+			s_bnf_cust_nm_addr[strlen(s_bnf_cust_nm_addr)]='\0';
+
+			/* Ver 1.4 */
+			sprintf(s_bnf_cust_name, "%-35.35s", removeJunk(&charInbuf[283], 35));
+			/*fprintf(logFp,"Received [%.35s]  Removed [%.35s]\n",&charInbuf[283], s_bnf_cust_name); */
+			trim(s_bnf_cust_name);
+			s_bnf_cust_name[strlen(s_bnf_cust_name)]='\0';
+			/* Till here */
+
+			memset(s_pur_trnf_code,' ',sizeof(s_pur_trnf_code));
+			strncpy(s_pur_trnf_code,&charInbuf[423],102);	/** Concatinating Purpose for transfer code and its
+																description. **/
+			s_pur_trnf_code[102]='\0';
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-5;\n");
+				fflush(logFp);
+			}
+
+			/** Getting the next number from the oracle sequance BRAID_FPQ_COUNTER. **/
+			EXEC SQL AT TAPS
+				SELECT  FPQDBA.braid_fpq_counter.NEXTVAL
+				INTO    :l_fpq_uniq_ref
+				FROM    dual;
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-6;\n");
+				fflush(logFp);
+			}
+
+			if(SQLCODE != 0)
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Fetching the next value from a sequance BRAID_FPQ_COUNTER failed; ERROR[%s]\n",calledFrom,SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SARIE transfer; ERROR = [12]-5\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			timeStamp();
+			fprintf(logFp,"l_fpq_uniq_ref [%ld]\n",l_fpq_uniq_ref);
+			fflush(logFp);
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-7;Before braid_samamis_counter\n");
+				fflush(logFp);
+			}
+
+			/** Getting the next number from the oracle sequance BRAID_SAMAMIS_COUNTER. **/
+			EXEC SQL AT TAPS
+				SELECT  FPQDBA.braid_samamis_counter.NEXTVAL
+				INTO    :l_samamis_uniq_ref
+				FROM    dual;
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-8;After braid_samamis_counter\n");
+				fflush(logFp);
+			}
+
+			if(SQLCODE != 0)
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Fetching the next value from a sequance BRAID_SAMAMIS_COUNTER failed; ERROR[%s]\n",calledFrom,SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SARIE transfer; ERROR = [12]-6\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			timeStamp();
+			fprintf(logFp,"l_samamis_uniq_ref [%ld]\n",l_samamis_uniq_ref);
+			fflush(logFp);
+
+			EXEC SQL SET TRANSACTION; 
+
+			/** Establish TUXDB Database connection **/
+
+			establishTUXDBCon();
+
+			if( phdbConFlg != 0 )
+			{
+				timeStamp();
+				fprintf(logFp,"phdbConFlg [%d]\n", phdbConFlg);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SARIE transfer; ERROR = [12]-7\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS  ROLLBACK RELEASE;
+				EXEC SQL AT CPDB  ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			/** Getting the latest sequance number for a given Branch Name and sysdate. **/
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-9;Before select sss_sarie_swift_seq_num\n");
+				fflush(logFp);
+			}
+
+			EXEC SQL AT TUXDB
+				SELECT	seq_number
+				INTO	:l_uti_seq_num
+				FROM	sss_sarie_swift_seq_num
+				WHERE	tran_date   = TO_DATE(TO_CHAR(sysdate,'DD-Mon-YYYY'),'DD-Mon-YYYY')
+				AND		branch_name = :msgHdr.s_branch_name
+				FOR UPDATE OF seq_number;
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-10;After select sss_sarie_swift_seq_num; Seq# [%d]\n", l_uti_seq_num);
+				fflush(logFp);
+			}
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SARIE transfer; ERROR = [12]-8\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+		
+			if(SQLCODE == NO_DATA_FOUND)
+			{
+					if ( debugLevel > 6 )
+					{
+						timeStamp();
+						fprintf(logFp,"SARIE DBG-11;\n");
+						fflush(logFp);
+					}
+
+				EXEC SQL AT TUXDB
+					INSERT INTO sss_sarie_swift_seq_num
+					(
+						branch_name,
+						tran_date,
+						seq_number
+					)
+					VALUES
+					(
+						:msgHdr.s_branch_name,
+						TO_DATE(TO_CHAR(sysdate,'DD-Mon-YYYY'),'DD-Mon-YYYY'),
+						1
+					);
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-12;\n");
+				fflush(logFp);
+			}
+				if ( TimeoutFlag == 1)
+				{
+					timeStamp();
+					fprintf(logFp,"TimeOut while calling SARIE transfer; ERROR = [12]-8.1\n");
+					fflush(logFp);
+
+					EXEC SQL AT TAPS ROLLBACK RELEASE;
+					EXEC SQL AT CPDB ROLLBACK RELEASE;
+					EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+					setResponseMessage(charOutbuf,charInbuf,"12");
+					error_exit(charOutbuf);
+				}
+
+				if( SQLCODE != 0 )
+				{
+					EXEC SQL AT TUXDB ROLLBACK work;
+					timeStamp();
+					fprintf(logFp,"%s|Error while inserting latest sequence number for SARIE Payment Advise; ERROR[%s]\n",calledFrom,SQLMSG);
+					fflush(logFp);
+					EXEC SQL AT TAPS ROLLBACK RELEASE;
+					EXEC SQL AT CPDB ROLLBACK RELEASE;
+					EXEC SQL AT TUXDB ROLLBACK RELEASE;
+					setResponseMessage(charOutbuf,charInbuf,"99");
+					error_exit(charOutbuf);
+				}
+
+				l_uti_seq_num = 1;
+
+			}
+			else if(SQLCODE != 0)
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Error while getting latest sequence number for SARIE Payment Advise; ERRRO[%s]\n",calledFrom,SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+			else
+			{
+				if( l_uti_seq_num >= 35999 )
+				{
+					timeStamp();
+					fprintf(logFp,"Max number of transaction for this channel [%s] exceeded the limit of 35,999 in sss_sarie_swift_seq_num table (in TUXDB) during SARIE Payment Advise\n",calledFrom);
+					fflush(logFp);
+					EXEC SQL AT TAPS ROLLBACK RELEASE;
+					EXEC SQL AT TUXDB ROLLBACK RELEASE;
+					setResponseMessage(charOutbuf,charInbuf,"99");
+					error_exit(charOutbuf);
+				}
+				l_uti_seq_num++;
+
+				timeStamp();
+				fprintf(logFp,"Value in l_uti_seq_num [%ld]\n",l_uti_seq_num);
+				timeStamp();
+				fprintf(logFp,"Value inmsgHdr.s_branch_name [%s]\n",msgHdr.s_branch_name);
+				fflush(logFp);
+
+				if ( debugLevel > 6 )
+				{
+					timeStamp();
+					fprintf(logFp,"SARIE DBG-13;\n");
+					fflush(logFp);
+				}
+
+				EXEC SQL AT TUXDB 
+					UPDATE	sss_sarie_swift_seq_num
+					SET		seq_number = :l_uti_seq_num
+					WHERE   tran_date   = TO_DATE(TO_CHAR(sysdate,'DD-Mon-YYYY'),'DD-Mon-YYYY')
+					AND     branch_name = :msgHdr.s_branch_name;
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-14;\n");
+				fflush(logFp);
+			}
+
+				if ( TimeoutFlag == 1)
+				{
+					timeStamp();
+					fprintf(logFp,"TimeOut while calling SARIE transfer; ERROR = [12]-9\n");
+					fflush(logFp);
+
+					EXEC SQL AT TAPS ROLLBACK RELEASE;
+					EXEC SQL AT CPDB ROLLBACK RELEASE;
+					EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+					setResponseMessage(charOutbuf,charInbuf,"12");
+					error_exit(charOutbuf);
+				}
+
+				if( SQLCODE != 0 )
+				{
+					timeStamp();
+					fprintf(logFp,"%s|Error while updating new sequence number for SARIE Payment Advise; ERRRO[%s]\n",calledFrom,SQLMSG);
+					fflush(logFp);
+					EXEC SQL AT TAPS ROLLBACK RELEASE;
+					EXEC SQL AT CPDB ROLLBACK RELEASE;
+					EXEC SQL AT TUXDB ROLLBACK RELEASE;
+					setResponseMessage(charOutbuf,charInbuf,"99");
+					error_exit(charOutbuf);
+				}
+			}
+
+			/****  Begin- addition  during v.2.6***/
+			memset(varTmpStr.arr,'\0',sizeof varTmpStr.arr); varTmpStr.len = 0;
+			EXEC SQL AT TUXDB
+				   select FORMAT_SEQNUM(:l_uti_seq_num) into :varTmpStr from dual;
+			if(SQLCODE != 0)
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Error while calling FORMAT_SEQNUM for SARIE Payment Advise; ERRRO[%s]\n",calledFrom,SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+			EXEC SQL AT TUXDB COMMIT RELEASE; /* Introduced to release the TUXDB for other process */
+			fprintf(logFp,"SEQNO [%s][%d]\n", varTmpStr.arr, varTmpStr.len); fflush(logFp);
+			varTmpStr.arr[varTmpStr.len]='\0';
+			/****  END - addition  during v.2.6***/
+			
+			/** Making a value for UTI column in BRAID_FPQ & BRAID_SAMA_MIS table. **/
+			strcpy(s_uti,"ARNB");
+			strncat(s_uti,msgHdr.s_branch_name,3);
+
+			sprintf(s_uti_yyddd, "%04d%03d", systemDate->tm_year+1900, systemDate->tm_yday +1); 
+			strncat(s_uti,&s_uti_yyddd[2],5);
+
+			/*sprintf(s_uti_seq_num,"%08d",l_uti_seq_num); commented during V.2.6*/
+			/*strncat(s_uti,&s_uti_seq_num[4],4);  commented during V.2.6*/
+
+			strncat(s_uti,varTmpStr.arr,4);
+			s_uti[16]='\0';
+
+			fprintf(logFp,"UTI_NUM [%s]\n", s_uti); fflush(logFp);
+
+
+			strncpy(s_receiver,&charInbuf[37],11);
+			s_receiver[11]='\0';
+
+			strncpy(s_amount,&charInbuf[48],(14 - i_decimal_places) );						/* Digits Before decimal */
+			s_amount[(14 - i_decimal_places)]='\0';
+			strcat(s_amount,".");															/* decimal */
+			strncat(s_amount,&charInbuf[48 + (14 - i_decimal_places)],i_decimal_places);	/* Digits after decimal */
+			s_amount[15]='\0';
+			sprintf( s_amount,"%0.*f",i_decimal_places,atof(s_amount) );
+			
+			strncpy(s_value_dt,&charInbuf[67],6); /** Fetching YYMMDD out of yyYYMMDD **/
+			s_value_dt[6]='\0';
+
+			strncpy(s_ord_cust_acc,&charInbuf[73],35);
+			s_ord_cust_acc[35]='\0';
+
+			strncpy(s_bnf_cust_acc,&charInbuf[248],35);
+			s_bnf_cust_acc[35]='\0';
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-15;\n");
+				fflush(logFp);
+			}
+
+			/** Inserting the SARIE Payment advise into BRAID_FPQ table. **/
+			EXEC SQL AT TAPS
+				INSERT INTO braid_fpq
+				(
+				F_20, 
+				uniqueref,
+				uti,
+				sender,
+				receiver, 
+				F_32A_amount,
+				F_32A_currency,
+				F_32A_date,
+				F_50A_accountnumber,
+				F_50,
+				F_59_account,
+				F_59_customer,
+				status,
+				msgtype,
+				mtype,
+				mformat,
+				priority,
+				pflag,
+				mmode,
+				tpflag,
+				F_70,
+				F_77B,
+				beneficiary_bank_country
+				)
+				VALUES
+				(
+				:s_tran_ref_num,
+				:l_fpq_uniq_ref,
+				:s_uti,
+				:msgHdr.s_branch_name,
+				:s_receiver,
+				:s_amount,
+				:s_currency,
+				:s_value_dt,
+				:s_ord_cust_acc,
+				:s_ord_cust_nm_addr,
+				:s_bnf_cust_acc,
+				:s_bnf_cust_nm_addr,
+				'N',
+				'SASCPAY',
+				'SCPAY',
+				'103',
+				'50',
+				'N',
+				'N',
+				'N',
+				:custRemark,
+				:s_pur_trnf_code,       /* Ver 2.3 */     /* Purpose of Transfer code & description */
+				'SA'                    /*ver 2.3*/ /*always SA during sarie payment*/
+				);
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-16;\n");
+				fflush(logFp);
+			}
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SARIE transfer; ERROR = [12]-10\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			if( SQLCODE != 0 )
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Error while Inserting a SARIE payment advise into BRAID_FPQ table; ERROR [%s]\n",calledFrom,SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-17;\n");
+				fflush(logFp);
+			}
+
+
+			/** Inserting the SARIE Payment advise into BRAID_SAMA_MIS table. **/
+			EXEC SQL AT TAPS
+				INSERT INTO braid_sama_mis
+				(
+					tran_date,
+					F_20,
+					uniqueref,
+					uti,
+					sender,
+					receiver,
+					F_32A_amount,
+					F_32A_currency,
+					F_32A_date,
+					F_50A_accountnumber,
+					F_50,
+					F_59_account,
+					F_59_customer,
+					F_77B,
+					status,
+					msgtype,
+					mtype,
+					mformat,
+					priority,
+					pflag,
+					mmode,
+					tpflag,
+					F_70,
+					customer_rem,	/*Ver 1.4*/
+					customer_name,	/*Ver 1.4*/
+					beneficiary_bank_country /*Ver 2.3*/
+				)
+				VALUES
+				(
+					to_char(sysdate,'YYYYMMDD'),
+					:s_tran_ref_num,
+					:l_samamis_uniq_ref,
+					:s_uti,
+					:msgHdr.s_branch_name,
+					:s_receiver,
+					:s_amount,
+					:s_currency,
+					:s_value_dt,
+					:s_ord_cust_acc,
+					:s_ord_cust_nm_addr,
+					:s_bnf_cust_acc,
+					:s_bnf_cust_nm_addr,
+					:s_pur_trnf_code,
+					'N',
+					'SASCPAY',
+					'SCPAY',
+					'103',
+					'50',
+					'N',
+					'N',
+					'N',
+					:custRemark,
+					:s_ord_cust_name,	/*Ver 1.4*/
+					:s_bnf_cust_name,	/*Ver 1.4*/
+					'SA'                /*ver 2.3*/ /*always SA during sarie payment*/
+				);
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-18;\n");
+				fflush(logFp);
+			}
+
+			if( SQLCODE != 0 )
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Error while Inserting a SARIE payment advise into BRAID_SAMA_MIS table; ERROR [%s]\n",calledFrom,SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SARIE transfer; ERROR = [12]-11\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			/**** Commented under Ver 1.8 ****
+			** Inserting the SARIE Payment advise into SST_SARIE_SWIFT_TRAN_DTLS@TUXDB table. **
+
+			EXEC SQL AT TUXDB
+				INSERT INTO SST_SARIE_SWIFT_TRAN_DTLS
+				(
+					branch_name,
+					tran_ref_num,
+					uniqueref,
+					uti,
+					receiver,
+					amount,
+					value_date,
+					ord_cust_acc,
+					ord_cust_name,
+					bnf_cust_acc,
+					bnf_cust_name,
+					status
+				)
+				VALUES
+				(
+					:msgHdr.s_branch_name,                     ** Branch Name (SENDER) **
+					:s_tran_ref_num,                            ** Transaction Ref. Number **
+					:l_fpq_uniq_ref,                           	** Unique Ref. **
+					:s_uti,                                     ** UTI **
+					:s_receiver,               				    ** SARIE participiant Bank code (RECEIVER) **
+					:s_amount,                   				** Amount **
+					:s_value_dt,								** Value Date **
+					:s_ord_cust_acc,                  			** Ordering Customer Acc **
+					substr(:s_ord_cust_nm_addr,1,35), 	        ** Ordering customer Name **
+					:s_bnf_cust_acc,                  			** Beneficiary customer Acc **
+					substr(:s_bnf_cust_nm_addr,1,35),   		** Beneficiary customer Name **
+					'N'                                         ** Status **
+				);
+
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp,"SARIE DBG-19;\n");
+				fflush(logFp);
+			}
+
+			if( SQLCODE != 0 )
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Error while Inserting a SARIE payment advise into SST_SARIE_SWIFT_TRAN_DTLS@TUXDB table; ERROR [%s]\n",calledFrom,SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+			 ********************* under Ver 1.8 *******/
+			
+
+			 alarm(0); /* Reset the timeout */
+
+			strcpy(charOutbuf,charInbuf);
+			strncpy(&charOutbuf[19],"00",2);
+
+			/* Ver 1.7; UTI number */
+			strncpy(&charOutbuf[676], s_uti, 16);
+
+			EXEC SQL AT CPDB COMMIT RELEASE;
+		}
+	}
+	else if(strncmp(msgHdr.s_service, "01", 2) == 0)  /******************************* SARIE Payment Enqiry **/
+	{
+		/** Ver 1.2 ** 
+		strncpy(s_tran_ref_num,&charInbuf[21],16);
+		s_tran_ref_num[16]='\0'; ****/
+
+		sprintf(s_tran_ref_num,"%.16s", &charInbuf[21]);	/* Ver 1.2 */
+		trim(s_tran_ref_num); 								/* Ver 1.2 */
+		s_tran_ref_num[strlen(s_tran_ref_num)] = '\0'; 		/* Ver 1.2 */
+
+		/** Establish TAPS Database connection **/
+
+		establishTAPSCon();
+
+        if( tapsConFlg != 0 )
+        {
+            fprintf(logFp,"tapsConFlg [%d]\n", tapsConFlg);
+            fflush(logFp);
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+        }
+
+		EXEC SQL AT TAPS
+			SELECT	status
+			INTO	:c_ss_status
+			FROM	braid_sama_mis 
+			WHERE	f_20	= :s_tran_ref_num
+			AND		sender	= :msgHdr.s_branch_name;
+
+		if( SQLCODE != 0)
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Status for SARIE payment enquiry failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+			fflush(logFp);
+			if(SQLCODE == NO_DATA_FOUND)
+			{
+				strcpy(msgHdr.s_response_status,"18"); /** No such record exist **/
+			}
+			else
+			{
+				strcpy(msgHdr.s_response_status,"99"); /** No such record exist **/
+			}
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		strcpy(charOutbuf,charInbuf);
+		charOutbuf[525] = c_ss_status;
+		/*charOutbuf[526] = c_ss_status;*/
+		strncpy(&charOutbuf[19],"00",2);	
+
+		EXEC SQL AT TAPS COMMIT RELEASE;
+
+	}
+	else if(strncmp(msgHdr.s_service, "02", 2) == 0) /******************************* SWIFT Payment Request **/
+	{
+		/** Ver 1.2 ** 
+		strncpy(s_tran_ref_num,&charInbuf[21],16);
+		s_tran_ref_num[16]='\0'; ****/
+
+		sprintf(s_tran_ref_num,"%.16s", &charInbuf[21]);	/* Ver 1.2 */
+		trim(s_tran_ref_num); 								/* Ver 1.2 */
+		s_tran_ref_num[strlen(s_tran_ref_num)] = '\0'; 		/* Ver 1.2 */
+
+		strncpy(s_charges_flag,&charInbuf[593],3);
+		s_charges_flag[3]='\0';
+
+		/* Validating Input message */
+		if( (strncmp(s_charges_flag,"OUR",3) != 0) &&
+			(strncmp(s_charges_flag,"BEN",3) != 0) &&
+			(strncmp(s_charges_flag,"SHA",3) != 0) )
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Request for SWIFT payment advise failed. Invalid message; Charges Flag should be OUR, BEN, SHA; Received [%s] ; ERROR=[03]\n",calledFrom, s_charges_flag);
+			fflush(logFp);
+			setResponseMessage(charOutbuf,charInbuf,"03");
+			error_exit(charOutbuf);
+		}
+
+		sprintf(tmpBuf,"%s",removeJunk(charInbuf, strlen(charInbuf)));
+		sprintf(charInbuf,"%s",tmpBuf);
+
+		sprintf(tmpStr, "%.2s", &charInbuf[17]);
+		if ( strstr(svcRoutedToMB, tmpStr) )
+		{
+			sprintf(channelId, "%.2s", &charInbuf[15]);
+			sprintf(serviceCode, "%.2s", &charInbuf[17]);
+
+			/* Get the MB channel Id from configuration */
+			sprintf(tmpStr, "~%.2s~", channelId);
+			memset(mbChannelId,' ', sizeof mbChannelId);
+			if ( (tmpPtr = strstr(channelIds, tmpStr)) )
+			{
+				sprintf(tmpStr, "%.4s", (tmpPtr+4));
+				if ( tmpStr[3] == '~' )    /* channel id is configured as 3 characters only */
+					tmpStr[3] = NULL;
+				sprintf(mbChannelId, "%-4.4s", tmpStr);
+			}
+
+			if ( mbChannelId[0] == ' ' )
+			{
+				timeStamp();
+				fprintf(logFp,"Channel is not defined in CFG file.. Please check.. \n");
+				fflush(logFp);
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);	
+			}
+
+			/* Get the Host version for the channel from configuration */
+
+			sprintf(tmpStr, "~%.2s~", channelId);
+			memset(mbChannelVersion,' ', sizeof mbChannelVersion);
+			if ( (tmpPtr = strstr(channelVersions, tmpStr)) )
+			{
+				sprintf(tmpStr, "%.5s", (tmpPtr+4));
+				if ( tmpStr[4] == '~' )    /* channel version is configured as 4 characters only */
+					tmpStr[4] = NULL;
+				sprintf(mbChannelVersion, "%-5.5s", tmpStr);
+			}
+
+			/* Get the service request message length from configuration */
+			sprintf(tmpStr, "~%.2s~", serviceCode);
+			if ( (tmpPtr = strstr(messageLengths, tmpStr)) )
+				sprintf(strMsgLen, "%.5s", (tmpPtr+4));
+
+			timeStamp();
+			fprintf(logFp, "Request message length for the service [%.2s] is [%s] \n", serviceCode, strMsgLen);
+			fflush(logFp);
+
+			msgLen=atol(strMsgLen);
+
+			timeStamp();
+			fprintf(logFp, "Incoming message length [%ld]; message length defined in CFG [%ld] \n", strlen(charInbuf), msgLen);
+
+			sprintf(charInbuf, "%-*.*s",msgLen, msgLen, charInbuf);
+
+			timeStamp();
+			fprintf(logFp, "After formatting; message length [%ld]\n", strlen(charInbuf));
+			fflush(logFp);
+
+			/* Format the service specific message from Incoming message */
+
+			memset(serviceMsg, ' ', sizeof serviceMsg);
+			sprintf(serviceMsg, "%.14s", &charInbuf[5]);  /* From BranchName to service */
+			gettimeofday (&tv,&tz);
+			srand(tv.tv_usec);
+			strcpy(tmpStr1, mbChannelId);
+			trim(tmpStr1);
+			sprintf (tmpStr,"%s%X%X%X", tmpStr1,tv.tv_sec, tv.tv_usec, rand());
+
+			sprintf(tmpStr, "%-36.36s", tmpStr);
+
+			strncpy(&serviceMsg[14], tmpStr, 36);
+			strncpy(&serviceMsg[50], mbChannelVersion, 5);
+
+			strncpy(&serviceMsg[55], &charInbuf[21], 958); /* From transaction reference no to benef bank clring code */
+			serviceMsg[1513] = NULL; /* Filler 500 spaces */
+
+			memset(charOutbuf, ' ', sizeof charOutbuf);
+			retStatus = mbInterface("TAPSSERVICE", serviceMsg, channelId, serviceCode);
+
+			if ( retStatus < 0 )
+			{
+				timeStamp();
+				fprintf(logFp, "Error with MQ interface; Please contact MB Support");
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);	
+			}
+
+			/* Format the response message to be sent to channel */
+
+			memset(charOutbuf, ' ', sizeof charOutbuf);
+			strcpy(charOutbuf,charInbuf);
+			strncpy(&charOutbuf[19],"00",2);
+
+			sprintf(eaiStatusCode, "%.7s", (char *)&MQBuffer[14]);
+
+			if ( strncmp(eaiStatusCode, "I000000", 7) )
+			{
+				if ( strncmp(eaiStatusCode, "E830008", 7) == 0 )  /* Duplicate transmission */
+					strncpy(&charOutbuf[19],"20",2);
+				else if ( strncmp(eaiStatusCode, "E999976", 7) == 0 ) /* Database timeout */
+					strncpy(&charOutbuf[19],"12",2);
+				else
+					strncpy(&charOutbuf[19],"13",2);
+			}
+
+			if ( strncmp(&charOutbuf[5], "                   ", 14) == 0 )
+				strncpy(&charOutbuf[5], &charInbuf[5], 14);
+		}
+		else /* if it is not configured to route to MB */
+		{
+			TimeoutFlag = 0;
+			signal(SIGALRM, toAlarm1);
+			alarm(tapsTimeOut);
+
+			/** Establish TAPS Database connection **/
+
+			establishTAPSCon();
+
+			if( tapsConFlg != 0 )
+			{
+				fprintf(logFp,"tapsConFlg [%d]\n", tapsConFlg);
+				fflush(logFp);
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-1\n");
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			/** Checking for a duplicate Transaction reference number. **/
+			EXEC SQL AT TAPS
+				SELECT COUNT(f_20)
+				INTO    :i_count
+				FROM    braid_sama_mis
+				WHERE   f_20 = :s_tran_ref_num
+				AND     sender  = TRIM(:msgHdr.s_branch_name);
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-2\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			if( SQLCODE != 0 && SQLCODE != NO_DATA_FOUND)
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Request for SWIFT payment advise failed; DB error [%d] while checking duplicate reference number ;ERROR=[%s]\n",calledFrom, SQLCODE, SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+			if( i_count > 0 ) /* means, transaction exisist. */
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Request for SWIFT payment advise failed; Transaction reference [%s]; sender [%s] already exists.. ERROR=[20]\n",calledFrom, s_tran_ref_num, msgHdr.s_branch_name);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"20");
+				error_exit(charOutbuf);
+			}
+
+			/** Concatinating Ordering Customer Name and its 3 address fields. **/
+
+			memset(s_ord_cust_nm_addr,'\0',sizeof(s_ord_cust_nm_addr));
+			/** Ver 1.2 ** strncpy(s_ord_cust_nm_addr,&charInbuf[172],135); 	** 135 = 30 + 35 + 35 + 35 **/
+
+			/** Ver 1.2 ** strncpy(s_ord_cust_nm_addr,&charInbuf[172],135); 	** 135 = 30 + 35 + 35 + 35 **/
+
+			/* Ver 2.4 ; Padd 5 spaces at end of bnfCustName i.e.,140 = 35 + 35 + 35 + 35 + 3(new line char)**/
+
+			sprintf(s_ord_cust_nm_addr,"%30.30s     \n%35.35s\n%35.35s\n%35.35s",&charInbuf[172], &charInbuf[202], &charInbuf[237], &charInbuf[272]); /* Ver 1.2 */
+			sprintf(s_ord_cust_name, "%30.30s", &charInbuf[172]);
+
+			s_ord_cust_nm_addr[143]='\0'; /* Ver 2.4 changed from 135 to 143 */
+
+			/* Ver 1.4 */
+			trim(s_ord_cust_name);
+			s_ord_cust_name[strlen(s_ord_cust_name)]='\0';
+			/* Till Here */
+
+			/** Concatinating Beneficiary Customer Name and its 3 address fields. **/
+
+			memset(s_bnf_cust_nm_addr,'\0',sizeof(s_bnf_cust_nm_addr));
+			/** Ver 1.2 ** strncpy(s_bnf_cust_nm_addr,&charInbuf[342],135);    ** 135 = 30 + 35 + 35 + 35 **/
+			/* Ver 2.4 ; Padd 5 spaces at end of bnfCustName i.e.,140 = 35 + 35 + 35 + 35 + 3(new line char)**/
+
+			sprintf(s_bnf_cust_nm_addr, "%30.30s     \n%35.35s\n%35.35s\n%35.35s", &charInbuf[342], &charInbuf[372], &charInbuf[407], &charInbuf[442]); /* Ver 1.2 */
+			sprintf(s_bnf_cust_name, "%30.30s", &charInbuf[342]);
+			s_bnf_cust_nm_addr[143]='\0';
+
+			/* Ver 1.4 */
+			trim(s_bnf_cust_name);
+			s_bnf_cust_name[strlen(s_bnf_cust_name)]='\0';
+			/* Till Here */
+
+			memset(s_pur_trnf_code,' ',sizeof s_pur_trnf_code);
+			strncpy(s_pur_trnf_code,&charInbuf[477],102);   /** Concatinating Purpose for transfer code and its
+																description. **/
+			s_pur_trnf_code[102]='\0';
+
+			/** Getting the next number from the oracle sequance BRAID_FPQ_COUNTER. **/
+			EXEC SQL AT TAPS
+				SELECT  FPQDBA.braid_fpq_counter.NEXTVAL
+				INTO    :l_fpq_uniq_ref
+				FROM    dual;
+
+			if(SQLCODE != 0)
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Fetching the next value from a sequance BRAID_FPQ_COUNTER failed; ERROR[%s]\n",calledFrom,SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+
+			/** Getting the next number from the oracle sequance BRAID_SAMAMIS_COUNTER. **/
+			EXEC SQL AT TAPS
+				SELECT  FPQDBA.braid_samamis_counter.NEXTVAL
+				INTO    :l_samamis_uniq_ref
+				FROM    dual;
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-3\n");
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				fflush(logFp);
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			if(SQLCODE != 0)
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Fetching the next value from a sequance BRAID_SAMAMIS_COUNTER failed; ERROR[%s]\n",calledFrom,SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+
+			EXEC SQL SET TRANSACTION;
+
+			/** Establish TUXDB Database connection **/
+
+			establishTUXDBCon();
+
+			if( phdbConFlg != 0 )
+			{
+				timeStamp();
+				fprintf(logFp,"phdbConFlg [%d]\n", phdbConFlg);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			/** Getting the latest sequance number for a given Branch Name and sysdate. **/
+			EXEC SQL AT TUXDB
+				SELECT	seq_number
+				INTO    :l_uti_seq_num
+				FROM    sss_sarie_swift_seq_num
+				WHERE   tran_date   = TRUNC(sysdate)
+				AND     branch_name = :msgHdr.s_branch_name
+				FOR UPDATE OF seq_number;
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-4\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS  ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+		
+			if(SQLCODE == NO_DATA_FOUND)
+			{
+				EXEC SQL AT TUXDB
+					INSERT INTO sss_sarie_swift_seq_num
+					(
+						branch_name,
+						tran_date,
+						seq_number
+					)
+					VALUES
+					(
+						:msgHdr.s_branch_name,
+						TRUNC(sysdate),
+						1
+					);
+
+				if ( TimeoutFlag == 1)
+				{
+					timeStamp();
+					fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-5\n");
+					fflush(logFp);
+
+					EXEC SQL AT TAPS  ROLLBACK RELEASE;
+					EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+					setResponseMessage(charOutbuf,charInbuf,"12");
+					error_exit(charOutbuf);
+				}
+
+				if(SQLCODE != 0)
+				{
+					EXEC SQL AT TUXDB ROLLBACK work;
+					timeStamp();
+					fprintf(logFp,"Error [%d] while inserting a sequnce number in sss_sarie_swift_seq_num (in TUXDB) for SWIFT payment advise; ERROR =[%s]\n", SQLCODE, SQLMSG);
+					fflush(logFp);
+					EXEC SQL AT TAPS ROLLBACK RELEASE;
+					EXEC SQL AT TUXDB ROLLBACK RELEASE;
+					setResponseMessage(charOutbuf,charInbuf,"99");
+					error_exit(charOutbuf);
+				}
+
+				l_uti_seq_num = 1;
+
+			}
+			else if(SQLCODE != 0)
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Error [%d] while getting latest sequence number from sss_sarie_swift_seq_num (in TUXDB) for SWIFT Payment Advise; ERRRO[%s]\n",calledFrom,SQLCODE, SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+			else
+			{
+				if( l_uti_seq_num >= 35999 )
+				{
+					timeStamp();
+					fprintf(logFp,"Max number of transaction for this channel [%s] exceeded the limit of 35,999 in sss_sarie_swift_seq_num table (in TUXDB) during SWIFT Payment Advise\n",calledFrom);
+					fflush(logFp);
+					EXEC SQL AT TAPS ROLLBACK RELEASE;
+					EXEC SQL AT TUXDB ROLLBACK RELEASE;
+					setResponseMessage(charOutbuf,charInbuf,"99");
+					error_exit(charOutbuf);
+				}
+
+				l_uti_seq_num++;
+
+				EXEC SQL AT TUXDB
+					UPDATE  sss_sarie_swift_seq_num
+					SET     seq_number = :l_uti_seq_num
+					WHERE   tran_date   = TRUNC(sysdate)
+					AND     branch_name = :msgHdr.s_branch_name;
+
+				if ( TimeoutFlag == 1)
+				{
+					timeStamp();
+					fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-6\n");
+					fflush(logFp);
+
+					EXEC SQL AT TAPS  ROLLBACK RELEASE;
+					EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+					setResponseMessage(charOutbuf,charInbuf,"12");
+					error_exit(charOutbuf);
+				}
+
+				if( SQLCODE != 0 )
+				{
+					timeStamp();
+					fprintf(logFp,"%s|Error [%d] while updating new sequence number in sss_sarie_swift_seq_num (in TUXDB) for SWIFT Payment Advise; ERRRO[%s]\n",calledFrom,SQLCODE, SQLMSG);
+					fflush(logFp);
+					EXEC SQL AT TAPS ROLLBACK RELEASE;
+					EXEC SQL AT TUXDB ROLLBACK RELEASE;
+					setResponseMessage(charOutbuf,charInbuf,"99");
+					error_exit(charOutbuf);
+				}
+			}
+
+				/****  Begin- addition  during v.2.6***/
+				memset(varTmpStr.arr,'\0',sizeof varTmpStr.arr); varTmpStr.len = 0;
+				EXEC SQL AT TUXDB
+					   select FORMAT_SEQNUM(:l_uti_seq_num) into :varTmpStr from dual;
+				if(SQLCODE != 0)
+				{
+					timeStamp();
+					fprintf(logFp,"%s|Error while calling FORMAT_SEQNUM for SARIE Payment Advise; ERRRO[%s]\n",calledFrom,SQLMSG);
+					fflush(logFp);
+					EXEC SQL AT TAPS ROLLBACK RELEASE;
+					EXEC SQL AT TUXDB ROLLBACK RELEASE;
+					setResponseMessage(charOutbuf,charInbuf,"99");
+					error_exit(charOutbuf);
+
+				}
+				EXEC SQL AT TUXDB COMMIT RELEASE; /* Introduced to release the TUXDB for other process */
+				fprintf(logFp,"SEQNO [%s][%d]\n", varTmpStr.arr, varTmpStr.len); fflush(logFp);
+				varTmpStr.arr[varTmpStr.len]='\0';
+				/****  END - addition  during v.2.6***/
+
+			/** Making a value for UTI column in BRAID_FPQ & BRAID_SAMA_MIS table. **/
+			strcpy(s_uti,"ARNB");
+			strncat(s_uti,msgHdr.s_branch_name,3);
+
+			sprintf(s_uti_yyddd, "%04d%03d", systemDate->tm_year+1900, systemDate->tm_yday +1);
+			strncat(s_uti,&s_uti_yyddd[2],5);
+
+			/*sprintf(s_uti_seq_num,"%08d",l_uti_seq_num); commented during V.2.6*/
+			/*strncat(s_uti,&s_uti_seq_num[4],4);  commented during V.2.6*/
+
+			strncat(s_uti,varTmpStr.arr,4);
+			s_uti[16]='\0';
+
+			fprintf(logFp,"UTI_NUM [%s]\n", s_uti); fflush(logFp);
+
+			strncpy(s_bnf_bnk_nm,&charInbuf[37],25);
+			s_bnf_bnk_nm[25]='\0';
+
+			strncpy(s_bnf_bnk_addr1,&charInbuf[62],25);
+			s_bnf_bnk_addr1[25]='\0';
+
+			strncpy(s_bnf_bnk_addr2,&charInbuf[87],25);
+			s_bnf_bnk_addr2[25]='\0';
+
+			
+			sprintf(s_bnf_bnk_dtls, "%-35.35s\n%-35.35s\n%-35.35s\n%-35.35s\n%-6.6s", &charInbuf[804], &charInbuf[839], &charInbuf[874], &charInbuf[909], " "); /* Ver 1.3 */
+			s_bnf_bnk_dtls[150]='\0';			  /* Ver 1.3 */
+
+			sprintf(s_bnf_bnk_clr_cd, "%.35s", &charInbuf[944]); /* Ver 1.3 */
+			trim(s_bnf_bnk_clr_cd);								/* Ver 1.3 */
+
+			strncpy(s_amount,&charInbuf[112],14);		
+			s_amount[14]='\0';
+
+			strncpy(s_currency,&charInbuf[126],3);
+			s_currency[3]='\0';
+
+			strncpy(s_value_dt,&charInbuf[131],6);
+			s_value_dt[6]='\0';
+
+			strncpy(s_ord_cust_acc,&charInbuf[137],35);
+			s_ord_cust_acc[35]='\0';
+
+			strncpy(s_bnf_cust_acc,&charInbuf[307],35);
+			s_bnf_cust_acc[35]='\0';
+
+			strncpy(s_inmdte_acc,&charInbuf[579],14);
+			s_inmdte_acc[14]='\0';
+
+			strncpy(s_bnf_bnk_country_cd,&charInbuf[596],2);
+			s_bnf_bnk_country_cd[2]='\0';
+
+			sprintf(recvBank,"%.11s", &charInbuf[599]);
+			trim(recvBank);
+			if (strcmp(recvBank,"") == 0)
+			{
+				sprintf(recvBank,"%.11s", "SWIFT");	
+				trim(recvBank);
+			}
+
+			sprintf(sendBic,"%.11s", &charInbuf[610]);
+			trim(sendBic);
+			sprintf(recvBic,"%.11s", &charInbuf[621]);
+			trim(recvBic);
+			sprintf(interBic,"%.11s", &charInbuf[632]);
+			trim(interBic);
+			sprintf(benefBic,"%.11s", &charInbuf[643]);
+			trim(benefBic);
+
+			memset(custRemark,'\0',sizeof(custRemark));
+			sprintf(custRemark,"%-35.35s\n%-35.35s\n%-35.35s\n%-35.35s",
+								 &charInbuf[654],
+								 &charInbuf[689],
+								 &charInbuf[724],
+								 &charInbuf[759]);
+			custRemark[150]='\0';
+			trim(custRemark);
+			custRemark[strlen(custRemark)]='\0';
+
+			/** Inserting the SWIFT Payment advise into BRAID_FPQ table. **/
+			EXEC SQL AT TAPS
+				INSERT INTO braid_fpq
+				(
+				F_20,
+				uniqueref,
+				uti,
+				sender,
+				receiver,
+				bm_narrative1,
+				bm_narrative2,
+				bm_narrative3,
+				F_32A_amount,
+				F_32A_currency,
+				F_32A_date,
+				F_50A_accountnumber,
+				F_50A_nameandaddress,
+				F_59_account,
+				F_59_customer,
+				status,
+				intermediate_account,
+				F_71A,
+				msgtype,
+				mtype,
+				mformat,
+				priority,
+				pflag,
+				mmode,
+				tpflag,
+				/*RECEIVER,*/
+				F_53A_BICCODE,
+				F_54A_BICCODE,
+				F_56A_BICCODE,
+				F_57A_BICCODE,
+				F_70,
+				F_57A_nameandaddress,	/* Ver 1.3 */
+				F_51A_accountnumber,	/* Ver 1.3 */
+				F_77B,                    /*Ver. 2.3*/
+				beneficiary_bank_country  /*Ver. 2.3*/                 
+				)
+				VALUES
+				(
+				:s_tran_ref_num, 							/* Transaction Ref. Number */
+				:l_fpq_uniq_ref,							/* Unique Ref. */
+				:s_uti,										/* UTI */
+				:msgHdr.s_branch_name,						/* Branch Name/SENDER */
+				/*'SWIFT',*/									/* RECIVER */
+				:recvBank,									/* RECIVER */
+				:s_bnf_bnk_nm, 								/* Bnf Bank Name */
+				:s_bnf_bnk_addr1, 							/* Bnf Bank Addr1 */
+				:s_bnf_bnk_addr2, 							/* Bnf Bank Addr2 */
+				:s_amount,									/* Amount */
+				:s_currency,								/* Currency */
+				:s_value_dt,								/* Value Date */
+				:s_ord_cust_acc,							/* Ordering Customer Acc */
+				:s_ord_cust_nm_addr,						/* Ordering customer Name & Address */
+				:s_bnf_cust_acc,							/* Beneficiary customer Acc */
+				:s_bnf_cust_nm_addr,						/* Beneficiary customer Name & Address */
+				'N',										/* Status */
+				:s_inmdte_acc,								/* Intermediate Account */
+				:s_charges_flag,							/* Charges Flag */
+				'MT103C',
+				'103C',
+				'103',
+				'50',
+				'N',
+				'N',
+				'N',
+				/*:recvBank,*/
+				:sendBic,
+				:recvBic,
+				:interBic,
+				:benefBic,
+				:custRemark,
+				:s_bnf_bnk_dtls,		/* Ver 1.3 */
+				:s_bnf_bnk_clr_cd,		/* Ver 1.3 */
+				:s_pur_trnf_code,       /* Ver 2.3 */     /* Purpose of Transfer code & description */
+				:s_bnf_bnk_country_cd   /* Ver 2.3 */     /* Beneficiary Bank Country code */
+				);
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-7\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS  ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			if( SQLCODE != 0 )
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Error [%d] while Inserting a SWIFT payment advise into BRAID_FPQ table; ERROR [%s]\n",calledFrom,SQLCODE, SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+
+			/** Inserting the SWIFT Payment advise into BRAID_SAMA_MIS table. **/
+			EXEC SQL AT TAPS
+				INSERT INTO braid_sama_mis
+				(
+					tran_date,
+					F_20,
+					uniqueref,
+					uti,
+					sender,
+					receiver,
+					bm_narrative1,
+					bm_narrative2,
+					bm_narrative3,
+					F_32A_amount,
+					F_32A_currency,
+					F_32A_date,
+					F_50A_accountnumber,
+					F_50A_nameandaddress,
+					F_59_account,
+					F_59_customer,
+					F_77B,
+					status,
+					intermediate_account,
+					F_71A,
+					beneficiary_bank_country,
+					msgtype,
+					mtype,
+					mformat,
+					priority,
+					pflag,
+					mmode,
+					tpflag,
+					/*RECEIVER,*/
+					F_53A_BICCODE,
+					F_54A_BICCODE,
+					F_56A_BICCODE,
+					F_57A_BICCODE,
+					F_70,
+					F_57A_nameandaddress,	/* Ver 1.3 */
+					F_51A_accountnumber,	/* Ver 1.3 */
+					customer_rem,			/* Ver 1.4 */
+					customer_name			/* Ver 1.4 */
+				)
+				VALUES
+				(
+					to_char(sysdate,'YYYYMMDD'),				/* Transaction Date */
+					:s_tran_ref_num,                            /* Transaction Ref. Number */
+					:l_samamis_uniq_ref,                       	/* Unique Ref. */
+					:s_uti,                                     /* UTI */
+					:msgHdr.s_branch_name,                     /* Branch Name/SENDER */
+					/*'SWIFT',  */                                  /* RECIVER */
+					:recvBank,                                    /* RECIVER */
+					:s_bnf_bnk_nm,                   			/* Bnf Bank Name */
+					:s_bnf_bnk_addr1,                   		/* Bnf Bank Addr1 */
+					:s_bnf_bnk_addr2,                   		/* Bnf Bank Addr2 */
+					:s_amount,        					        /* Amount */
+					:s_currency,     				            /* Currency */
+					:s_value_dt,								/* Value Date */
+					:s_ord_cust_acc,                 			/* Ordering Customer Acc */
+					:s_ord_cust_nm_addr,                        /* Ordering customer Name & Address */
+					:s_bnf_cust_acc,         			        /* Beneficiary customer Acc */
+					:s_bnf_cust_nm_addr,                        /* Beneficiary customer Name & Address */
+					:s_pur_trnf_code,							/* Purpose of Transfer code & description */
+					'N',                                        /* Status */
+					:s_inmdte_acc,                  			/* Intermediate Account */
+					:s_charges_flag,                   			/* Charges Flag */
+					:s_bnf_bnk_country_cd,						/* Beneficiary Bank Country code */
+					'MT103C',
+					'103C',
+					'103',
+					'50',
+					'N',
+					'N',
+					'N',
+					/*:recvBank,*/
+					:sendBic,
+					:recvBic,
+					:interBic,
+					:benefBic,
+					:custRemark,
+					:s_bnf_bnk_dtls,		/* Ver 1.3 */
+					:s_bnf_bnk_clr_cd,		/* Ver 1.3 */
+					:s_ord_cust_name,		/* Ver 1.4 */
+					:s_bnf_cust_name		/* Ver 1.4 */
+				);
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-8\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS  ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			if( SQLCODE != 0 )
+			{
+				timeStamp();
+				fprintf(logFp,"%s|Error [%d] while Inserting a SWIFT payment advise into BRAID_SAMA_MIS table; ERROR [%s]\n",calledFrom, SQLCODE, SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+
+			 /**** Commented under Ver 1.8 ****
+			** Inserting the SWIFT Payment advise into SST_SARIE_SWIFT_TRAN_DTLS@TUXDB table. **
+			EXEC SQL AT TUXDB
+				INSERT INTO SST_SARIE_SWIFT_TRAN_DTLS
+				(
+					branch_name,
+					tran_ref_num,
+					uniqueref,
+					uti,
+					receiver,
+					amount,
+					value_date,
+					ord_cust_acc,
+					ord_cust_name,
+					bnf_cust_acc,
+					bnf_cust_name,
+					status
+				)
+				VALUES
+				(
+					:msgHdr.s_branch_name,                     ** Branch Name (SENDER) **
+					:s_tran_ref_num,                            ** Transaction Ref. Number **
+					:l_fpq_uniq_ref,	                        ** Unique Ref. **
+					:s_uti,                                     ** UTI **
+					:s_bnf_bnk_nm,                   			** Bnf Bank Name (RECEIVER) **
+					:s_amount,                  				** Amount **
+					:s_value_dt,								** Value Date **
+					:s_ord_cust_acc,                 			** Ordering Customer Acc **
+					substr(:s_ord_cust_nm_addr,1,35),           ** Ordering customer Name **
+					:s_bnf_cust_acc,                  			** Beneficiary customer Acc **
+					substr(:s_bnf_cust_nm_addr,1,35),           ** Beneficiary customer Name **
+					'N'                                         ** Status **
+				);
+
+			if( SQLCODE != 0 )
+			{	
+				timeStamp();
+				fprintf(logFp,"%s|Error while Inserting a SWIFT payment advise into SST_SARIE_SWIFT_TRAN_DTLS table; ERROR [%s]\n",calledFrom,SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+			********************* under Ver 1.8 *******/
+			alarm(0); /* Reset the timeout */
+
+			strcpy(charOutbuf,charInbuf);
+			strncpy(&charOutbuf[19],"00",2);
+		}
+	}
+	else if(strncmp(msgHdr.s_service, "03", 2) == 0) /******************************* SWIFT Payment Enqiry **/
+	{
+		/** Ver 1.2 ** 
+		strncpy(s_tran_ref_num,&charInbuf[21],16);
+		s_tran_ref_num[16]='\0'; ****/
+
+		sprintf(s_tran_ref_num,"%.16s", &charInbuf[21]);	/* Ver 1.2 */
+		trim(s_tran_ref_num); 								/* Ver 1.2 */
+		s_tran_ref_num[strlen(s_tran_ref_num)] = '\0'; 		/* Ver 1.2 */
+
+		/** Establish TAPS Database connection **/
+
+		establishTAPSCon();
+
+        if( tapsConFlg != 0 )
+        {
+            fprintf(logFp,"tapsConFlg [%d]\n", tapsConFlg);
+            fflush(logFp);
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+        }
+
+		EXEC SQL AT TAPS
+			SELECT  status
+			INTO    :c_ss_status
+			FROM    braid_sama_mis
+			WHERE   f_20   		= :s_tran_ref_num
+			AND     sender  	= :msgHdr.s_branch_name;
+
+		if( SQLCODE != 0)
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Status for SWIFT payment enquiry failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+			fflush(logFp);
+			if(SQLCODE == NO_DATA_FOUND)
+			{
+				strcpy(msgHdr.s_response_status,"18"); /** No such record exist **/
+			}
+			else
+			{
+				strcpy(msgHdr.s_response_status,"99"); /** No such record exist **/
+			}
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		timeStamp();
+		fprintf(logFp,"c_ss_status Before if condition [%c]\n",c_ss_status);
+
+		if(c_ss_status != 'N' && c_ss_status != 'C')
+		{
+			c_ss_status = 'A';
+			timeStamp();
+			fprintf(logFp,"c_ss_status Inside if condition [%c]\n",c_ss_status);
+		}
+		fflush(logFp);
+
+		strcpy(charOutbuf,charInbuf);
+		charOutbuf[598] = c_ss_status;
+		/*charOutbuf[609] = c_ss_status;*/
+		strncpy(&charOutbuf[19],"00",2);
+
+		EXEC SQL AT TAPS COMMIT RELEASE;
+
+	}
+	else if(strncmp(msgHdr.s_service, "04", 2) == 0) /********************* SARIE Participiant list enquiry **/
+	{
+
+		/** Establish TAPS Database connection **/
+
+		establishTAPSCon();
+
+        if( tapsConFlg != 0 )
+        {
+            fprintf(logFp,"tapsConFlg [%d]\n", tapsConFlg);
+            fflush(logFp);
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+        }
+
+		/**** Ver 1.5 ******
+		EXEC SQL AT TAPS
+			DECLARE cur_sarie_participiant CURSOR FOR
+			SELECT	bic_code,
+					name
+			FROM	bpq_sarie_participant;
+		*******************/
+
+		/* Ver 1.5 */
+		memset((char *)select_stmt.arr, '\0', sizeof((char *)select_stmt.arr));
+		if ( charInbuf[21] == 'A' ) /* Arabic */
+			sprintf((char *)select_stmt.arr, "SELECT bic_code, NVL(arabic_name, ' ') FROM bpq_sarie_participant where length(bic_code) > 4 ORDER BY arabic_name ASC"); /* Ver 2.7*/
+			/*sprintf((char *)select_stmt.arr, "SELECT bic_code, NVL(arabic_name, ' ') FROM bpq_sarie_participant ORDER BY arabic_name ASC");  Ver 1.6*/
+		else /* English */
+			sprintf((char *)select_stmt.arr, "SELECT bic_code, NVL(name, ' ') FROM bpq_sarie_participant where length(bic_code) > 4 ORDER BY name ASC"); /* Ver 2.7 */
+			/*sprintf((char *)select_stmt.arr, "SELECT bic_code, name FROM bpq_sarie_participant ORDER BY name ASC");  Ver 1.6 */
+
+		select_stmt.len = strlen((char *)select_stmt.arr);
+
+		timeStamp();
+		fprintf(logFp,"Select statement for cur_sarie_participiant cursor [%d][%s];\n", select_stmt.len, (char *)select_stmt.arr);
+		fflush(logFp);
+
+		EXEC SQL AT TAPS 
+			PREPARE sql_stmt FROM :select_stmt;
+
+		if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"Found Error while Preparing cur_sarie_participiant cursor; ERROR=[%s]\n", SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		EXEC SQL AT TAPS
+			DECLARE cur_sarie_participiant CURSOR FOR sql_stmt;
+
+		if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"Found Error while Declaring cur_sarie_participiant cursor; ERROR=[%s]\n", SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		
+		EXEC SQL AT TAPS
+			OPEN cur_sarie_participiant;
+
+		if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"Found Error while Opening cur_sarie_participiant cursor; ERROR=[%s]\n", SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+
+		l_space_rqd = RECORD_LEN;
+
+		memset(charOutbuf,' ', (INITIAL_MSG_LEN + 2) );  /* Just to reserve the space for initial fields 
+															value plus "Number of Sarie participiant" 
+															field value in Response message layout 
+														 */
+
+		charOutbuf[INITIAL_MSG_LEN + 2] = '\0';
+
+		sarie_participiant.si_tot_participiant = 0;		
+
+		while(1)
+		{
+			EXEC SQL AT TAPS
+			FETCH cur_sarie_participiant
+			INTO	:sarie_participiant.c_bank_code,
+					:sarie_participiant.c_bank_name;
+		
+			if (SQLCODE != 0)
+			{
+        		timeStamp();
+				if (SQLCODE == NO_DATA_FOUND && sarie_participiant.si_tot_participiant == 0 )
+				{
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+					strcpy(msgHdr.s_response_status,"18"); /** No such record exist **/
+				}
+				else if( SQLCODE == NO_DATA_FOUND )
+				{
+					EXEC SQL AT TAPS CLOSE cur_sarie_participiant;
+					break;
+				}
+				else
+				{
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+					strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+				}
+
+				EXEC SQL AT TAPS CLOSE cur_sarie_participiant;
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				fflush(logFp);
+				setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+				error_exit(charOutbuf);
+			}
+
+
+			l_space_avl = ( sizeof(charOutbuf) - strlen(charOutbuf) );
+			
+			if( l_space_avl < l_space_rqd )
+			{
+				l_bufferlength = ( sizeof(charOutbuf) + MIN_BUF_LEN * 5 );
+				charOutbuf = (char *) realloc( charOutbuf, l_bufferlength);
+				if( charOutbuf == NULL)
+				{
+					EXEC SQL AT TAPS CLOSE cur_sarie_participiant;
+					timeStamp();
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, UNXMSG);
+					fflush(logFp);
+					EXEC SQL AT TAPS ROLLBACK RELEASE;
+					tpreturn(TPFAIL, 0, NULL, 0, 0);
+				}
+			}
+
+			sprintf(charTempbuf,"%-11s",sarie_participiant.c_bank_code);
+			strncat(charOutbuf,charTempbuf,11);
+
+			sprintf(charTempbuf,"%-35s",sarie_participiant.c_bank_name);
+			strncat(charOutbuf,charTempbuf,35);
+
+			sarie_participiant.si_tot_participiant++;
+
+		}
+
+		sprintf(charTempbuf,"%02d",sarie_participiant.si_tot_participiant);
+
+		strncpy(&charOutbuf[21],charTempbuf,2);
+
+		setResponseMessage( charOutbuf,
+							charInbuf,
+							"00"
+						  );
+
+		EXEC SQL AT TAPS COMMIT RELEASE;
+
+	}
+	else if(strncmp(msgHdr.s_service, "05", 2) == 0)  /*********** Purpose of Transaction Code enquiry list **/
+	{
+		/** Establish TUXDB Database connection **/
+
+		establishTUXDBCon();
+
+		if( phdbConFlg != 0 )
+		{
+			fprintf(logFp,"phdbConFlg [%d]\n", phdbConFlg);
+			fflush(logFp);
+			setResponseMessage(charOutbuf,charInbuf,"12");
+			error_exit(charOutbuf);
+		}
+
+        EXEC SQL AT TUXDB
+			DECLARE cur_purpose_trnf CURSOR FOR
+				SELECT  trnf_code,
+						trnf_desc_eng,
+						NVL(trnf_desc_arb,' ')
+				FROM    pot_purpose_of_trnf
+				ORDER BY trnf_code ASC;
+
+        if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Found Error while Declaring cur_purpose_trnf cursor; ERROR=[%s]\n",calledFrom, SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TUXDB ROLLBACK RELEASE;
+			strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		EXEC SQL OPEN cur_purpose_trnf;
+
+		if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Found Error while Opening cur_purpose_trnf cursor; ERROR=[%s]\n",calledFrom, SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TUXDB ROLLBACK RELEASE;
+			strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		l_space_rqd = RECORD_LEN;
+
+        memset(charOutbuf,' ', (INITIAL_MSG_LEN + 2) );  /* Just to reserve the space for initial fields
+															 value plus "Number of Purpose of trans. code"
+															 field value in Response message layout
+														 */
+
+		charOutbuf[INITIAL_MSG_LEN + 2] = '\0';
+
+		purpose_of_trnf.si_tot_trnf_code = 0;	
+
+		while(1)
+		{
+			EXEC SQL
+			FETCH cur_purpose_trnf
+			INTO    :purpose_of_trnf.c_trnf_code,
+					:purpose_of_trnf.c_trnf_desc_eng,
+					:purpose_of_trnf.c_trnf_desc_arb;
+
+			if (SQLCODE != 0)
+			{
+				timeStamp();
+				if (SQLCODE == NO_DATA_FOUND && purpose_of_trnf.si_tot_trnf_code == 0 )
+				{
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+					strcpy(msgHdr.s_response_status,"18"); /** No such record exist **/
+				}
+				else if( SQLCODE == NO_DATA_FOUND )
+				{
+					EXEC SQL CLOSE cur_purpose_trnf;
+					break;
+				}
+				else
+				{
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+					strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+				}
+
+				EXEC SQL CLOSE cur_purpose_trnf;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+				fflush(logFp);
+				setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+				error_exit(charOutbuf);
+
+			}
+
+
+			l_space_avl = ( sizeof(charOutbuf) - strlen(charOutbuf) );
+
+			if( l_space_avl < l_space_rqd )
+			{
+				l_bufferlength = ( sizeof(charOutbuf) + MIN_BUF_LEN * 5 );
+				charOutbuf = (char *) realloc( charOutbuf, l_bufferlength);
+				if( charOutbuf == NULL)
+				{	
+					EXEC SQL CLOSE cur_purpose_trnf;
+					timeStamp();
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, UNXMSG);
+					fflush(logFp);
+					EXEC SQL AT TUXDB ROLLBACK RELEASE;
+					tpreturn(TPFAIL, 0, NULL, 0, 0);
+				}
+			}
+
+			sprintf(charTempbuf,"%-2s",purpose_of_trnf.c_trnf_code);
+			strncat(charOutbuf,charTempbuf,2);
+
+			sprintf(charTempbuf,"%-45s",purpose_of_trnf.c_trnf_desc_eng);
+			strncat(charOutbuf,charTempbuf,45);
+
+			sprintf(charTempbuf,"%-45s",purpose_of_trnf.c_trnf_desc_arb);
+			strncat(charOutbuf,charTempbuf,45);
+
+			purpose_of_trnf.si_tot_trnf_code++;
+
+			#ifdef DEBUG
+				fprintf(logFp,"tot_trnf_code [%d]: charOutbuf [%s]\n",purpose_of_trnf.si_tot_trnf_code,charOutbuf);
+				fflush(logFp);
+			#endif
+
+		}
+
+		sprintf(charTempbuf,"%02d",purpose_of_trnf.si_tot_trnf_code);
+		strncpy(&charOutbuf[21],charTempbuf,2);
+
+		setResponseMessage( charOutbuf,
+							charInbuf,
+							"00"
+						  );
+
+		EXEC SQL AT TUXDB COMMIT RELEASE;
+	}
+	else if(strncmp(msgHdr.s_service, "06", 2) == 0)  /********* Beneficiary bank country code enquiry list **/
+	{
+		strncpy(charTempbuf,&charInbuf[21],5);
+		charTempbuf[5]='\0';
+		i_last_bnf_ptr = atoi(charTempbuf);
+
+		charOutbuf = (char *) realloc(charOutbuf,8000 );
+		if( charOutbuf == NULL)
+		{
+			timeStamp();
+			fprintf(logFp,"Error while reallocating memory for OutPut Buffer; ERROR =[%s]\n", UNXMSG);
+			fflush(logFp);
+			tpreturn(TPFAIL, 0, NULL, 0, 0);
+		}
+
+		/** Establish CPDB Database connection **/
+
+		establishCPDBCon();
+
+		if( cpdbConFlg != 0 )
+		{
+			fprintf(logFp,"cpdbConFlg [%d]\n", cpdbConFlg);
+			fflush(logFp);
+			setResponseMessage(charOutbuf,charInbuf,"12");
+			error_exit(charOutbuf);
+		}
+
+		/******Ver 1.6 ****************
+        EXEC SQL AT CPDB
+			DECLARE cur_benf_bnk_cntry CURSOR FOR
+				SELECT  iso_country_code,
+						iso_cntry_name_eng,
+						NVL(cntry_name_arab,' ')
+				FROM    country
+				ORDER BY iso_country_code ASC;
+		*********************************/
+
+		/* Ver 1.6 */
+		memset((char *)select_stmt.arr, '\0', sizeof((char *)select_stmt.arr));
+		if ( charInbuf[26] == 'A' ) /* Arabic */
+			sprintf((char *)select_stmt.arr, "SELECT iso_country_code, iso_cntry_name_eng, NVL(cntry_name_arab, ' ') FROM country ORDER BY cntry_name_arab ASC"); 
+		else /* English */
+			sprintf((char *)select_stmt.arr, "SELECT iso_country_code, iso_cntry_name_eng, NVL(cntry_name_arab, ' ') FROM country ORDER BY iso_cntry_name_eng ASC"); 
+
+		select_stmt.len = strlen((char *)select_stmt.arr);
+
+		timeStamp();
+		fprintf(logFp,"Select statement for cur_benf_bnk_cntry cursor [%d][%s];\n", select_stmt.len, (char *)select_stmt.arr);
+		fflush(logFp);
+
+		EXEC SQL AT CPDB 
+			PREPARE sql_stmt FROM :select_stmt;
+
+		if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"Error while preparing cur_benf_bnk_cntry cursor; ERROR=[%s]\n", SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT CPDB ROLLBACK RELEASE;
+			strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		EXEC SQL AT CPDB
+			DECLARE cur_benf_bnk_cntry CURSOR FOR sql_stmt;
+
+		if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"Error while Declaring cur_benf_bnk_cntry cursor; ERROR=[%s]\n", SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT CPDB ROLLBACK RELEASE;
+			strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		EXEC SQL AT CPDB
+			OPEN cur_benf_bnk_cntry;
+
+		if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"Error while Opening cur_benf_bnk_cntry cursor; ERROR=[%s]\n", SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT CPDB ROLLBACK RELEASE;
+			strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		/* Just to reserve the space for initial fields value plus "Last send Bnf bank cntry cd pointer" 
+		+ "Bnf bank cntry cd complition flag" + "Total Number of Bnf bank cntry cd" + 
+		"Number of Bnf bank cntry cd sent in this message" field value in Response message layout */
+
+		memset(charOutbuf,' ', (INITIAL_MSG_LEN + 5 + 1 + 5 + 2) ); 
+
+		charOutbuf[INITIAL_MSG_LEN + 5 + 1 + 5 + 2] = '\0';
+
+		benf_bnk_cntry.si_tot_country_code = 0;
+		i_rownum=1;
+
+		while(1)
+		{
+			EXEC SQL AT CPDB
+				FETCH cur_benf_bnk_cntry
+				INTO    :benf_bnk_cntry.c_cntry_code,
+						:benf_bnk_cntry.c_cntry_name_eng,
+						:benf_bnk_cntry.c_cntry_name_arb;
+
+			if (SQLCODE != 0)
+			{
+				timeStamp();
+				if (SQLCODE == NO_DATA_FOUND && benf_bnk_cntry.si_tot_country_code == 0 )
+				{
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+					strcpy(msgHdr.s_response_status,"18"); /** No such record exist **/
+				}
+				else if( SQLCODE == NO_DATA_FOUND )
+				{
+					EXEC SQL AT CPDB CLOSE cur_benf_bnk_cntry;
+					break;
+				}
+				else
+				{
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+					strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+				}
+
+				EXEC SQL AT CPDB CLOSE cur_benf_bnk_cntry;
+				EXEC SQL AT CPDB ROLLBACK RELEASE;
+				fflush(logFp);
+				setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+				error_exit(charOutbuf);
+			}
+
+			if( (i_rownum > i_last_bnf_ptr) && (i_count < BNF_MAX_REC_PER_REQ) )
+			{
+				sprintf(charTempbuf,"%-3s",benf_bnk_cntry.c_cntry_code);
+			  	strncat(charOutbuf,charTempbuf,3);
+	
+				sprintf(charTempbuf,"%-45s",benf_bnk_cntry.c_cntry_name_eng);
+				strncat(charOutbuf,charTempbuf,45);
+
+				sprintf(charTempbuf,"%-45s",benf_bnk_cntry.c_cntry_name_arb);
+				strncat(charOutbuf,charTempbuf,45);
+
+				i_count++;
+			}
+
+			i_rownum++;
+			benf_bnk_cntry.si_tot_country_code++;
+
+			#ifdef DEBUG
+				fprintf(logFp,"i_rownum [%d] i_count[%d] tot_country_code [%d]\n",i_rownum,i_count,benf_bnk_cntry.si_tot_country_code);
+				fflush(logFp);
+			#endif
+
+		}
+
+		i_last_bnf_ptr += i_count;
+		sprintf(charTempbuf,"%05d",i_last_bnf_ptr);
+		strncpy(&charOutbuf[21],charTempbuf,5);
+
+		if( i_last_bnf_ptr < benf_bnk_cntry.si_tot_country_code ) /* Not Completed */
+		{
+			charOutbuf[26] = '0';
+		}
+		else if( i_last_bnf_ptr >= benf_bnk_cntry.si_tot_country_code ) /* Completed */
+		{
+			charOutbuf[26] = '1';
+		}
+
+		sprintf(charTempbuf,"%05d",benf_bnk_cntry.si_tot_country_code);
+		strncpy(&charOutbuf[27],charTempbuf,5);
+
+		sprintf(charTempbuf,"%02d",i_count);
+		strncpy(&charOutbuf[32],charTempbuf,2);
+
+		setResponseMessage( charOutbuf,
+							charInbuf,
+							"00"
+						  );
+
+		#ifdef DEBUG
+			fprintf(logFp,"charOutbuf [%s]\n",charOutbuf); 
+			fflush(logFp); 
+		#endif
+
+		EXEC SQL AT CPDB COMMIT RELEASE;
+
+	}
+	else if(strncmp(msgHdr.s_service, "07", 2) == 0)  /*********** SARIE Cut-Off Time Information **/
+	{
+		/** Establish TAPS Database connection **/
+
+		establishTAPSCon();
+
+        if( tapsConFlg != 0 )
+        {
+            fprintf(logFp,"tapsConFlg [%d]\n", tapsConFlg);
+            fflush(logFp);
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+        }
+		
+
+        EXEC SQL AT TAPS
+			DECLARE cur_sarie_cutoff CURSOR FOR
+				SELECT  NVL(trans_type,' '),
+						NVL(day_name,' '),
+						NVL(cutoff_time,' ')
+				FROM    sarie_cutoff
+				ORDER BY cutoff_time ASC;
+
+        if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Found Error while Declaring cur_sarie_cutoff cursor; ERROR=[%s]\n",calledFrom, SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		EXEC SQL OPEN cur_sarie_cutoff;
+
+		if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Found Error while Opening cur_sarie_cutoff cursor; ERROR=[%s]\n",calledFrom, SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		l_space_rqd = RECORD_LEN;
+
+		strncpy(charOutbuf,charInbuf,71);		/** Prepairing the header part of response **/
+		charOutbuf[71]='\0';
+
+		fprintf(logFp,"ST 1 charOutbuf [%s]\n",charOutbuf);fflush(logFp);
+
+		/** Reserving the space for No. of Records field **/
+		sprintf(charTempbuf,"%3s"," ");
+		strncat(charOutbuf,charTempbuf,3);
+
+		fprintf(logFp,"ST 2 charOutbuf [%s]\n",charOutbuf);fflush(logFp);
+		sarie_cutoff.si_tot_record = 0;	
+
+		fprintf(logFp,"ST 3 charOutbuf [%s]\n",charOutbuf);fflush(logFp);
+		while(1)
+		{
+			EXEC SQL
+			FETCH cur_sarie_cutoff
+			INTO    :sarie_cutoff.c_trans_type,
+					:sarie_cutoff.c_day_name,
+					:sarie_cutoff.c_cutoff_time;
+
+			if (SQLCODE != 0)
+			{
+				timeStamp();
+				if (SQLCODE == NO_DATA_FOUND && sarie_cutoff.si_tot_record == 0 )
+				{
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+					strcpy(msgHdr.s_response_status,"18"); /** No such record exist **/
+				}
+				else if( SQLCODE == NO_DATA_FOUND )
+				{
+					EXEC SQL CLOSE cur_sarie_cutoff;
+					break;
+				}
+				else
+				{
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+					strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+				}
+
+				EXEC SQL CLOSE cur_sarie_cutoff;
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				fflush(logFp);
+				setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+				error_exit(charOutbuf);
+
+			}
+
+
+			l_space_avl = ( sizeof(charOutbuf) - strlen(charOutbuf) );
+
+			if( l_space_avl < l_space_rqd )
+			{
+				l_bufferlength = ( sizeof(charOutbuf) + MIN_BUF_LEN * 5 );
+				charOutbuf = (char *) realloc( charOutbuf, l_bufferlength);
+				if( charOutbuf == NULL)
+				{	
+					EXEC SQL CLOSE cur_sarie_cutoff;
+					timeStamp();
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, UNXMSG);
+					fflush(logFp);
+					EXEC SQL AT TAPS ROLLBACK RELEASE;
+					tpreturn(TPFAIL, 0, NULL, 0, 0);
+				}
+			}
+
+			sprintf(charTempbuf,"%-10s",sarie_cutoff.c_trans_type);
+			strncat(charOutbuf,charTempbuf,10);
+
+			sprintf(charTempbuf,"%-10s",sarie_cutoff.c_day_name);
+			strncat(charOutbuf,charTempbuf,10);
+
+			sprintf(charTempbuf,"%-6s",sarie_cutoff.c_cutoff_time);
+			strncat(charOutbuf,charTempbuf,6);
+
+			sprintf(charTempbuf,"%10s"," ");
+			strncat(charOutbuf,charTempbuf,10);
+
+			sarie_cutoff.si_tot_record++;
+
+			#ifdef DEBUG
+				fprintf(logFp,"tot_records [%d]: charOutbuf [%s]\n",sarie_cutoff.si_tot_record,charOutbuf);
+				fflush(logFp);
+			#endif
+
+		}
+
+		sprintf(charTempbuf,"%03d",sarie_cutoff.si_tot_record);
+		strncpy(&charOutbuf[71],charTempbuf,3);
+
+		/** Setting up the response status **/
+		strncpy(&charOutbuf[19],"00",2);
+
+        /** Setting Message length of a output message **/
+		memset(charTempbuf,'\0',sizeof(charTempbuf));
+		sprintf(charTempbuf,"%04d",strlen(charOutbuf));
+		strncpy(charOutbuf,charTempbuf,4);
+
+		EXEC SQL AT TAPS COMMIT RELEASE;
+	}
+    else if(strncmp(msgHdr.s_service, "08", 2) == 0)  /******************** ANB Correspondents Information **/
+    {
+        strncpy(s_currency,&charInbuf[21],3);
+        s_currency[3]='\0';
+
+		fprintf(logFp,"s_currency [%s]\n",s_currency);
+
+        strncpy(sendBic,&charInbuf[24],11);
+		sendBic[11]='\0';
+		trim(sendBic);
+
+		fprintf(logFp,"sendBic [%s]\n",sendBic);
+		fflush(logFp);
+
+		/** Establish TAPS Database connection **/
+
+		establishTAPSCon();
+
+        if( tapsConFlg != 0 )
+        {
+            fprintf(logFp,"tapsConFlg [%d]\n", tapsConFlg);
+            fflush(logFp);
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+        }
+
+        EXEC SQL AT TAPS
+            SELECT  account_number
+            INTO    :s_ord_cust_acc
+            FROM    anb_correspondents
+            WHERE   currency    = :s_currency
+            AND     swift_biccode  = :sendBic;
+
+        if( SQLCODE != 0)
+        {
+            timeStamp();
+            fprintf(logFp,"%s|Enquiry for ANB Correspondents failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+            fflush(logFp);
+            if(SQLCODE == NO_DATA_FOUND)
+            {
+                strcpy(msgHdr.s_response_status,"18"); /** No such record exist **/
+            }
+            else
+            {
+                strcpy(msgHdr.s_response_status,"99"); /** No such record exist **/
+            }
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+            setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+            error_exit(charOutbuf);
+        }
+
+        strncpy(charOutbuf,charInbuf,35);
+		charOutbuf[35]='\0';
+
+		sprintf(charTempbuf,"%-35s",s_ord_cust_acc);
+        strncat(charOutbuf,charTempbuf,35);
+
+		sprintf(charTempbuf,"%-50s"," ");
+		strncat(charOutbuf,charTempbuf,50);
+        /*charOutbuf[526] = c_ss_status;*/
+
+        strncpy(&charOutbuf[19],"00",2);
+
+        /** Setting Message length of a output message **/
+		memset(charTempbuf,'\0',sizeof(charTempbuf));
+		sprintf(charTempbuf,"%04d",strlen(charOutbuf));
+		strncpy(charOutbuf,charTempbuf,4);
+
+		EXEC SQL AT TAPS COMMIT RELEASE;
+    }
+	else if(strncmp(msgHdr.s_service, "09", 2) == 0)  /*********** SARIE Working Days **/
+	{
+		/** Establish TAPS Database connection **/
+
+		establishTAPSCon();
+
+        if( tapsConFlg != 0 )
+        {
+            fprintf(logFp,"tapsConFlg [%d]\n", tapsConFlg);
+            fflush(logFp);
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+        }
+
+        EXEC SQL AT TAPS
+			DECLARE cur_sarie_dates CURSOR FOR
+				SELECT  date_row,
+						TO_CHAR(TO_DATE(working_date,'YYYYMMDD'),'YYYYMMDD')
+				FROM    sarie_dates
+				ORDER BY date_row ASC;
+
+        if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Found Error while Declaring cur_sarie_dates cursor; ERROR=[%s]\n",calledFrom, SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		EXEC SQL OPEN cur_sarie_dates;
+
+		if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Found Error while Opening cur_sarie_dates cursor; ERROR=[%s]\n",calledFrom, SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		l_space_rqd = RECORD_LEN;
+
+		memset(charOutbuf,'\0',sizeof(charOutbuf));
+		strncpy(charOutbuf,charInbuf,71);		/** Prepairing the header part of response **/
+		charOutbuf[71]='\0';
+
+		/** Reserving the space for No. of Records field **/
+		sprintf(charTempbuf,"%3s"," ");
+		strncat(charOutbuf,charTempbuf,3);
+
+		sarie_dates.si_tot_record = 0;	
+
+		while(1)
+		{
+			EXEC SQL
+			FETCH cur_sarie_dates
+			INTO    :sarie_dates.l_date_row,
+					:sarie_dates.c_working_date;
+
+			if (SQLCODE != 0)
+			{
+				timeStamp();
+				if (SQLCODE == NO_DATA_FOUND && sarie_dates.si_tot_record == 0 )
+				{
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+					strcpy(msgHdr.s_response_status,"18"); /** No such record exist **/
+				}
+				else if( SQLCODE == NO_DATA_FOUND )
+				{
+					EXEC SQL CLOSE cur_sarie_dates;
+					break;
+				}
+				else
+				{
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+					strcpy(msgHdr.s_response_status,"99"); /** Internal Error **/
+				}
+
+				EXEC SQL CLOSE cur_sarie_dates;
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				fflush(logFp);
+				setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+				error_exit(charOutbuf);
+
+			}
+
+
+			l_space_avl = ( sizeof(charOutbuf) - strlen(charOutbuf) );
+
+			if( l_space_avl < l_space_rqd )
+			{
+				l_bufferlength = ( sizeof(charOutbuf) + MIN_BUF_LEN * 5 );
+				charOutbuf = (char *) realloc( charOutbuf, l_bufferlength);
+				if( charOutbuf == NULL)
+				{	
+					EXEC SQL CLOSE cur_sarie_dates;
+					timeStamp();
+					fprintf(logFp,"%s|Fetching from Cursor Failed; ERROR=[%s]\n",calledFrom, UNXMSG);
+					fflush(logFp);
+					EXEC SQL AT TAPS ROLLBACK RELEASE;
+					tpreturn(TPFAIL, 0, NULL, 0, 0);
+				}
+			}
+
+			sprintf(charTempbuf,"%03d",sarie_dates.l_date_row);
+			strncat(charOutbuf,charTempbuf,3);
+
+			sprintf(charTempbuf,"%-8s",sarie_dates.c_working_date);
+			strncat(charOutbuf,charTempbuf,8);
+
+			sprintf(charTempbuf,"%-10s"," ");
+			strncat(charOutbuf,charTempbuf,10);
+
+			sarie_dates.si_tot_record++;
+
+			#ifdef DEBUG
+				fprintf(logFp,"tot_records [%d]: charOutbuf [%s]\n",sarie_dates.si_tot_record,charOutbuf);
+				fflush(logFp);
+			#endif
+
+		}
+
+		sprintf(charTempbuf,"%03d",sarie_dates.si_tot_record);
+		strncpy(&charOutbuf[71],charTempbuf,3);
+
+		/** Setting up the response status **/
+		strncpy(&charOutbuf[19],"00",2);
+
+        /** Setting Message length of a output message **/
+		memset(charTempbuf,'\0',sizeof(charTempbuf));
+		sprintf(charTempbuf,"%04d",strlen(charOutbuf));
+		strncpy(charOutbuf,charTempbuf,4);
+
+		EXEC SQL AT TAPS COMMIT RELEASE;
+	}
+	else if(strncmp(msgHdr.s_service, "10", 2) == 0) /******************************* SWIFT Payment Request - new layout**/
+	{
+		/** Ver 1.2 ** 
+		strncpy(s_tran_ref_num,&charInbuf[21],16);
+		s_tran_ref_num[16]='\0'; ****/
+
+		sprintf(s_tran_ref_num,"%.16s", &charInbuf[21]);	/* Ver 1.2 */
+		trim(s_tran_ref_num); 								/* Ver 1.2 */
+		s_tran_ref_num[strlen(s_tran_ref_num)] = '\0'; 		/* Ver 1.2 */
+
+		strncpy(s_charges_flag,&charInbuf[530],3);
+		s_charges_flag[3]='\0';
+
+		/* Validating Input message */
+		if( (strncmp(s_charges_flag,"OUR",3) != 0) &&
+			(strncmp(s_charges_flag,"BEN",3) != 0) &&
+			(strncmp(s_charges_flag,"SHA",3) != 0) )
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Request for SWIFT payment advise failed. Invalid message; Charges Flag should be OUR, BEN, SHA ; Received [%s]ERROR=[03]\n",calledFrom, s_charges_flag);
+			fflush(logFp);
+			setResponseMessage(charOutbuf,charInbuf,"03");
+			error_exit(charOutbuf);
+		}
+
+		TimeoutFlag = 0;
+		signal(SIGALRM, toAlarm1);
+		alarm(tapsTimeOut);
+
+		/** Establish TAPS Database connection **/
+
+		establishTAPSCon();
+
+        if( tapsConFlg != 0 )
+        {
+            fprintf(logFp,"tapsConFlg [%d]\n", tapsConFlg);
+            fflush(logFp);
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+        }
+
+		if ( TimeoutFlag == 1)
+		{
+			timeStamp();
+			fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-1\n");
+			fflush(logFp);
+
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+		}
+
+		/** Checking for a duplicate Transaction reference number. **/
+		EXEC SQL AT TAPS
+			SELECT COUNT(f_20)
+			INTO    :i_count
+			FROM    braid_sama_mis
+			WHERE   f_20 = :s_tran_ref_num
+			AND     sender  = TRIM(:msgHdr.s_branch_name);
+
+		if ( TimeoutFlag == 1)
+		{
+			timeStamp();
+			fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-2\n");
+			fflush(logFp);
+
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+		}
+
+		if( SQLCODE != 0 && SQLCODE != NO_DATA_FOUND)
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Request for SWIFT payment advise failed; DB error [%d] while checking duplicate reference number ;ERROR=[%s]\n",calledFrom, SQLCODE, SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			setResponseMessage(charOutbuf,charInbuf,"99");
+			error_exit(charOutbuf);
+		}
+		if( i_count > 0 ) /* means, transaction exisist. */
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Request for SWIFT payment advise failed; Transaction reference [%s]; sender [%s] already exists.. ERROR=[20]\n",calledFrom, s_tran_ref_num, msgHdr.s_branch_name);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			setResponseMessage(charOutbuf,charInbuf,"20");
+			error_exit(charOutbuf);
+		}
+
+		/** Concatinating Ordering Customer Name and its 3 address fields. **/
+
+		memset(s_ord_cust_nm_addr,'\0',sizeof(s_ord_cust_nm_addr));
+		/** Ver 1.2 ** strncpy(s_ord_cust_nm_addr,&charInbuf[172],135); 	** 135 = 30 + 35 + 35 + 35 **/
+
+		/** Ver 1.2 ** strncpy(s_ord_cust_nm_addr,&charInbuf[172],135); 	** 135 = 30 + 35 + 35 + 35 **/
+
+		/* Ver 2.4 ; if service version is more than 1.0, then consider the latter field with more characters 
+		                          i.e.,143 = 35 + 35 + 35 + 35 + 3(new line char)**/
+		sprintf(s_ord_cust_nm_addr,"%35.35s\n%35.35s\n%35.35s\n%35.35s",&charInbuf[97], &charInbuf[132], &charInbuf[167], &charInbuf[202]); /* Ver 1.2 */
+		sprintf(s_ord_cust_name, "%35.35s", &charInbuf[97]);
+
+		s_ord_cust_nm_addr[143]='\0'; /* Ver 2.4 changed from 135 to 143 */
+
+		/* Ver 1.4 */
+		trim(s_ord_cust_name);
+		s_ord_cust_name[strlen(s_ord_cust_name)]='\0';
+		/* Till Here */
+
+		/** Concatinating Beneficiary Customer Name and its 3 address fields. **/
+
+		memset(s_bnf_cust_nm_addr,'\0',sizeof(s_bnf_cust_nm_addr));
+		/** Ver 1.2 ** strncpy(s_bnf_cust_nm_addr,&charInbuf[342],135);    ** 135 = 30 + 35 + 35 + 35 **/
+		/* Ver 2.4 ; if service version is more than 1.0, then consider the latter field with more characters
+		                          i.e.,140 = 35 + 35 + 35 + 35 + 3(new line char)**/
+		sprintf(s_bnf_cust_nm_addr, "%35.35s\n%35.35s\n%35.35s\n%35.35s", &charInbuf[272], &charInbuf[307], &charInbuf[342], &charInbuf[377]); /* Ver 1.2 */
+		sprintf(s_bnf_cust_name, "%35.35s", &charInbuf[272]);
+
+		s_bnf_cust_nm_addr[143]='\0';
+
+		/* Ver 1.4 */
+		trim(s_bnf_cust_name);
+		s_bnf_cust_name[strlen(s_bnf_cust_name)]='\0';
+		/* Till Here */
+
+		memset(s_pur_trnf_code,' ',sizeof s_pur_trnf_code);
+		strncpy(s_pur_trnf_code,&charInbuf[412],102);   /** Concatinating Purpose for transfer code and its
+															description. **/
+		s_pur_trnf_code[102]='\0';
+
+        /** Getting the next number from the oracle sequance BRAID_FPQ_COUNTER. **/
+		EXEC SQL AT TAPS
+			SELECT  FPQDBA.braid_fpq_counter.NEXTVAL
+			INTO    :l_fpq_uniq_ref
+			FROM    dual;
+
+		if(SQLCODE != 0)
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Fetching the next value from a sequance BRAID_FPQ_COUNTER failed; ERROR[%s]\n",calledFrom,SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			setResponseMessage(charOutbuf,charInbuf,"99");
+			error_exit(charOutbuf);
+		}
+
+        /** Getting the next number from the oracle sequance BRAID_SAMAMIS_COUNTER. **/
+		EXEC SQL AT TAPS
+			SELECT  FPQDBA.braid_samamis_counter.NEXTVAL
+			INTO    :l_samamis_uniq_ref
+			FROM    dual;
+
+		if ( TimeoutFlag == 1)
+		{
+			timeStamp();
+			fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-3\n");
+			fflush(logFp);
+
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+		}
+
+		if(SQLCODE != 0)
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Fetching the next value from a sequance BRAID_SAMAMIS_COUNTER failed; ERROR[%s]\n",calledFrom,SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			setResponseMessage(charOutbuf,charInbuf,"99");
+			error_exit(charOutbuf);
+		}
+
+		EXEC SQL SET TRANSACTION;
+
+		/** Establish TUXDB Database connection **/
+
+		establishTUXDBCon();
+
+		if ( TimeoutFlag == 1)
+		{
+			timeStamp();
+			fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-4\n");
+			fflush(logFp);
+
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+		}
+
+		if( phdbConFlg != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"phdbConFlg [%d]\n", phdbConFlg);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			setResponseMessage(charOutbuf,charInbuf,"12");
+			error_exit(charOutbuf);
+		}
+
+		/** Getting the latest sequance number for a given Branch Name and sysdate. **/
+		EXEC SQL AT TUXDB
+            SELECT	seq_number
+			INTO    :l_uti_seq_num
+			FROM    sss_sarie_swift_seq_num
+			WHERE   tran_date   = TRUNC(sysdate)
+			AND     branch_name = :msgHdr.s_branch_name
+			FOR UPDATE OF seq_number;
+
+		if ( TimeoutFlag == 1)
+		{
+			timeStamp();
+			fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-5\n");
+			fflush(logFp);
+
+			EXEC SQL AT TAPS  ROLLBACK RELEASE;
+			EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+		}
+	
+		if(SQLCODE == NO_DATA_FOUND)
+		{
+			EXEC SQL AT TUXDB
+				INSERT INTO sss_sarie_swift_seq_num
+				(
+					branch_name,
+					tran_date,
+					seq_number
+				)
+				VALUES
+				(
+					:msgHdr.s_branch_name,
+					TRUNC(sysdate),
+					1
+				);
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-6\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS  ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			if(SQLCODE != 0)
+			{
+				EXEC SQL AT TUXDB ROLLBACK work;
+				timeStamp();
+				//fprintf(logFp,"Error while inserting a sequnce number for SWIFT payment advise; ERROR =[%s]\n", SQLMSG);
+				fprintf(logFp,"Error [%d] while inserting a sequnce number in sss_sarie_swift_seq_num (in TUXDB) for SWIFT payment advise; ERROR =[%s]\n", SQLCODE, SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+
+			l_uti_seq_num = 1;
+
+		}
+		else if(SQLCODE != 0)
+		{
+			timeStamp();
+			//fprintf(logFp,"%s|Error while getting latest sequence number for SWIFT Payment Advise; ERRRO[%s]\n",calledFrom,SQLMSG);
+			fprintf(logFp,"%s|Error [%d] while getting latest sequence number from sss_sarie_swift_seq_num (in TUXDB) for SWIFT Payment Advise; ERRRO[%s]\n",calledFrom,SQLCODE, SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			EXEC SQL AT TUXDB ROLLBACK RELEASE;
+			setResponseMessage(charOutbuf,charInbuf,"99");
+			error_exit(charOutbuf);
+		}
+		else
+		{
+			if( l_uti_seq_num >= 35999 )
+			{
+				timeStamp();
+			    fprintf(logFp,"Max number of transaction for this channel [%s] exceeded the limit of 35,999 in sss_sarie_swift_seq_num table (in TUXDB) during SWIFT Payment Advise\n",calledFrom);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+
+			l_uti_seq_num++;
+
+			EXEC SQL AT TUXDB
+				UPDATE  sss_sarie_swift_seq_num
+				SET     seq_number = :l_uti_seq_num
+				WHERE   tran_date   = TRUNC(sysdate)
+				AND     branch_name = :msgHdr.s_branch_name;
+
+			if ( TimeoutFlag == 1)
+			{
+				timeStamp();
+				fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-7\n");
+				fflush(logFp);
+
+				EXEC SQL AT TAPS  ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+				setResponseMessage(charOutbuf,charInbuf,"12");
+				error_exit(charOutbuf);
+			}
+
+			if( SQLCODE != 0 )
+			{
+				timeStamp();
+				//fprintf(logFp,"%s|Error while updating new sequence number for SWIFT Payment Advise; ERRRO[%s]\n",calledFrom,SQLMSG);
+				fprintf(logFp,"%s|Error [%d] while updating new sequence number in sss_sarie_swift_seq_num (in TUXDB) for SWIFT Payment Advise; ERRRO[%s]\n",calledFrom,SQLCODE, SQLMSG);
+				fflush(logFp);
+				EXEC SQL AT TAPS ROLLBACK RELEASE;
+				EXEC SQL AT TUXDB ROLLBACK RELEASE;
+				setResponseMessage(charOutbuf,charInbuf,"99");
+				error_exit(charOutbuf);
+			}
+		}
+
+		/****  Begin- addition  during v.2.6***/
+		memset(varTmpStr.arr,'\0',sizeof varTmpStr.arr); varTmpStr.len = 0;
+		EXEC SQL AT TUXDB
+			   select FORMAT_SEQNUM(:l_uti_seq_num) into :varTmpStr from dual;
+		if(SQLCODE != 0)
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Error while calling FORMAT_SEQNUM for SARIE Payment Advise; ERRRO[%s]\n",calledFrom,SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			EXEC SQL AT TUXDB ROLLBACK RELEASE;
+			setResponseMessage(charOutbuf,charInbuf,"99");
+			error_exit(charOutbuf);
+		}
+		EXEC SQL AT TUXDB COMMIT RELEASE; /* Introduced to release the TUXDB for other process */
+		fprintf(logFp,"SEQNO [%s][%d]\n", varTmpStr.arr, varTmpStr.len); fflush(logFp);
+		varTmpStr.arr[varTmpStr.len]='\0';
+		/****  END - addition  during v.2.6***/
+
+		/** Making a value for UTI column in BRAID_FPQ & BRAID_SAMA_MIS table. **/
+		strcpy(s_uti,"ARNB");
+		strncat(s_uti,msgHdr.s_branch_name,3);
+
+		sprintf(s_uti_yyddd, "%04d%03d", systemDate->tm_year+1900, systemDate->tm_yday +1);
+		strncat(s_uti,&s_uti_yyddd[2],5);
+
+        /*sprintf(s_uti_seq_num,"%08d",l_uti_seq_num); commented during V.2.6*/
+		/*strncat(s_uti,&s_uti_seq_num[4],4);  commented during V.2.6*/
+
+        strncat(s_uti,varTmpStr.arr,4);
+		s_uti[16]='\0';
+		fprintf(logFp,"UTI_NUM [%s]\n", s_uti); fflush(logFp);
+
+		strncpy(s_bnf_bnk_nm,&charInbuf[741],35);
+		s_bnf_bnk_nm[35]='\0';
+
+		strncpy(s_bnf_bnk_addr1,&charInbuf[776],35);
+		s_bnf_bnk_addr1[35]='\0';
+
+		strncpy(s_bnf_bnk_addr2,&charInbuf[811],35);
+		s_bnf_bnk_addr2[35]='\0';
+
+		
+		sprintf(s_bnf_bnk_dtls, "%-35.35s\n%-35.35s\n%-35.35s\n%-35.35s\n%-6.6s", &charInbuf[741], &charInbuf[776], &charInbuf[811], &charInbuf[846], " "); /* Ver 1.3 */
+		s_bnf_bnk_dtls[150]='\0';			  /* Ver 1.3 */
+
+		sprintf(s_bnf_bnk_clr_cd, "%.35s", &charInbuf[881]); /* Ver 1.3 */
+		trim(s_bnf_bnk_clr_cd);								/* Ver 1.3 */
+
+		strncpy(s_amount,&charInbuf[37],14);		
+		s_amount[14]='\0';
+
+		strncpy(s_currency,&charInbuf[51],3);
+		s_currency[3]='\0';
+
+		strncpy(s_value_dt,&charInbuf[56],6);
+		s_value_dt[6]='\0';
+
+		strncpy(s_ord_cust_acc,&charInbuf[62],35);
+		s_ord_cust_acc[35]='\0';
+
+		strncpy(s_bnf_cust_acc,&charInbuf[237],35);
+		s_bnf_cust_acc[35]='\0';
+
+		strncpy(s_inmdte_acc,&charInbuf[514],16);
+		s_inmdte_acc[16]='\0';
+
+		strncpy(s_bnf_bnk_country_cd,&charInbuf[533],2);
+		s_bnf_bnk_country_cd[2]='\0';
+
+		sprintf(recvBank,"%.11s", &charInbuf[536]);
+		trim(recvBank);
+		if (strcmp(recvBank,"") == 0)
+		{
+			sprintf(recvBank,"%.11s", "SWIFT");	
+			trim(recvBank);
+		}
+
+		sprintf(sendBic,"%.11s", &charInbuf[547]);
+		trim(sendBic);
+		sprintf(recvBic,"%.11s", &charInbuf[558]);
+		trim(recvBic);
+		sprintf(interBic,"%.11s", &charInbuf[569]);
+		trim(interBic);
+		sprintf(benefBic,"%.11s", &charInbuf[580]);
+		trim(benefBic);
+
+		memset(custRemark,'\0',sizeof(custRemark));
+		sprintf(custRemark,"%-35.35s\n%-35.35s\n%-35.35s\n%-35.35s",
+							 &charInbuf[591],
+							 &charInbuf[626],
+							 &charInbuf[661],
+							 &charInbuf[696]);
+		custRemark[150]='\0';
+		trim(custRemark);
+		custRemark[strlen(custRemark)]='\0';
+
+		/** Inserting the SWIFT Payment advise into BRAID_FPQ table. **/
+		EXEC SQL AT TAPS
+			INSERT INTO braid_fpq
+			(
+			F_20,
+			uniqueref,
+			uti,
+			sender,
+			receiver,
+			bm_narrative1,
+			bm_narrative2,
+			bm_narrative3,
+			F_32A_amount,
+			F_32A_currency,
+			F_32A_date,
+			F_50A_accountnumber,
+			F_50A_nameandaddress,
+			F_59_account,
+			F_59_customer,
+			status,
+			intermediate_account,
+			F_71A,
+			msgtype,
+			mtype,
+			mformat,
+			priority,
+			pflag,
+			mmode,
+			tpflag,
+			/*RECEIVER,*/
+			F_53A_BICCODE,
+			F_54A_BICCODE,
+			F_56A_BICCODE,
+			F_57A_BICCODE,
+			F_70,
+			F_57A_nameandaddress,	/* Ver 1.3 */
+			F_51A_accountnumber,	/* Ver 1.3 */
+			F_77B,                    /*Ver. 2.3*/
+			beneficiary_bank_country  /*Ver. 2.3*/                 
+			)
+			VALUES
+			(
+			:s_tran_ref_num, 							/* Transaction Ref. Number */
+			:l_fpq_uniq_ref,							/* Unique Ref. */
+			:s_uti,										/* UTI */
+			:msgHdr.s_branch_name,						/* Branch Name/SENDER */
+			/*'SWIFT',*/									/* RECIVER */
+			:recvBank,									/* RECIVER */
+			:s_bnf_bnk_nm, 								/* Bnf Bank Name */
+			:s_bnf_bnk_addr1, 							/* Bnf Bank Addr1 */
+			:s_bnf_bnk_addr2, 							/* Bnf Bank Addr2 */
+			:s_amount,									/* Amount */
+			:s_currency,								/* Currency */
+			:s_value_dt,								/* Value Date */
+			:s_ord_cust_acc,							/* Ordering Customer Acc */
+			:s_ord_cust_nm_addr,						/* Ordering customer Name & Address */
+			:s_bnf_cust_acc,							/* Beneficiary customer Acc */
+			:s_bnf_cust_nm_addr,						/* Beneficiary customer Name & Address */
+			'N',										/* Status */
+			:s_inmdte_acc,								/* Intermediate Account */
+			:s_charges_flag,							/* Charges Flag */
+			'MT103C',
+			'103C',
+			'103',
+			'50',
+			'N',
+			'N',
+			'N',
+			/*:recvBank,*/
+			:sendBic,
+			:recvBic,
+			:interBic,
+			:benefBic,
+			:custRemark,
+			:s_bnf_bnk_dtls,		/* Ver 1.3 */
+			:s_bnf_bnk_clr_cd,		/* Ver 1.3 */
+			:s_pur_trnf_code,       /* Ver 2.3 */     /* Purpose of Transfer code & description */
+			:s_bnf_bnk_country_cd   /* Ver 2.3 */     /* Beneficiary Bank Country code */
+			);
+
+		if ( TimeoutFlag == 1)
+		{
+			timeStamp();
+			fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-8\n");
+			fflush(logFp);
+
+			EXEC SQL AT TAPS  ROLLBACK RELEASE;
+			EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+		}
+
+		if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Error [%d] while Inserting a SWIFT payment advise into BRAID_FPQ table; ERROR [%s]\n",calledFrom, SQLCODE, SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			EXEC SQL AT TUXDB ROLLBACK RELEASE;
+			setResponseMessage(charOutbuf,charInbuf,"99");
+			error_exit(charOutbuf);
+		}
+
+		timeStamp();
+		fprintf(logFp,"%s|Inserting a SWIFT payment advise into BRAID_FPQ table SUCCESS\n",calledFrom);
+		fflush(logFp);
+
+		/** Inserting the SWIFT Payment advise into BRAID_SAMA_MIS table. **/
+		EXEC SQL AT TAPS
+			INSERT INTO braid_sama_mis
+			(
+				tran_date,
+				F_20,
+				uniqueref,
+				uti,
+				sender,
+				receiver,
+				bm_narrative1,
+				bm_narrative2,
+				bm_narrative3,
+				F_32A_amount,
+				F_32A_currency,
+				F_32A_date,
+				F_50A_accountnumber,
+				F_50A_nameandaddress,
+				F_59_account,
+				F_59_customer,
+				F_77B,
+				status,
+				intermediate_account,
+				F_71A,
+				beneficiary_bank_country,
+				msgtype,
+				mtype,
+				mformat,
+				priority,
+				pflag,
+				mmode,
+				tpflag,
+				/*RECEIVER,*/
+				F_53A_BICCODE,
+				F_54A_BICCODE,
+				F_56A_BICCODE,
+				F_57A_BICCODE,
+				F_70,
+				F_57A_nameandaddress,	/* Ver 1.3 */
+				F_51A_accountnumber,	/* Ver 1.3 */
+				customer_rem,			/* Ver 1.4 */
+				customer_name			/* Ver 1.4 */
+			)
+			VALUES
+			(
+				to_char(sysdate,'YYYYMMDD'),				/* Transaction Date */
+				:s_tran_ref_num,                            /* Transaction Ref. Number */
+				:l_samamis_uniq_ref,                       	/* Unique Ref. */
+				:s_uti,                                     /* UTI */
+				:msgHdr.s_branch_name,                      /* Branch Name/SENDER */
+				/*'SWIFT',  */                              /* RECIVER */
+				:recvBank,                                  /* RECIVER */
+				:s_bnf_bnk_nm,                 				/* Bnf Bank Name */
+				:s_bnf_bnk_addr1,              				/* Bnf Bank Addr1 */
+				:s_bnf_bnk_addr2,              				/* Bnf Bank Addr2 */
+				:s_amount,        					        /* Amount */
+				:s_currency,     				            /* Currency */
+				:s_value_dt,								/* Value Date */
+				:s_ord_cust_acc,                 			/* Ordering Customer Acc */
+				:s_ord_cust_nm_addr,                        /* Ordering customer Name & Address */
+				:s_bnf_cust_acc,         			        /* Beneficiary customer Acc */
+				:s_bnf_cust_nm_addr,                        /* Beneficiary customer Name & Address */
+				:s_pur_trnf_code,							/* Purpose of Transfer code & description */
+				'N',                                        /* Status */
+				:s_inmdte_acc,                  			/* Intermediate Account */
+				:s_charges_flag,                   			/* Charges Flag */
+				:s_bnf_bnk_country_cd,						/* Beneficiary Bank Country code */
+				'MT103C',
+				'103C',
+				'103',
+				'50',
+				'N',
+				'N',
+				'N',
+				/*:recvBank,*/
+				:sendBic,
+				:recvBic,
+				:interBic,
+				:benefBic,
+				:custRemark,
+				:s_bnf_bnk_dtls,		/* Ver 1.3 */
+				:s_bnf_bnk_clr_cd,		/* Ver 1.3 */
+				:s_ord_cust_name,		/* Ver 1.4 */
+				:s_bnf_cust_name		/* Ver 1.4 */
+			);
+
+		if ( TimeoutFlag == 1)
+		{
+			timeStamp();
+			fprintf(logFp,"TimeOut while calling SWIFT transfer; ERROR = [12]-9\n");
+			fflush(logFp);
+
+			EXEC SQL AT TAPS  ROLLBACK RELEASE;
+			EXEC SQL AT TUXDB ROLLBACK RELEASE;
+
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+		}
+
+		if( SQLCODE != 0 )
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Error [%d] while Inserting a SWIFT payment advise into BRAID_SAMA_MIS table; ERROR [%s]\n",calledFrom,SQLCODE, SQLMSG);
+			fflush(logFp);
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			EXEC SQL AT TUXDB ROLLBACK RELEASE;
+			setResponseMessage(charOutbuf,charInbuf,"99");
+			error_exit(charOutbuf);
+		}
+
+		timeStamp();
+		fprintf(logFp,"%s|Inserting a SWIFT payment advise into BRAID_SAMA_MIS table SUCCESS\n",calledFrom);
+		fflush(logFp);
+
+		alarm(0); /* Reset the timeout */
+
+		strcpy(charOutbuf,charInbuf);
+		strncpy(&charOutbuf[19],"00",2);
+	}
+	else if(strncmp(msgHdr.s_service, "11", 2) == 0) /******************************* SWIFT Payment Enqiry - new layout**/
+	{
+		/** Ver 1.2 ** 
+		strncpy(s_tran_ref_num,&charInbuf[21],16);
+		s_tran_ref_num[16]='\0'; ****/
+
+		sprintf(s_tran_ref_num,"%.16s", &charInbuf[21]);	/* Ver 1.2 */
+		trim(s_tran_ref_num); 								/* Ver 1.2 */
+		s_tran_ref_num[strlen(s_tran_ref_num)] = '\0'; 		/* Ver 1.2 */
+
+		/** Establish TAPS Database connection **/
+
+		establishTAPSCon();
+
+        if( tapsConFlg != 0 )
+        {
+            fprintf(logFp,"tapsConFlg [%d]\n", tapsConFlg);
+            fflush(logFp);
+            setResponseMessage(charOutbuf,charInbuf,"12");
+            error_exit(charOutbuf);
+        }
+
+		EXEC SQL AT TAPS
+			SELECT  status
+			INTO    :c_ss_status
+			FROM    braid_sama_mis
+			WHERE   f_20   		= :s_tran_ref_num
+			AND     sender  	= :msgHdr.s_branch_name;
+
+		if( SQLCODE != 0)
+		{
+			timeStamp();
+			fprintf(logFp,"%s|Status for SWIFT payment enquiry failed; ERROR=[%s]\n",calledFrom, SQLMSG);
+			fflush(logFp);
+			if(SQLCODE == NO_DATA_FOUND)
+			{
+				strcpy(msgHdr.s_response_status,"18"); /** No such record exist **/
+			}
+			else
+			{
+				strcpy(msgHdr.s_response_status,"99"); /** No such record exist **/
+			}
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+			setResponseMessage(charOutbuf,charInbuf,msgHdr.s_response_status);
+			error_exit(charOutbuf);
+		}
+
+		timeStamp();
+		fprintf(logFp,"c_ss_status Before if condition [%c]\n",c_ss_status);
+
+		if(c_ss_status != 'N' && c_ss_status != 'C')
+		{
+			c_ss_status = 'A';
+			timeStamp();
+			fprintf(logFp,"c_ss_status Inside if condition [%c]\n",c_ss_status);
+		}
+		fflush(logFp);
+
+		strcpy(charOutbuf,charInbuf);
+		charOutbuf[535] = c_ss_status;
+		/*charOutbuf[609] = c_ss_status;*/
+		strncpy(&charOutbuf[19],"00",2);
+
+		EXEC SQL AT TAPS COMMIT RELEASE;
+	}
+	else
+	{
+		timeStamp();
+		fprintf(logFp,"%s|This requset is not supported by this service.\n",calledFrom);
+		fflush(logFp);
+		setResponseMessage( charOutbuf,charInbuf,"81"); /* Service required is either not supported. */
+		error_exit(charOutbuf);
+	}
+
+	if ( Fchg32(outbuf,OUTBUF1, 0,charOutbuf, (FLDLEN32)0 ) == -1 )
+	{
+		if( (strncmp(msgHdr.s_service, "00", 2) == 0) || (strncmp(msgHdr.s_service, "02", 2) == 0) )
+		{
+			EXEC SQL AT TUXDB ROLLBACK RELEASE;
+			EXEC SQL AT TAPS ROLLBACK RELEASE;
+		}
+	    timeStamp();
+		fprintf(logFp,"Error while Fchg outbuf; ");
+		fprintf(logFp,"[%d][%s]\n",Ferror32,FMLMSG);
+	    fflush(logFp);
+		free(charOutbuf);
+		tpreturn(TPFAIL, 0, NULL, 0, 0);
+	}
+
+
+	if( (strncmp(msgHdr.s_service, "00", 2) == 0) || (strncmp(msgHdr.s_service, "02", 2) == 0) || strncmp(msgHdr.s_service, "10", 2) == 0 )
+	{
+		EXEC SQL AT TUXDB COMMIT RELEASE;
+		EXEC SQL AT TAPS COMMIT RELEASE;
+	}
+
+	tpfree((char *)inbuf);
+	timeStamp();
+
+    /* Ver 1.1 starts...*/
+    gettimeofday (&second, &tzp);
+    if (first.tv_usec > second.tv_usec)
+    {
+       second.tv_usec += 1000000;
+       second.tv_sec--;
+    }
+	/* Ver 1.8 */
+	if ( strncmp(&charOutbuf[17], "00", 2) == 0 )
+		strncpy(&charOutbuf[248+6], "xxxxxx", 6);
+	/* Ver 1.8 */
+	fprintf(logFp,"Response Send [%s] | Elapsed Seconds: [%d] | Elapsed Milliseconds: [%d]\n",charOutbuf, second.tv_sec - first.tv_sec, (second.tv_usec - first.tv_usec)/1000);
+	/* Ver 1.1 ends...*/
+
+	fprintf(logFp,"----------------------------------------");
+	fprintf(logFp,"----------------------------------------\n");
+	fprintf(logFp,"Database connections are closed\n");
+	fflush(logFp);
+	free(charOutbuf);
+	tpreturn(TPSUCCESS,0,(char *)outbuf,0L,0);
+}
+
+char *getDateTime()
+{
+	systime = time(NULL);
+	systemDate = localtime( &systime );
+	sprintf(dateTime, "%02d/%02d %02d:%02d:%02d", systemDate->tm_mday, systemDate->tm_mon +1, systemDate->tm_hour, systemDate->tm_min, systemDate->tm_sec);
+	return dateTime;
+}
+
+trim(in_str)
+char *in_str;
+{
+	int  i = 0;
+	char temp_str[200] ;
+	for (i=0;((i<=strlen(in_str)) && (in_str[i] == ' '));i++);
+	strcpy(temp_str, &in_str[i]);
+	for (i=(strlen(temp_str)-1);((i>=0) && (temp_str[i] == ' '));i--);
+	temp_str[i+1] = '\0';
+	strcpy(in_str,temp_str);
+}
+
+readParam (char *progName)
+{
+	FILE 	*paramFp;
+	char	tmpStr[150], inBuf[1000], option[40], value[1000],  value1[1000],
+			*ptrInBuf, *pathName;
+	int 	firstPortion = 0, secondPortion = 0, portNo = 0, i, j, k;
+
+	/* open the configuration file */
+
+	sprintf(tmpStr, "%s.cfg", progName);
+	if ( ( paramFp = fopen ( tmpStr, "r" )) == NULL ) 
+	{
+		fprintf (stderr, "%s | Error %d : Could not open configuration file %s; fatal error.. Job aborted !!\n", getDateTime(), errno, tmpStr);
+		fprintf (stdout, "%s | Error %d : Could not open configuration file %s; fatal error.. Job aborted !!\n", getDateTime(), errno, tmpStr);
+		exit (1);
+	}
+
+	memset(logFileName, NULL, sizeof logFileName); 
+	memset(junkChars, NULL, sizeof junkChars); 
+
+	memset(globWaitPeriod,'\0',sizeof(globWaitPeriod));
+	memset(msgExpiry,'\0',sizeof(msgExpiry));
+	memset(globQMgrName,'\0',sizeof(globQMgrName));
+	memset(globReqQ,'\0',sizeof(globReqQ));
+	memset(globReplyToQ,'\0',sizeof(globReplyToQ));
+	memset(globReplyToQMgrName, '\0', sizeof(globReplyToQMgrName));
+
+	memset(channelName,NULL,sizeof channelName); 
+	memset(QMHostName,NULL,sizeof QMHostName); 
+
+	memset(channelIds, NULL, sizeof channelIds);
+	memset(functionIds, NULL, sizeof functionIds);
+	memset(messageLengths, NULL, sizeof messageLengths);
+	memset(agentId, NULL, sizeof agentId);
+	memset(passwd, NULL, sizeof passwd);
+	memset(channelVersions, NULL, sizeof channelVersions);
+
+	memset(svcRoutedToMB, NULL, sizeof svcRoutedToMB);
+
+	for (i=0; i<100; i++)
+	{
+		memset(requestQName[i], NULL, sizeof (requestQName[i]));
+		memset(responseQName[i], NULL, sizeof (responseQName[i]));
+	}
+
+	noOfRequestQ=0;
+	noOfResponseQ=0;
+
+	/*
+	memset(tapsUserId, NULL, sizeof tapsUserId); 
+	memset(tapsPasswd, NULL, sizeof tapsPasswd); 
+	memset(tapsDbString, NULL, sizeof tapsDbString); 
+	*/
+	tapsTimeOut = 20;
+	debugLevel = 3;
+
+	/* parse for the options and values */
+
+	while ( fgets ( inBuf, 1000, paramFp ) ) 
+	{
+		ptrInBuf = inBuf;
+		firstPortion = 1;
+		secondPortion = 1;
+		memset(option, '\0', sizeof option);
+		memset(value, '\0',  sizeof value);
+		memset(value1, '\0',  sizeof value1);
+		for(i=0,j=0,k=0; *ptrInBuf; ptrInBuf++ )
+		{
+			if ( *ptrInBuf == ' ' || *ptrInBuf == '\n' ) /* ignore space & new line*/
+				continue;
+			if ( *ptrInBuf == '=' )
+			{
+				firstPortion = 0;
+				continue;
+			}
+			if ( firstPortion )
+				option[i++] = *ptrInBuf;
+			else if ( secondPortion )
+				value[j++]  = *ptrInBuf;
+			else
+				value1[k++] = *ptrInBuf;
+		}
+		option[i] = value[j] = value1[k] = '\0';
+
+		fprintf(stdout, "option = %s; value=%s %s\n", option, value, value1);
+		fprintf(stderr, "option = %s; value=%s %s.\n", option, value, value1);
+
+		if ( strncmp(option, "LOGFILENAME", 11) == 0 ) 
+			sprintf(logFileName, "%s", value);
+		else if ( strncmp(option, "TAPSUSERID", 10) == 0 ) 
+			sprintf(tapsUserId,"%s" , value);
+		else if ( strncmp(option, "TAPSPASSWD", 10) == 0 ) 
+			sprintf(tapsPasswd,"%s" , value);
+		else if (strncmp(option, "TAPSDBSTRING", 12) == 0 )
+			sprintf(tapsDbString,"%s" , value);
+		else if ( strncmp(option, "CPDBUSERID", 10) == 0 ) 
+			sprintf(cpdbUserId,"%s" , value);
+		else if ( strncmp(option, "CPDBPASSWD", 10) == 0 ) 
+			sprintf(cpdbPasswd,"%s" , value);
+		else if (strncmp(option, "CPDBDBSTRING", 12) == 0 )
+			sprintf(cpdbDbString,"%s" , value);
+		else if ( strncmp(option, "PHDBUSERID", 10) == 0 ) 
+			sprintf(phdbUserId,"%s" , value);
+		else if ( strncmp(option, "PHDBPASSWD", 10) == 0 ) 
+			sprintf(phdbPasswd,"%s" , value);
+		else if (strncmp(option, "PHDBDBSTRING", 12) == 0 )
+			sprintf(phdbDbString,"%s" , value);
+		else if (strncmp(option, "JUNKCHARS", 9) == 0 )
+			sprintf(junkChars,"%s" , value);
+		else if (strncmp(option, "TIMEOUT", 7) == 0 )
+			tapsTimeOut= atoi(value);
+		else if (strncmp(option, "DEBUG", 5) == 0 )
+			debugLevel = atoi(value);
+		else if ( strncmp(option, "HDRCHECKFLAG", 12) == 0 )
+			 hdrChkFlag = value[0];
+		else if ( strncmp(option, "QMGRNAME", 8) == 0 )
+			sprintf(globQMgrName, "%s", value);
+		else if ( strncmp(option, "RLPYQMGRNAME", 12) == 0 )
+			sprintf(globReplyToQMgrName, "%s", value);
+		else if ( strncmp(option, "REQQNAME", 8) == 0 )
+			sprintf(requestQName[noOfRequestQ++], "%s", value);
+		else if ( strncmp(option, "RLPYQNAME", 9) == 0 )
+			sprintf(responseQName[noOfResponseQ++], "%s", value);
+		else if ( strncmp(option, "WAITPERIOD", 10) == 0 )
+			sprintf(globWaitPeriod, "%s", value);
+		else if ( strncmp(option, "MSGEXPIRY", 9) == 0 )
+			sprintf(msgExpiry, "%s", value);
+		else if ( strncmp(option, "HOSTNAME", 8) == 0 )
+			sprintf(QMHostName, "%s", value);
+		else if ( strncmp(option, "CHANNELNAME", 11) == 0 )
+			sprintf(channelName, "%s", value);
+		else if ( strncmp(option, "CHANNELID", 9) == 0 )
+			sprintf(channelIds, "%s", value);
+		else if ( strncmp(option, "MSGLENGTH", 9) == 0 )
+			sprintf(messageLengths, "%s", value);
+		else if ( strncmp(option, "FUNCTIONID", 10) == 0 )
+			sprintf(functionIds, "%s", value);
+		else if ( strncmp(option, "AGENTID", 7) == 0 )
+			sprintf(agentId, "%s", value);
+		else if ( strncmp(option, "PASSWD", 6) == 0 )
+			sprintf(passwd, "%s", value);
+		else if ( strncmp(option, "CHANNELVERSIONS", 15) == 0 )
+			sprintf(channelVersions, "%s", value);
+		else if ( strncmp(option, "MBROUTEDSVC", 11) == 0 )
+			sprintf(svcRoutedToMB, "%s", value);
+		else
+		{
+			fprintf(stdout, "Unreganised option %s with value %s ingored\n", option, value);
+			fprintf(stderr, "Unreganised option %s with value %s ingored\n", option, value);
+		}
+
+
+	}
+	fclose(paramFp);
+	/*if ( (*logFileName == NULL) || (*tapsDbString == NULL) || (*cpdbDbString == NULL) || (*phdbDbString == NULL) )*/
+	if ( *logFileName == NULL )
+	{
+		fprintf(stderr, "LOGFILENAME can not be blank; Job Aborted\n");
+		fprintf(stdout, "LOGFILENAME can not be blank; Job Aborted\n");
+		return -1;
+	}
+
+	/* open required log file with date as extention */
+	systime = time(NULL);
+	systemDate = localtime( &systime );
+	sprintf(logFileDate, "%02d%02d%04d", systemDate->tm_mday, systemDate->tm_mon +1, systemDate->tm_year+1900);
+	sprintf(tmpStr, "%s.%s", logFileName, logFileDate);
+	if ( ( logFp = fopen ( tmpStr, "a+" )) == NULL ) 
+	{
+		fprintf (stderr, "%s | Error %d : Could not open logFile file %s; fatal error.. Job aborted !!\n", getDateTime(), errno, tmpStr);
+		fprintf (stdout, "%s | Error %d : Could not open logFile file %s; fatal error.. Job aborted !!\n", getDateTime(), errno, tmpStr);
+		return  -1;
+	}
+	return 0;
+}
+
+void tpsvrdone(void)
+{
+	EXEC SQL AT TAPS COMMIT RELEASE;
+	EXEC SQL AT CPDB COMMIT RELEASE;
+	EXEC SQL AT TUXDB COMMIT RELEASE;
+
+    timeStamp();
+	fprintf(logFp,"Connection with TAPS & TUXEDO Database is down.....SUCCESSFULLY\n");
+	fflush(logFp);
+}
+
+timeStamp()
+{
+	  fprintf(logFp,"%s|%d|%s : ", getDateTime(), getpid(),"TAPSSERVICE" );
+}
+
+void error_exit(char* charOutbuf)
+{
+
+	if ( Fchg32(outbuf,OUTBUF1, 0,charOutbuf, (FLDLEN32)0 ) == -1 )
+	{
+		timeStamp();
+		fprintf(logFp,"Error while Fchg outbuf in error return; ");
+		fprintf(logFp,"[%d][%s]\n",Ferror32,FMLMSG);
+		fflush(logFp);
+		free(charOutbuf);
+		tpreturn(TPFAIL, 0, NULL, 0, 0);
+	}
+
+	tpfree((char *)inbuf);
+	timeStamp();
+
+    /* Ver 1.1 starts...*/
+    gettimeofday (&second, &tzp);
+    if (first.tv_usec > second.tv_usec)
+    {
+       second.tv_usec += 1000000;
+       second.tv_sec--;
+    }
+	/* Ver 1.8 */
+	if ( strncmp(&charOutbuf[17], "00", 2) == 0 )
+		strncpy(&charOutbuf[248+6], "xxxxxx", 6);
+	/* Ver 1.8 */
+	fprintf(logFp,"Response Send [%s] | Elapsed Seconds: [%d] | Elapsed Milliseconds: [%d]\n",charOutbuf, second.tv_sec - first.tv_sec, (second.tv_usec - first.tv_usec)/1000);
+	/* Ver 1.1 ends...*/
+
+	fprintf(logFp,"----------------------------------------");
+	fprintf(logFp,"----------------------------------------\n");
+	fflush(logFp);
+	free(charOutbuf);
+	tpreturn(TPSUCCESS,0,(char *)outbuf,0L,0);
+}
+
+void establishTAPSCon()
+{
+	EXEC SQL
+		CONNECT         :tapsUserId
+		IDENTIFIED BY   :tapsPasswd
+		AT				TAPS
+		USING           :tapsDbString;
+
+	if (SQLCODE != 0)
+	{
+		timeStamp();
+		fprintf(logFp,"Error while establishing a connection with TAPS database; ERROR =[%s]\n", SQLMSG);
+		fflush(logFp);
+
+		tapsConFlg = -1;
+	}
+	else
+	{
+		timeStamp();
+		fprintf(logFp,"Connection established with TAPS database;|SUCCESS|\n"); /* Ver 2.1 */
+		fflush(logFp);
+
+		tapsConFlg = 0;
+	}
+}
+
+void establishCPDBCon()
+{
+
+	EXEC SQL
+		CONNECT         :cpdbUserId
+		IDENTIFIED BY   :cpdbPasswd
+		AT              CPDB
+		USING           :cpdbDbString;
+
+	if (SQLCODE != 0)
+	{
+		timeStamp();
+		fprintf(logFp,"Error while establishing a connection with CPDB database; ERROR =[%s]\n", SQLMSG);
+		fflush(logFp);
+
+		cpdbConFlg = -1;
+	}
+	else
+	{
+		timeStamp();
+		fprintf(logFp,"Connection established with CPDB database;|SUCCESS|\n"); /* Ver 2.1 */
+		fflush(logFp);
+
+		cpdbConFlg = 0;
+	}
+}
+
+void establishTUXDBCon()
+{
+
+	EXEC SQL
+		CONNECT         :phdbUserId
+		IDENTIFIED BY   :phdbPasswd
+		AT              TUXDB
+		USING           :phdbDbString;
+
+	if (SQLCODE != 0)
+	{
+		timeStamp();
+		fprintf(logFp,"Error while establishing a connection with TUXEDO database; ERROR =[%s]\n", SQLMSG);
+		fflush(logFp);
+
+		phdbConFlg = -1;
+	}
+	else
+	{
+		timeStamp();
+		fprintf(logFp,"Connection established with TUXEDO database;|SUCCESS|\n"); /* Ver 2.1 */
+		fflush(logFp);
+
+		phdbConFlg = 0;
+	}
+}
+
+void toAlarm1(int i)
+{
+	TimeoutFlag = 1;
+	timeStamp();
+	fprintf(logFp, "toAlarm fn called=[%d]\n", i);
+	fflush(logFp);
+}
+
+char *removeJunk(unsigned char *inputStr, int inputStrLen)
+{
+	unsigned char inputChar;
+	char tmpStr[50], outputStr[2000];
+	int i=0, j=0;
+	memset(outputStr, NULL, sizeof(outputStr));
+
+	for (i=0; i<inputStrLen; i++)
+	{
+		sprintf(tmpStr, "~%d~", inputStr[i]);
+		if (strstr(junkChars, tmpStr) == NULL)
+			outputStr[j++]=inputStr[i];
+		else
+		{
+			if ( debugLevel > 6 )
+			{
+				timeStamp();
+				fprintf(logFp, "Encountered Junk Chars = [%d][%c]\n", inputStr[i], inputStr[i]);
+				fflush(logFp);
+			}
+			outputStr[j++]=' '; /* As per Mr. Fahed Edris confirmation ( mail from Shabbeer on 19NOV15), Junk character is replaced with SPACES */
+		}
+	}
+	fflush(logFp);
+	outputStr[j]='\0';
+
+	return (char *)outputStr;
+}
+
+int mbInterface(char *tuxSrc, char *serviceMsg, char *channelId, char *serviceCode)
+{
+    char    tmpStr[200];
+	char	*strPtr;
+
+	int		callCnt=0;
+	int		i;
+
+	/* Get the MB channel Id from configuration */
+	timeStamp();
+	fprintf(logFp, "Channel Id for the source [%.2s] is [%s] \n", channelId, mbChannelId);
+	fflush(logFp);
+
+	/* Get the MB function Id from configuration */
+	sprintf(tmpStr, "~%.2s~", serviceCode);
+	memset(mbFunctionId,' ', sizeof mbFunctionId);
+	if ( (strPtr = strstr(functionIds, tmpStr)) )
+	{
+		sprintf(tmpStr, "%.8s", (strPtr+4));
+		sprintf(mbFunctionId, "%-8.8s", tmpStr);
+	}
+
+	timeStamp();
+	fprintf(logFp, "Function for the service [%.2s] is [%s] \n", serviceCode, mbFunctionId);
+	fflush(logFp);
+
+	/* Format the MB request message header */
+
+	memset(mbReqHdr.channelId, ' ', sizeof mbReqHdr);
+	strncpy(mbReqHdr.channelId, mbChannelId, 4);
+	strncpy(mbReqHdr.functionId, mbFunctionId, 8);
+
+	sprintf(tmpStr, "%-64.64s", passwd);
+	strncpy(mbReqHdr.agentPassword, tmpStr, 64);
+	mbReqHdr.agentPasswordType = '1';
+
+	sprintf(tmpStr, "%-8.8s", agentId);
+	strncpy(mbReqHdr.agentId, tmpStr, 8);
+
+	getDateTime();
+	sprintf(tmpStr, "%04d-%02d-%02dT%02d:%02d:%02d", systemDate->tm_year+1900, systemDate->tm_mon+1, systemDate->tm_mday, systemDate->tm_hour, systemDate->tm_min,systemDate->tm_sec);
+	strncpy(mbReqHdr.clientDateTime, tmpStr, 19);
+	mbReqHdr.nullPad = '\0';
+
+	/* Get the Request & response Queue from configuration */
+	memset(globReplyToQ,NULL, sizeof globReplyToQ);
+	memset(globReqQ,NULL, sizeof globReqQ);
+
+	for ( i = 0; i < noOfRequestQ; i++ ) 
+	{
+		sprintf(tmpStr, "~%.2s~", serviceCode); 
+		if ( (strPtr = strstr(requestQName[i], tmpStr)) )
+		{
+			sprintf(globReqQ, "%s", (strPtr+4));
+			break;
+		}
+	}
+
+	timeStamp();
+	fprintf(logFp, "Request Queue name for the service [%.2s] is [%s] \n", serviceCode, globReqQ);
+	fflush(logFp);
+
+	if ( *globReqQ == NULL )
+	{
+		timeStamp();
+		fprintf(logFp,"Request queue name is not defined for the service [%.2s]; Please define it in CFG file and Re-try..\n", serviceCode);
+		fflush(logFp);
+		sprintf(tmpStr, "%-100.100s", "Request Queue name is not defined; Please Inform Tuxedo Support");
+		return -1;
+	}
+
+	for ( i = 0; i < noOfResponseQ; i++ ) 
+	{
+		if ( (strPtr = strstr(responseQName[i], tmpStr)) )
+		{
+			sprintf(globReplyToQ, "%s", (strPtr+4));
+			break;
+		}
+	}
+
+	timeStamp();
+	fprintf(logFp, "Response Queue name for the service [%.2s] is [%s] \n", serviceCode, globReplyToQ);
+	fflush(logFp);
+
+	if ( *globReplyToQ == NULL )
+	{
+		timeStamp();
+		fprintf(logFp,"Response queue name is not defined for the service [%.2s]; Please define it in CFG file and Re-try..\n", serviceCode);
+		fflush(logFp);
+		sprintf(tmpStr, "%-100.100s", "Response Queue name is not defined; Please Inform Tuxedo Support");
+		return -1;
+	}
+
+
+	if(OpenQueue(tuxSrc) < 0)
+	{
+		mqOpened = -1;
+		timeStamp();
+		fprintf(logFp,"SVRINIT : OPENING MESSAGE QUEUES FAILED\n");
+		fflush(logFp);
+		sprintf(tmpStr, "%-100.100s", "Error while opening Queues..Please inform Support");
+		return -1;
+	}
+	else
+	{
+		mqOpened = 0;
+		timeStamp();
+		fprintf(logFp,"SVRINIT : MESSAGE QUEUES OPENED\n");
+		fflush(logFp);
+	}
+
+	while(1)
+	{	
+		/* Format the complete request message to be placed in MB Queue */
+		sprintf((char *)MQBuffer, "%s%s", mbReqHdr.channelId, serviceMsg);
+		callCnt++;
+
+		retfnCallMq=fnCallMq(tuxSrc); // call the fnCallMqfunction inorder to perform the complete task 
+
+		if (retfnCallMq != 0)
+		{
+			if(mqOpened == -1) 
+			{
+				if ( callCnt < 1 )
+				{
+					signOffNcloseQ(tuxSrc);
+					if(OpenQueue(tuxSrc) < 0)
+					{
+						mqOpened = -1;
+						timeStamp();
+						fprintf(logFp," MQ OPENING FAILED AGAIN\n");
+						fflush(logFp);
+						//return -1;
+					}
+					continue;
+				}
+				timeStamp();
+				fprintf(logFp,"Sevice Id [%.2s];  Error while communicating with  MQ\n", serviceCode);
+				fflush(logFp);
+				sprintf(tmpStr, "%-100.100s", "Error while communicating with  MQ..Please inform Tuxedo Support");
+				return -1;
+			}
+		}
+		break;
+	}
+
+	signOffNcloseQ(tuxSrc); /* close the queues */
+
+	return 0;
+}
+
+int OpenQueue(char *tuxSrc)
+{
+	QMName[0] = 0;    /* default */
+
+	strcpy(QMName, globQMgrName);
+
+	if ( debugLevel > 5 )
+	{
+    	timeStamp();
+		fprintf(logFp, "Using values:\n"); 
+		fprintf(logFp, "   QMgrName   : %s\n", QMName); 
+		fprintf(logFp, "   ChannelName: %s\n", channelName); 
+		fprintf(logFp, "   hostname   : %s\n", QMHostName); 
+   }
+
+   /* 
+    * Set required values for MQCONNX 
+    */ 
+   strncpy(ClientConn.ConnectionName, 
+           QMHostName, 
+           MQ_CONN_NAME_LENGTH); 
+
+   strncpy(ClientConn.ChannelName, 
+           channelName, 
+           MQ_CHANNEL_NAME_LENGTH); 
+
+   strncpy(ClientConn.MCAName, "wmbint                 ", 20); 
+
+	//ClientConn.ChannelType = MQCHT_CLNTCONN;
+	//ClientConn.ChannelType = MQCHT_SVRCONN;
+	//ClientConn.TransportType = MQXPT_TCP;
+
+
+   /* Point the MQCNO to the client connection definition */ 
+   //ClientConn.Version = MQCD_VERSION_2;
+   Connect_options.ClientConnPtr = &ClientConn; 
+   Connect_options.Version = MQCNO_VERSION_2; 
+
+   /* 
+    * Connect to queue manager 
+    */ 
+   MQCONNX(QMName,                /* queue manager                  */ 
+           &Connect_options,        /* options for connection         */ 
+           &Hcon,                   /* connection handle              */ 
+           &CompCode,               /* completion code                */ 
+           &Reason);                /* reason code                    */ 
+
+	if(CompCode==MQCC_FAILED)
+	{
+    	timeStamp();
+		fprintf(logFp,"OPENQ : MQCONNX ended with reason code %ld\n", Reason);
+		return(-1);
+	}
+
+	strncpy(od.ObjectName, globReqQ, (size_t)MQ_Q_NAME_LENGTH);
+    timeStamp();
+	fprintf(logFp,"OPENQ : Target queue for put is %s\n", od.ObjectName);
+
+	O_options = MQOO_OUTPUT           /* open queue for output        */
+	          + MQOO_FAIL_IF_QUIESCING; /* but not if MQM stopping      */
+
+	MQOPEN(Hcon,               /* connection handle            */
+	&od,                       /* object descriptor for queue  */
+	O_options,                 /* open options                 */
+	&Hobj,                     /* object handle                */
+	&OpenCode,                 /* MQOPEN completion code       */
+	&Reason);                  /* reason code                  */
+
+
+	if(Reason != MQRC_NONE)
+	{
+    	timeStamp();
+		fprintf(logFp,"OPENQ : MQOPEN ended with reason code %ld\n",Reason);
+		MQDISC(&Hcon,&CompCode,&Reason);
+		return(-1);
+	}
+
+	if(OpenCode==MQCC_FAILED)
+	{
+    	timeStamp();
+		fprintf(logFp,"OPENQ : Unable To Open Queue For Output \n");
+		MQDISC(&Hcon,&CompCode,&Reason);
+		return(-1);
+	}
+
+	/* OPENING THE GET QUEUE		*/
+	strncpy(od1.ObjectName, globReplyToQ, (size_t)MQ_Q_NAME_LENGTH);
+    timeStamp();
+	fprintf(logFp,"OPENQ : Target queue for GET is %s\n", od1.ObjectName);
+
+	O_options = MQOO_INPUT_AS_Q_DEF       /* open queue for input         */
+	          + MQOO_FAIL_IF_QUIESCING;   /* but not if MQM stopping      */
+
+	MQOPEN(Hcon,                /* connection handle            */
+	&od1,                       /* object descriptor for queue  */
+	O_options,                  /* open options                 */
+	&Hobj1,                     /* object handle                */
+	&OpenCode1,                 /* completion code              */
+	&Reason1);                  /* reason code                  */
+
+	/* report reason, if any; stop if failed      */
+
+	if(Reason1 != MQRC_NONE)
+	{
+    	timeStamp();
+		fprintf(logFp,"OPENQ : MQOPEN ended with reason code [%ld]\n",Reason);
+		MQDISC(&Hcon,&CompCode,&Reason);
+		return(-1);
+	}
+
+	if(OpenCode1==MQCC_FAILED)
+	{
+    	timeStamp();
+		fprintf(logFp,"OPENQ : Unable To Open Queue For Output \n");
+		MQDISC(&Hcon,&CompCode,&Reason);
+		return(-1);
+	}
+
+	return(1);
+}
+
+int CloseQueue(char *tuxSrc)
+{
+	/* CLOSING THE GET  QUEUE  */
+	/******************************************************************/
+	/*                                                                */
+	/*   Close the source queue (if it was opened)                    */
+	/*                                                                */
+	/******************************************************************/
+	if (OpenCode1 != MQCC_FAILED)
+	{
+		C_options = 0;           /* no close options            */
+		MQCLOSE(Hcon,            /* connection handle           */
+		&Hobj1,                  /* object handle               */
+		C_options,
+		&CompCode,               /* completion code             */
+		&Reason);                /* reason code                 */
+
+		/* report reason, if any     */
+		if (Reason != MQRC_NONE)
+		{
+    		timeStamp();
+			fprintf(logFp,"CLOSEQ : GET : MQCLOSE ended with reason code [%ld]\n", Reason);
+			MQDISC(&Hcon, &CompCode,  &Reason);
+			if (Reason != MQRC_NONE)
+			{
+    			timeStamp();
+				fprintf(logFp,"CLOSEQ : GET : MQDISC ended with reason code [%ld]\n", Reason);
+			}
+			return(-1);
+		}
+	}
+	/******************************************************************/
+	/*                                                                */
+	/*   Close the target(PUT) queue (if it was opened)                    */
+	/*                                                                */
+	/******************************************************************/
+	if (OpenCode != MQCC_FAILED)
+	{
+		C_options = 0;          /* no close options             */
+		MQCLOSE(Hcon,           /* connection handle            */
+		&Hobj,                  /* object handle                */
+		C_options,
+		&CompCode,              /* completion code              */
+		&Reason);               /* reason code                  */
+
+		/* report reason, if any     */
+		if (Reason != MQRC_NONE)
+		{
+    		timeStamp();
+			fprintf(logFp,"CLOSEQ : PUT : MQCLOSE ended with reason code [%ld]\n", Reason);
+			MQDISC(&Hcon, &CompCode, &Reason);
+
+			/* report reason, if any     */
+			if (Reason != MQRC_NONE)
+			{
+    			timeStamp();
+				fprintf(logFp,"CLOSEQ : PUT : MQDISC ended with reason code [%ld]\n", Reason);
+			}
+			return(-1);
+		}
+	}
+
+	/******************************************************************/
+	/*                                                                */
+	/*   Disconnect from MQM if not already connected                 */
+	/*                                                                */
+	/******************************************************************/
+	if (CReason != MQRC_ALREADY_CONNECTED)
+	{
+		MQDISC(&Hcon,            /* connection handle            */
+		&CompCode,               /* completion code              */
+		&Reason);                /* reason code                  */
+
+		/* report reason, if any     */
+		if (Reason != MQRC_NONE)
+		{
+    		timeStamp();
+			fprintf(logFp,"CLOSEQ : MQDISC ended with reason code [%ld]\n", Reason);
+			return(-1);
+		}
+	}
+	return(1);
+}
+
+int fnCallMq(char *tuxSrc)		
+{
+	int i;
+	long ReplyLen;
+
+	char tmpStr[20];
+	char maskedBuf[12000];	
+	memset(tmpStr,'\0',sizeof(tmpStr));
+
+	if(mqOpened == -1) 
+	{
+	    signOffNcloseQ(tuxSrc);
+	    if(OpenQueue(tuxSrc) < 0)
+		{
+			mqOpened = -1;
+    		timeStamp();
+			fprintf(logFp," MQ OPENING FAILED AGAIN\n");
+			fflush(logFp);
+			return -1;
+		}
+		else
+		{
+			mqOpened = 0;
+    		timeStamp();
+			fprintf(logFp," MQ OPENING DONE AGAIN\n");
+			fflush(logFp);
+		}
+	 }
+
+
+    timeStamp();
+	strcpy(maskedBuf, (char *)MQBuffer);
+	fprintf(logFp," fnCallMq():|%s| Request Sent to Message Broker [%d][%s]\n", globReqQ, strlen(maskedBuf), maskedBuf); /* V1.1 globReqQ to identify the MB service */
+	fflush(logFp);
+
+	messlen=strlen((char *)MQBuffer);
+	
+	// set the entry to call the MQ
+	
+	memcpy(md.Format, MQFMT_STRING, (size_t)MQ_FORMAT_LENGTH);
+	memcpy(md.MsgId, MQMI_NONE, sizeof(md.MsgId) );
+	pmo.Options=MQPMO_NEW_MSG_ID;
+	md.CodedCharSetId = 1089;
+	
+	
+	memcpy(md.ReplyToQ,globReplyToQ,sizeof(md.ReplyToQ));	
+	//memcpy(md.ReplyToQMgr,globQMgrName,sizeof(md.ReplyToQMgr));	
+	memcpy(md.ReplyToQMgr,globReplyToQMgrName,sizeof(md.ReplyToQMgr));	// commented on 17Mar14 with the use of Queue manager alias
+	md.Expiry=atoi(msgExpiry);
+
+// put the data into MQ
+	MQPUT( 
+		Hcon,                /* connection handle               */
+		Hobj,                /* object handle                   */
+		&md,                 /* message descriptor              */
+		&pmo,                /* default options (datagram)      */
+		messlen,             /* message length                  */
+		MQBuffer,            /* message MQBuffer                */
+		&CompCode,           /* completion code                 */
+		&Reason);            /* reason code                     */
+	
+	if (CompCode == MQCC_FAILED)
+	{
+    	timeStamp();
+		fprintf(logFp,"<%s> : MQPUT Failed;Reason code [%ld]\n",tuxSrc,Reason);
+		mqOpened=-1;
+		return -1;
+	}
+
+	if(debugLevel>5)fprintf(logFp, "MsgId   [\n");
+	for(i=0;i<sizeof(md.MsgId); i++) if(debugLevel>5)fprintf(logFp, "%02X ", md.MsgId[i]); fprintf(logFp, "\n");
+	fflush(logFp);
+	if(debugLevel>5)fprintf(logFp, "CorrelId[\n");
+	for(i=0;i<sizeof(md.CorrelId); i++) if(debugLevel>5)fprintf(logFp, "%02X ", md.CorrelId[i]); fprintf(logFp, "\n");
+	fflush(logFp);
+
+	gmo.Options = MQGMO_WAIT       /* wait for new messages           */
+			+ MQGMO_CONVERT;       /* convert if necessary            */
+		
+	memcpy(md.CorrelId, md.MsgId, sizeof(md.CorrelId));
+	memcpy(md.MsgId, MQMI_NONE, sizeof(md.MsgId));  
+
+	if(debugLevel>5)fprintf(logFp, "BEFORE MQGET MsgId   [\n");
+	for(i=0;i<sizeof(md.MsgId); i++) if(debugLevel>5)fprintf(logFp, "%02X ", md.MsgId[i]); fprintf(logFp, "\n");
+	fflush(logFp);
+	if(debugLevel>5)fprintf(logFp, "BEFORE MQGET CorrelId[\n");
+	for(i=0;i<sizeof(md.CorrelId); i++) if(debugLevel>5)fprintf(logFp, "%02X ", md.CorrelId[i]); fprintf(logFp, "\n");
+	fflush(logFp);
+
+	md.Encoding       = MQENC_NATIVE;
+	//md.CodedCharSetId = MQCCSI_Q_MGR;
+	md.CodedCharSetId = 1089;
+	gmo.MatchOptions=MQMO_MATCH_CORREL_ID;
+	gmo.WaitInterval=atoi(globWaitPeriod);
+	memset(MQBuffer,'\0',sizeof(MQBuffer));
+	messlen=150000;
+	BufLen=150000;
+	
+	// reading value from queue
+	MQGET(Hcon,                /* connection handle                 */
+		Hobj1,               /* object handle                     */
+		&md,                 /* message descriptor                */
+		&gmo,                /* get message options               */
+		BufLen,              /* MQBuffer length                   */
+		MQBuffer,            /* message MQBuffer                  */
+		&messlen,            /* message length                    */
+		&CompCode,           /* completion code                   */
+		&Reason);            /* reason code                       */
+
+	for (i=0; i<strlen((char *)MQBuffer); i++ ) /* To remove special characters which causes XML parser to fail */
+	{
+		if ( (char *)MQBuffer[i] < 0 )
+			MQBuffer[i] = ' ';
+	}
+
+	/* FOR TESTING  needs to remove */
+	if(debugLevel>5)fprintf(logFp, "AFTER MQGET MsgId   [\n");
+	for(i=0;i<sizeof(md.MsgId); i++) if(debugLevel>5)fprintf(logFp, "%02X ", md.MsgId[i]); fprintf(logFp, "\n");
+	fflush(logFp);
+	if(debugLevel>5)fprintf(logFp, "AFTER MQGET CorrelId[\n");
+	for(i=0;i<sizeof(md.CorrelId); i++) if(debugLevel>5)fprintf(logFp, "%02X ", md.CorrelId[i]); fprintf(logFp, "\n");
+	fflush(logFp);
+
+	if (CompCode == MQCC_FAILED)
+	{
+    	timeStamp();
+		fprintf(logFp,"[%s] : MQGET Failed;globReplyToQ[%s];globQMgrName[%s];Reason code [%ld]\n",tuxSrc,globReplyToQ,globQMgrName,Reason);
+		fflush(logFp);
+		mqOpened=-1;
+		return -1;
+	}
+	
+	
+	if (CompCode == MQCC_OK || CompCode == MQCC_WARNING )
+	{
+		if ( CompCode == MQCC_WARNING )
+		{
+			timeStamp();
+			fprintf(logFp,"[%s] : MQGET Warning;globReplyToQ[%s];globQMgrName[%s];Reason code [%ld]\n",tuxSrc,globReplyToQ,globQMgrName,Reason);
+			fflush(logFp);
+		}
+    	timeStamp();
+
+		strcpy(maskedBuf, (char *)MQBuffer);
+		fprintf(logFp,"[%s]|%s|: Response From Message Broker [%d][%s]\n",tuxSrc, globReqQ, strlen(maskedBuf), maskedBuf); /* globReqQ to identify MB service */
+		fflush(logFp);
+	}//end of MQGET CompCode == MQCC_OK
+
+	return 0;
+
+}// end of function fnCallMq
+
+signOffNcloseQ(char *tuxSrc)
+{
+	int Ret=0;
+	int NoOfTries=0;
+
+	NoOfTries=0;
+	while(NoOfTries<3)
+	{
+		Ret=CloseQueue(tuxSrc);
+		if(Ret<0)
+			NoOfTries+=1;
+		else
+			NoOfTries=10;
+	}
+    timeStamp();
+	fprintf(logFp,"SIGNOFFNCLOSEQ :  All the Queues Closed\n");
+	return;
+}
+

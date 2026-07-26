@@ -1,0 +1,50 @@
+import DetailScreen from '../components/DetailScreen.tsx'
+import type { GridRow } from '../components/GridScreen.tsx'
+import { formatAmount, formatDate } from '../schema/helpers.ts'
+
+// Mirrors legacy frmSarieTransDetails.frm — rid0data point read
+// (QUERY-SPECS §17).
+
+export default function TransferDetail({ detail, onReturn }: { detail: GridRow; onReturn: () => void }) {
+  return (
+    <DetailScreen
+      kicker="Account"
+      title="Transfer Details"
+      chips={[
+        { label: 'Reference No', value: detail.transRef },
+        { label: 'Status', value: detail.paymentType },
+        { label: 'Customer', value: detail.custName },
+      ]}
+      sections={[
+        {
+          title: 'Transfer',
+          fields: [
+            { label: 'Issue Date', value: formatDate(detail.issueDate) },
+            { label: 'Value Date', value: formatDate(detail.valueDate) },
+            { label: 'Debit Account', value: detail.drAccNo },
+            { label: 'Credit Account', value: detail.crAccNo },
+            { label: 'Amount', value: formatAmount(detail.netAmt) },
+            { label: 'Currency', value: detail.transCurrCode },
+            { label: 'Payment Amount', value: formatAmount(detail.payAmt) },
+            { label: 'Payment Currency', value: detail.payCurrCode },
+            { label: 'Exchange Rate', value: detail.exchangeRate },
+            { label: 'Purpose', value: detail.transferPurpose },
+            { label: 'Branch', value: detail.branchCode },
+          ],
+        },
+        {
+          title: 'Parties',
+          fields: [
+            { label: 'Applicant', value: detail.applicantName, wide: true },
+            { label: 'Beneficiary', value: detail.benefName, wide: true },
+            { label: 'Beneficiary Address 1', value: detail.benefAddr1, wide: true },
+            { label: 'Beneficiary Address 2', value: detail.benefAddr2, wide: true },
+            { label: 'Beneficiary Bank', value: detail.benefBank, wide: true },
+            { label: 'Message', value: detail.message1, wide: true },
+          ],
+        },
+      ]}
+      buttons={[{ label: 'Return', kind: 'primary', onClick: onReturn }]}
+    />
+  )
+}

@@ -1,0 +1,41 @@
+DEST	      = .
+
+INSTALL	      = /etc/install
+
+CC	      	= cc -c  -I$(TUXDIR)/include
+
+LD	      = cc
+
+LIBS	      = -lisam725  /usr/local/lib/libanb.a  -lsec -L/tuxedo/lib -lwsc -lbuft -lwsc  -lgpnet  -lfml -lfml32 -lengine  -lpthread  -lnsl
+# -lwsc -lbuft -lwsc  -lgpnet  -lfml -lfml32 -lengine  -lpthread  -lnsl
+#LIBS	      = -lisam  /usr/local/lib/libanb.a  -lsec -L/tuxedo/lib 
+
+
+
+MAKEFILE      = Makefile
+
+PRINT	      = pr
+
+PROGRAM       = stsarserv
+
+SHELL	      = /bin/sh
+
+SOURCE	      = stmaintenance.c stsecurity.c stlogin.c router.c  stbranch.c stsaudi.c stothers.c stquick.c stbranch2.c stbmat.c stsama.c sttpin.c sttuxint.c stjuristic.c stsadad.c stswift.c stblock.c stsrch.c streturn.c sttdopen.c streport.c stestmt.c
+
+OBJS	      = stmaintenance.o stsecurity.o stlogin.o router.o  stbranch.o stsaudi.o stothers.o stquick.o stbranch2.o stbmat.o stbmupdate.o stsama.o sttpin.o sttuxint.o  stjuristic.o  stsadad.o stswift.o  stblock.o  stsrch.o  streturn.o sttdopen.o  streport.o  stestmt.o ../srclib/usr_util.o ../srclib/greghijri.o
+
+install:	$(PROGRAM)
+		@echo Installing $(PROGRAM) in $(DEST)
+
+$(PROGRAM):     $(OBJS) 
+		@echo "Linking $(PROGRAM) ..."
+		@$(LD) $(OBJS) $(LIBS) -o $(PROGRAM)
+		@echo "Building Tuxedo Client ...."
+		@bldcln
+		@echo "done"
+
+$(DEST)/$(PROGRAM): $(SOURCE) $(LIBS) $(HDRS) $(EXTHDRS)
+		@$(MAKE) -f $(MAKEFILE) ROOT=$(ROOT) DEST=$(DEST) install 
+
+.o : 		$(CC) $(SOURCE)
+

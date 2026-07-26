@@ -1,0 +1,13 @@
+1- Interest will be debited to the end of the day debit balance at the end of each month 
+   based on the rate specified by the bank.
+   
+2- No interest will be payable on credit balance whatsoever. The customer declares that 
+   he/she has no right to claim such interest for any reason.
+   
+3- We authorize you to overdraw our account with you, if you agree to without notifying us, 
+   and debit this out of the interest that becomes due to you on a monthly basis. You are 
+   also authorized to debit our account for the value of any payment order, bills of 
+   exchange, cheques or any other collection items or otherwise with you. We also authorize 
+   you to use any of our accounts with you or any of your branches to settle your dues in 
+   connection to this account. No Balance will be paid to us before clearing all our 
+   obligations to you including any balances in foreign currency accounts.

@@ -1,0 +1,2 @@
+select valdate, pstDate, bmdt from omnitrnhist
+/

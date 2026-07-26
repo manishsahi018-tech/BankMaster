@@ -1,0 +1,1 @@
+Put the JDBC driver jar(s) here: denodo-vdp-jdbcdriver.jar from your Denodo installation (or Design Studio > Help > Download JDBC driver). If DB #2 ends up on another engine, drop its driver jar here too.

@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+/* Design tokens — every color in the app resolves through these variables,
+   so switching data-accent / data-mode on <html> re-themes everything. */
+@theme inline {
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-primary-ink: var(--primary-ink);
+  --color-primary-soft: var(--primary-soft);
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-edge: var(--edge);
+  --color-edge-strong: var(--edge-strong);
+  --color-edge-soft: var(--edge-soft);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-muted-soft: var(--muted-soft);
+  --color-faint: var(--faint);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+:root {
+  /* Accent — Sapphire (default) */
+  --primary: #1d4ed8;
+  --primary-strong: #1e40af;
+  --primary-ink: #1d4ed8;
+
+  /* Neutral surfaces — light mode */
+  --page: #eef2f7;
+  --surface: #ffffff;
+  --surface-muted: #f6f8fb;
+  --edge: #e2e8f0;
+  --edge-strong: #cbd5e1;
+  --edge-soft: #eef2f6;
+  --ink: #0f172a;
+  --ink-soft: #334155;
+  --muted: #64748b;
+  --muted-soft: #94a3b8;
+  --faint: #cbd5e1;
+
+  /* Semantic states */
+  --danger: #dc2626;
+  --warn: #b45309;
+  --warn-mix: #f59e0b;
+  --success: #047857;
+
+  /* Tinted soft backgrounds derive from the accent + surface, so they adapt
+     to any accent and to dark mode automatically. */
+  --primary-soft: color-mix(in srgb, var(--primary) 9%, var(--surface));
+  --danger-soft: color-mix(in srgb, var(--danger) 9%, var(--surface));
+  --warn-soft: color-mix(in srgb, var(--warn-mix) 13%, var(--surface));
+  --success-soft: color-mix(in srgb, var(--success) 10%, var(--surface));
+}
+
+/* ---- Accent palettes ---- */
+:root[data-accent="emerald"] { --primary: #047857; --primary-strong: #065f46; --primary-ink: #047857; }
+:root[data-accent="violet"]  { --primary: #6d28d9; --primary-strong: #5b21b6; --primary-ink: #6d28d9; }
+:root[data-accent="rose"]    { --primary: #be123c; --primary-strong: #9f1239; --primary-ink: #be123c; }
+:root[data-accent="amber"]   { --primary: #b45309; --primary-strong: #92400e; --primary-ink: #b45309; }
+:root[data-accent="teal"]    { --primary: #0f766e; --primary-strong: #115e59; --primary-ink: #0f766e; }
+
+/* ---- Dark mode surfaces ---- */
+:root[data-mode="dark"] {
+  --page: #0b1220;
+  --surface: #151e31;
+  --surface-muted: #1c2740;
+  --edge: #293650;
+  --edge-strong: #3a4a6b;
+  --edge-soft: #222f4a;
+  --ink: #e8edf7;
+  --ink-soft: #c4cfe2;
+  --muted: #8fa0bd;
+  --muted-soft: #67789a;
+  --faint: #46536f;
+  --danger: #f87171;
+  --warn: #fbbf24;
+  --warn-mix: #fbbf24;
+  --success: #34d399;
+}
+
+/* Dark-mode accents: brighter solids and lighter link/text tints. */
+:root[data-mode="dark"]                        { --primary: #3b82f6; --primary-strong: #2563eb; --primary-ink: #8ab4ff; }
+:root[data-mode="dark"][data-accent="emerald"] { --primary: #10b981; --primary-strong: #059669; --primary-ink: #6ee7b7; }
+:root[data-mode="dark"][data-accent="violet"]  { --primary: #8b5cf6; --primary-strong: #7c3aed; --primary-ink: #c4b5fd; }
+:root[data-mode="dark"][data-accent="rose"]    { --primary: #f43f5e; --primary-strong: #e11d48; --primary-ink: #fda4af; }
+:root[data-mode="dark"][data-accent="amber"]   { --primary: #d97706; --primary-strong: #b45309; --primary-ink: #fcd34d; }
+:root[data-mode="dark"][data-accent="teal"]    { --primary: #14b8a6; --primary-strong: #0d9488; --primary-ink: #5eead4; }
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color-scheme: light;
+}
+
+:root[data-mode="dark"] {
+  color-scheme: dark;
+}
+
+body {
+  transition: background-color 0.25s ease;
+}
