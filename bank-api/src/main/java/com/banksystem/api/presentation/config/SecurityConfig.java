@@ -1,5 +1,7 @@
 package com.banksystem.api.presentation.config;
 
+import com.banksystem.api.infrastructure.auth.JwtAccessTokenIssuer;
+import com.banksystem.api.infrastructure.auth.TokenSlidingRefreshFilter;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -16,6 +18,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -45,18 +48,22 @@ public class SecurityConfig {
 
     private final byte[] jwtKey;
     private final List<String> allowedOrigins;
+    private final long ttlSeconds;
 
     public SecurityConfig(
             @Value("${bank.jwt.secret:}") String secret,
+            @Value("${bank.jwt.ttl-seconds:900}") long ttlSeconds,
             @Value("${bank.cors.allowed-origins:http://localhost:5173,http://localhost:5199}")
                     List<String> allowedOrigins) {
         String key = secret == null || secret.isBlank() ? DEV_SECRET : secret;
         this.jwtKey = key.getBytes(StandardCharsets.UTF_8);
+        this.ttlSeconds = ttlSeconds;
         this.allowedOrigins = allowedOrigins;
     }
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAccessTokenIssuer issuer)
+            throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -77,6 +84,10 @@ public class SecurityConfig {
                         // The packaged bank-ui (index.html, /assets/**, icons, …) is public.
                         .anyRequest().permitAll())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder())))
+                // Sliding session: refresh a near-expiry token on any authenticated
+                // call (runs after the token is validated).
+                .addFilterAfter(new TokenSlidingRefreshFilter(issuer, ttlSeconds),
+                        BearerTokenAuthenticationFilter.class)
                 .build();
     }
 
@@ -99,6 +110,8 @@ public class SecurityConfig {
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        // Let the browser read the sliding-refresh token off the response.
+        config.setExposedHeaders(List.of(TokenSlidingRefreshFilter.HEADER));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/api/**", config);
         return source;

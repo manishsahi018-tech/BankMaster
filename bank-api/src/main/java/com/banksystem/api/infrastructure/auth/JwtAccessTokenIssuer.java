@@ -37,7 +37,7 @@ public class JwtAccessTokenIssuer {
             JwtEncoder jwtEncoder,
             @Value("${bank.jwt.issuer:BankStaticData}") String issuer,
             @Value("${bank.jwt.audience:BankClients}") String audience,
-            @Value("${bank.jwt.ttl-seconds:3600}") long ttlSeconds) {
+            @Value("${bank.jwt.ttl-seconds:900}") long ttlSeconds) {
         this.jwtEncoder = jwtEncoder;
         this.issuer = issuer;
         this.audience = audience;

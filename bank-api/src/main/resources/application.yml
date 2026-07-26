@@ -11,7 +11,11 @@ bank:
     # Set a strong secret (>= 32 chars) via BANK_JWT_SECRET in any real
     # deployment; blank falls back to the dev key baked into SecurityConfig.
     secret: ${BANK_JWT_SECRET:}
-    ttl-seconds: ${BANK_JWT_TTL_SECONDS:3600}
+    # Access-token lifetime. Short (15 min) because it slides: any authenticated
+    # /api call past the halfway mark returns a refreshed token (X-Refresh-Token
+    # header) that the SPA adopts, so an active operator is never logged out — the
+    # clock only runs down during ~15 min of true inactivity.
+    ttl-seconds: ${BANK_JWT_TTL_SECONDS:900}
     issuer: ${BANK_JWT_ISSUER:BankStaticData}
     audience: ${BANK_JWT_AUDIENCE:BankClients}
   auth:

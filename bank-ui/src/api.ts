@@ -3,13 +3,23 @@
 
 import type { Account, Customer } from './types.ts'
 import type { GridRow } from './components/GridScreen.tsx'
-import { getToken, signOut } from './session.ts'
+import { getToken, setToken, signOut } from './session.ts'
 import { encryptPassword } from './pocCrypto.ts'
 
 /** Bearer header from the stored JWT (empty before login / for public calls). */
 function authHeaders(): Record<string, string> {
   const token = getToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+/**
+ * Sliding session: when a near-expiry token is used, the API returns a refreshed
+ * one in the X-Refresh-Token header — adopt it so an active operator's session
+ * never lapses (see TokenSlidingRefreshFilter).
+ */
+function adoptRefreshedToken(res: Response): void {
+  const refreshed = res.headers.get('X-Refresh-Token')
+  if (refreshed) setToken(refreshed)
 }
 
 /** An expired/invalid token: drop the session and return to the login screen. */
@@ -72,6 +82,7 @@ async function get<T>(path: string, params?: Record<string, string>): Promise<T>
   const entries = Object.entries(params ?? {}).filter(([, v]) => v !== '')
   const qs = entries.length ? `?${new URLSearchParams(entries)}` : ''
   const res = await fetch(`${BASE}${path}${qs}`, { headers: authHeaders() })
+  adoptRefreshedToken(res)
   if (res.status === 401) onUnauthorized()
   if (!res.ok) {
     const body = await res.text().catch(() => '')
@@ -86,6 +97,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
   })
+  adoptRefreshedToken(res)
   if (res.status === 401 && path !== '/api/login') onUnauthorized()
   if (!res.ok) {
     const text = await res.text().catch(() => '')
