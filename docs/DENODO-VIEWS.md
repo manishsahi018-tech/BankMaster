@@ -119,7 +119,7 @@ datasource too.
 | `gld0data` | Account list for customer, Account Detail (current master), Standing Order Detail branch, Blocked Amount Breakup |
 | `sod0data` | Standing Order grid + detail |
 | `pyd0data` | Stop Cheque grid + detail |
-| `thd0data` | BM Transaction Enquiry + Transaction Detail |
+| `thd0data` | Transaction Type Enquiry + Transaction Detail |
 | `rid0data` | SARIE Transfer Enquiry + Transfer Detail |
 | `aad0data` | Blocked Amount Breakup (source 2) |
 | `bkd0data` | Blocked Amount Breakup (source 3) |

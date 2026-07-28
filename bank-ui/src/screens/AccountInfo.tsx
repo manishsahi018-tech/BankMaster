@@ -102,7 +102,17 @@ export default function AccountInfo({
             },
           },
           { label: 'Ondemand Statement', disabled: !canView, title: canView ? undefined : noAuthority, onClick: stub('On-demand statement') },
-          { label: 'Transaction Enquiry', disabled: !canView, title: canView ? undefined : noAuthority, onClick: stub('Transaction enquiry') },
+          // Legacy cmdTransaction ("Transaction Inquiry") — frmTransaction.frm
+          // speaks the ONLINE GATEWAY envelope (checkSum/branchName/Source/EOT,
+          // services 07/11), not cbcmssrv, so there is no archival view behind
+          // it. Blocked on DB #2, like the two statement buttons. The archival
+          // transaction enquiry is "Transaction Type Enquiry" below.
+          {
+            label: 'Transaction Inquiry',
+            disabled: !canView,
+            title: canView ? 'Needs the online (Finacle) source — not yet available' : noAuthority,
+            onClick: stub('Transaction inquiry'),
+          },
           { label: 'Cheque Book Request', disabled: !canView, title: canView ? undefined : noAuthority, onClick: needRow((row) => onChequeBook(row)) },
           { label: 'Standing Order', disabled: !canTellerOps, title: canTellerOps ? undefined : noAuthority, onClick: needRow((row) => onStandingOrder(row)) },
           { label: 'Stop Cheque', disabled: !canTellerOps, title: canTellerOps ? undefined : noAuthority, onClick: needRow((row) => onStopCheque(row)) },
@@ -114,7 +124,9 @@ export default function AccountInfo({
             ? []
             : [{ label: 'Destroy Cheque', disabled: !canDestroyCheque, title: canDestroyCheque ? undefined : noAuthority, onClick: stub('Destroy cheque') }]),
           { label: 'Historical Statement', disabled: !canView, title: canView ? undefined : noAuthority, onClick: stub('Historical statement') },
-          { label: 'BM Transaction Enquiry', onClick: needRow((row) => onTransactions(row)) },
+          // Legacy cmdTransEnq ("Transaction Type Enquiry") — service 85 over
+          // thd0data, with the date range + trans-type filter.
+          { label: 'Transaction Type Enquiry', onClick: needRow((row) => onTransactions(row)) },
           { label: 'Transfer Enquiry', onClick: needRow((row) => onTransfers(row)) },
           { label: 'Blocked Amount Breakup', onClick: needRow((row) => onBlockedBreakup(row)) },
           { label: 'Account Update History', onClick: needRow((row) => onUpdateHistory(row)) },

@@ -65,9 +65,34 @@ export function formatTimestamp(value: unknown): string {
 }
 
 // Archival amounts are Numeric 16,3.
+/**
+ * Raw archival amount -> number, recovering the trailing-overpunch sign the BM
+ * files use for negatives: the last byte of a negative amount is 'P'..'Y'
+ * ('P' = 0 … 'Y' = 9, i.e. the digit + 0x20). Mirrors BmForms.amountOrNull on
+ * the API side (cbcmssrv bmAmtToDbl @ 0x0ce8f4) and the legacy's own test,
+ * `If Not IsNumeric(Right(Trim(transamt)), 1)) Then tmpStr = "-" & bmAmtToDbl(…)`
+ * (frmTransEnq.frm:663-668).
+ *
+ * Returns null for blank/unparsable input so callers can fall back to showing
+ * the raw text rather than a misleading 0.
+ */
+export function amountValue(value: unknown): number | null {
+  if (value == null) return null
+  const raw = String(value).trim()
+  if (raw === '') return null
+  const last = raw.charAt(raw.length - 1)
+  const negative = last >= 'P' && last <= 'Y'
+  const digits = negative
+    ? raw.slice(0, -1) + String.fromCharCode(last.charCodeAt(0) - 0x20)
+    : raw
+  const n = Number(digits)
+  if (Number.isNaN(n)) return null
+  return negative ? -n : n
+}
+
 export function formatAmount(value: unknown): string {
-  const n = Number(value)
-  if (value === '' || value == null || Number.isNaN(n)) return String(value ?? '')
+  const n = amountValue(value)
+  if (n === null) return String(value ?? '')
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
 }
 

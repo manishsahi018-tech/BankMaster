@@ -108,3 +108,77 @@ html {
 body {
   transition: background-color 0.25s ease;
 }
+
+/* ---------------------------------------------------------------------------
+   Print sheets. A screen renders an ordinary .print-sheet section that is
+   hidden on screen; printing hides the whole app shell and reveals just that
+   section at the top of the page. The visibility (not display) trick keeps the
+   sheet's ancestors laid out, so it prints without being clipped by the app's
+   scroll containers. Used by the Transaction Type Enquiry report — the browser
+   equivalent of the legacy's Printer.Print / spool-file output.
+   --------------------------------------------------------------------------- */
+.print-sheet {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-sheet,
+  .print-sheet * {
+    visibility: visible;
+  }
+  .print-sheet {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 0;
+    color: #000;
+    background: #fff;
+    font-size: 10pt;
+  }
+  .print-sheet h1 {
+    font-size: 12pt;
+    font-weight: 700;
+    margin: 0 0 0.25rem;
+  }
+  .print-sheet .print-meta {
+    margin: 0 0 0.75rem;
+    font-size: 9pt;
+  }
+  .print-sheet table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .print-sheet th,
+  .print-sheet td {
+    padding: 2pt 4pt;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .print-sheet th {
+    border-bottom: 1px solid #000;
+    font-weight: 700;
+  }
+  .print-sheet .right {
+    text-align: right;
+  }
+  /* Closing rule + Total line, as in cmdPrint_Click's String(160, "-") block. */
+  .print-sheet tfoot td {
+    border-top: 1px solid #000;
+    font-weight: 700;
+    padding-top: 4pt;
+  }
+  .print-sheet thead {
+    display: table-header-group;
+  }
+  .print-sheet tr {
+    break-inside: avoid;
+  }
+  @page {
+    margin: 12mm;
+  }
+}
