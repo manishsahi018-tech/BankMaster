@@ -6,6 +6,29 @@ Every table below is referenced by a `FROM`/`JOIN` in `bank-api` under the
 
 **38 views total** — 30 on the BM archival schema, 8 on the online/Finacle side.
 
+## Availability (confirmed against Cloudera/Denodo, 2026-07-28)
+
+**35 of the 38 exist. Three do not:**
+
+| Missing view | Screen impact | Severity |
+|---|---|---|
+| `bkd0data` | Blocked Amount Breakup loses source 3 (`O` — other BM blocking) | degrades |
+| `ccarrblk` | Blocked Amount Breakup loses source 4 (`M`/`C` — credit-card arrear blocks) | degrades |
+| `stswiftlog` | Transfer Detail's pending-SWIFT-amendment guard never fires | degrades |
+
+None of the three breaks a screen. All are read inside their own try/catch and
+fail to a warn log — see `JdbcAccountRepository.blockedSource` and
+`JdbcTransferRepository.hasPendingSwiftUpdate`. The one user-visible symptom is
+on Blocked Amount Breakup: the "Total Blocked Balance" tile comes from the
+`gld0data` header and is independent of the detail rows, so for an account
+carrying an `O` or credit-card block the total will exceed the sum of the rows
+shown, with nothing on screen explaining the difference.
+
+Two lookalikes exist in Denodo and must **not** be substituted:
+`stsodlog` is the standing-order audit log, not `sod0data` (the order master);
+`thd0data1` is the recType 2/3 rate-change family, not `thd0data` (the recType
+0/1 posting header) — see `JdbcTransferRepository.java:258-259`.
+
 ## Naming
 
 The repositories use the bare legacy names (`stcusttab`, `gld0data`, …).
@@ -58,7 +81,7 @@ All views are **read-only**. Both pools are `read-only: true`.
 | View | Used by (screen) |
 |---|---|
 | `stsigntab` | Signatory grid, Signatory Detail |
-| `stswiftlog` | Transaction Detail (SWIFT leg) |
+| `stswiftlog` | Transfer Detail — pending-SWIFT-update guard only, no displayed data (⚠ absent) |
 | `stsadadlog` | SADAD transactions |
 
 ### Security / users
@@ -106,11 +129,16 @@ datasource too.
 
 ## Open items to confirm with the Denodo team
 
-1. **`bkd0data` and `ccarrblk` are absent from `BM archival Version 9.xlsx`.**
-   Their column names (`bkd0data`: refNo/amount/userId; `ccarrblk`:
-   cardNo/blockedAmt/lastBlockedUserId) are assumed from the query spec. Each
-   Blocked-Amount source runs in its own try/catch, so a missing view degrades
-   to a warning rather than a failure — but the breakup will be incomplete.
+1. **The three missing views (see Availability above).** All three are also
+   absent from `BM archival Version 9.xlsx`, so their column names are assumed
+   rather than verified: `bkd0data` refNo/amount/userId and `ccarrblk`
+   cardNo/blockedAmt/lastBlockedUserId from the query spec, `stswiftlog`
+   transRefNo/issueDate/bmUpdateStatus from the C record layout
+   (`stlayout.h struct stswiftlog`). Worth one round with the Denodo team:
+   `bkd0data`/`ccarrblk` are online/Finacle-side and may genuinely not exist,
+   but `stswiftlog` sits alongside `stacclog`/`stcustlog`, which were both
+   delivered — a naming difference is more likely than a real absence. Ask for
+   it by the C struct name.
 2. **Account key length.** All account predicates use the 14-char ACTUAL form
    (`CCMMMNNNNNNNSS`) per the workbook, and the customer scan uses
    `gld0data.custNo`. The legacy C used the 13-char BM form. `bkd0data` keeps
