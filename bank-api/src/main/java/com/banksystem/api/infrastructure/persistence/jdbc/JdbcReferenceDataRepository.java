@@ -9,7 +9,9 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Profile;
+import org.springframework.context.event.EventListener;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -78,18 +80,65 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
         this.jdbc = jdbc;
     }
 
+    /**
+     * The sets backed by a Denodo view. If every one of these comes back empty
+     * the load did not really succeed (view missing, pool not up yet), so the
+     * result is NOT cached — otherwise one bad moment at startup would pin
+     * empty combos for the life of the process. The remaining sets are
+     * constants and are always populated, so they cannot be used as the signal.
+     */
+    private static final List<String> DB_BACKED = List.of(
+            "idType", "country", "businessType",
+            "samaMainCategory", "samaSubCategory", "branch");
+
     @Override
     public Map<String, List<CodeEntry>> codes() {
         Map<String, List<CodeEntry>> result = cached;
         if (result == null) {
             synchronized (this) {
                 if (cached == null) {
-                    cached = load();
+                    Map<String, List<CodeEntry>> loaded = load();
+                    if (anyDbSetPopulated(loaded)) {
+                        cached = loaded;
+                    } else {
+                        // Serve what we have; the next call retries the DB.
+                        log.warn("Reference data: every archival-backed code set came back "
+                                + "empty — serving constants only and NOT caching, so the "
+                                + "next call retries.");
+                        return loaded;
+                    }
                 }
                 result = cached;
             }
         }
         return result;
+    }
+
+    private static boolean anyDbSetPopulated(Map<String, List<CodeEntry>> sets) {
+        return DB_BACKED.stream().anyMatch(name -> !sets.getOrDefault(name, List.of()).isEmpty());
+    }
+
+    /**
+     * Warms the cache just after startup, on a virtual thread so a slow Denodo
+     * never delays the server accepting requests. Without this the first
+     * operator to log in pays for all six view reads; with it, /api/codes is
+     * a memory hit from the first call. Failure is not fatal — codes() simply
+     * loads on demand as before.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void preload() {
+        Thread.ofVirtual().name("reference-data-preload").start(() -> {
+            try {
+                int populated = (int) DB_BACKED.stream()
+                        .filter(name -> !codes().getOrDefault(name, List.of()).isEmpty())
+                        .count();
+                log.info("Reference data pre-loaded ({}/{} archival code sets populated).",
+                        populated, DB_BACKED.size());
+            } catch (RuntimeException e) {
+                log.warn("Reference data pre-load failed ({}); /api/codes will load on demand.",
+                        e.toString());
+            }
+        });
     }
 
     private Map<String, List<CodeEntry>> load() {
