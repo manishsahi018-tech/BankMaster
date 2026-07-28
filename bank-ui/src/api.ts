@@ -29,10 +29,10 @@ function onUnauthorized(): never {
   throw new Error('Your session has expired — please log in again.')
 }
 
-// Dev: Vite serves the UI on 5173/5199 and the API runs separately on 8080.
+// Dev: Vite serves the UI on 5173/5199 and the API runs separately on 8085.
 // Production: the built UI is packaged into the bank-api jar and served from
 // the same origin, so relative URLs work whatever host/port the jar uses.
-const BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:8080' : '')
+const BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:8085' : '')
 
 /** One reference-data code + display description. */
 export interface CodeEntry {
