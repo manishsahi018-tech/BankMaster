@@ -88,7 +88,20 @@ public class JdbcAccountRepository implements AccountRepository {
     /** Status/SAMA histories are specced at max 50 rows, no cursor (§7-8). */
     static final int HISTORY_MAX_ROWS = 50;
 
-    /** Legacy getBlockingBreakup caps the detail list at 31 rows (§16). */
+    /**
+     * Legacy getBlockingBreakup caps the detail list at 31 rows (§16).
+     *
+     * <p>Enforced in Java only — deliberately NOT as a SQL {@code FETCH FIRST}.
+     * The C counts rows it KEEPS, not rows it reads: {@code cbblock.c:307-308}
+     * does {@code if (blockedAmt == 0) continue;} BEFORE {@code recsInThisMsg++},
+     * and only then tests {@code if (recsInThisMsg > 30)}. {@link #blockedSource}
+     * mirrors that by skipping zero/unparsable amounts before adding an item.
+     * A row cap in the SQL would count rows READ, so an account whose first 31
+     * rows are zero-amount would show an empty breakup while the legacy showed
+     * the non-zero rows that follow. Every one of these queries is keyed to a
+     * single account (or one customer's accounts), so the unbounded fetch is
+     * small by construction.
+     */
     static final int MAX_BLOCKED_ITEMS = 31;
 
     private final NamedParameterJdbcTemplate jdbc;
@@ -905,7 +918,7 @@ public class JdbcAccountRepository implements AccountRepository {
                 WHERE  SUBSTR(accNo, 6, 7) = SUBSTR(:accNo, 6, 7)
                   AND  settlementAccNo = :accNo AND blockedArrear2 <> 0
                 ORDER  BY accNo
-                """.formatted(MAX_BLOCKED_ITEMS),
+                """,
                 Map.of("accNo", actualAccNo),
                 row -> {
                     String matchingLoan = str(row, "matchingLoan");
@@ -925,7 +938,7 @@ public class JdbcAccountRepository implements AccountRepository {
                 FROM   aad0data
                 WHERE  settlementAccNo = :accNo
                   AND  loanBlockBal <> 0
-                """.formatted(MAX_BLOCKED_ITEMS),
+                """,
                 Map.of("accNo", actualAccNo),
                 row -> new BlockedAmountItem("F", actualAccOf(str(row, "productNo")),
                         str(row, "blockedAmt"), ""));
@@ -939,7 +952,7 @@ public class JdbcAccountRepository implements AccountRepository {
                 FROM   bkd0data
                 WHERE  accNo = :bmAccNo
                   AND  recType = '1' AND amount <> 0
-                """.formatted(MAX_BLOCKED_ITEMS),
+                """,
                 Map.of("bmAccNo", bmAccNo),
                 // Legacy copies only the FIRST 3 chars of the blocking userId for
                 // the 'O' source (cbblock.c:399, strncpy(...,3)) — unique to this
@@ -964,7 +977,7 @@ public class JdbcAccountRepository implements AccountRepository {
                                lastBlockedUserId, requestBranch
                         FROM   ccarrblk
                         WHERE  bmAccNo = :displayAccNo
-                        """.formatted(MAX_BLOCKED_ITEMS),
+                        """,
                         Map.of("displayAccNo", actualAccNo))) {
                     if (items.size() >= MAX_BLOCKED_ITEMS) {
                         break;
@@ -998,7 +1011,7 @@ public class JdbcAccountRepository implements AccountRepository {
                 SELECT bmAccNo AS productNo, blockedAmt, lastBlockedUserId, requestBranch
                 FROM   staccblk
                 WHERE  bmAccNo = :displayAccNo
-                """.formatted(MAX_BLOCKED_ITEMS),
+                """,
                 Map.of("displayAccNo", actualAccNo),
                 row -> new BlockedAmountItem("A", str(row, "productNo"),
                         str(row, "blockedAmt"),
