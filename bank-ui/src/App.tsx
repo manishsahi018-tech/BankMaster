@@ -8,6 +8,7 @@ import type { BlockedAmountBreakup as Breakup, CardSearchResult } from './api.ts
 import TopNav from './components/TopNav.tsx'
 import Login from './screens/Login.tsx'
 import { session, signOut } from './session.ts'
+import { useCodes } from './codes.ts'
 import CustomerStaticData from './screens/CustomerStaticData.tsx'
 import EnquirySelect from './screens/EnquirySelect.tsx'
 import IndividualSaudi from './screens/IndividualSaudi.tsx'
@@ -95,6 +96,9 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const toast = useToast()
+  // /api/codes is loaded in the background; re-render here when it lands so
+  // every screen below swaps its raw codes for "<code>-<description>" labels.
+  useCodes()
 
   // Any error raised by the fetch helpers surfaces as a top-center toast that
   // hides itself after 7s (replaces the old inline banner). Clearing the state

@@ -57,8 +57,10 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
         }
         if (r.token) setToken(r.token)
         applySession(r.session)
-        // Load reference codes now (token is set) before the first screen renders.
-        await initCodes()
+        // Start the reference-code load now that the token is set, but do NOT
+        // wait on it — the operator reaches the first screen immediately and
+        // App swaps raw codes for labels when the sets arrive.
+        void initCodes()
         onLogin()
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
