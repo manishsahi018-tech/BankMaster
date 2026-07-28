@@ -428,9 +428,14 @@ public class JdbcAccountRepository implements AccountRepository {
                        (SELECT COALESCE(NULLIF(TRIM(m.arabicName), ''), m.englishName)
                         FROM stctltabMM m
                         WHERE m.ledgerCode = g.ledgerCode) AS ledgerName,
-                       -- Currency is encoded in the account number's first 2 chars
-                       -- (legacy: currency+ledger+custNo+00, cbtdopen.c:1229 /
-                       -- cbothers.c:8563); resolve the name from stctltabXC.
+                       -- Currency is encoded in the first 2 chars of the account
+                       -- number (legacy: currency+ledger+custNo+00,
+                       -- cbtdopen.c:1229 / cbothers.c:8563); resolved to a name
+                       -- via stctltabXC. NOTE: never put an apostrophe in a SQL
+                       -- comment — the Denodo driver does not strip -- comments
+                       -- before counting ? placeholders, so a stray quote opens
+                       -- a string literal that swallows the bind parameter
+                       -- ("This statement has no parameters").
                        SUBSTR(g.accNo, 1, 2) AS currencyCode,
                        SUBSTR(g.accNo, 13, 2) AS subAccount,
                        (SELECT COALESCE(NULLIF(TRIM(x.arabicName), ''), x.englishName)
