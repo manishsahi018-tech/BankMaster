@@ -616,7 +616,16 @@ public class JdbcCustomerRepository implements CustomerRepository {
     public Optional<CustomerProfile> profileAsOf(String custNo, String dateTime) {
         // The UI's "View Details" passes the history row's stcustlog
         // dateTime (event timestamp), not lastUpdateDateTime.
-        Map<String, Object> params = Map.of("custNo", padCust(custNo), "dateTime", BmForms.bmToIso(trim(dateTime)));
+        // Bound RAW, as the legacy does: the C echoes back the same 14-char
+        // dateTime the history list sent (cbbranch2.c:986) and reads on it
+        // byte-for-byte — strncpy(custLogRec.dateTime, ...dateTime, 14) then
+        // readCustLogFile(ISEQUAL) (cbjuristic.c:2055-2057); the companion
+        // log reads copy the same 14 bytes verbatim (cbsaudi.c:3020-3022).
+        // datetime_bigdata carries that same YYYYMMDDHH24MISS string (workbook
+        // stcustlog.dateTime, size 14), so reformatting it to ISO here made the
+        // predicate match nothing and the drill-down 404'd. Same binding as
+        // JdbcAccountRepository.snapshot, which already keys stacclog raw.
+        Map<String, Object> params = Map.of("custNo", padCust(custNo), "dateTime", trim(dateTime));
         Map<String, String> snapshot = jdbc.query(PROFILE_ASOF_SQL, params, PROFILE_COLUMN_MAPPER)
                 .stream().findFirst().orElse(null);
         if (snapshot == null) {
