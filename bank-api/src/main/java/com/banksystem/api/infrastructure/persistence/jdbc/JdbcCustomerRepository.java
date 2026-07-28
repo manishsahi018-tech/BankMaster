@@ -674,7 +674,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                            idExpiryDateH, idExpiryDateG
                     FROM   stidlog
                     WHERE  branchCode = :branchCode
-                      AND  userId = :userId AND dateTime = :dateTime
+                      AND  userId = :userId AND datetime_bigdata = :dateTime
                       AND  idCategory = 'C'
                     """,
                     logKey,
@@ -723,7 +723,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                            telHomeNo, telOffNo, mobileNo, eMail
                     FROM   staddrlog
                     WHERE  branchCode = :branchCode
-                      AND  userId = :userId AND dateTime = :dateTime
+                      AND  userId = :userId AND datetime_bigdata = :dateTime
                       AND  addressType = '00' AND addressNo = '0000'
                     """,
                     logKey,
@@ -838,7 +838,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     SELECT accNo, accStatus, statementFreq, checkBook, droppedAcc
                     FROM   stacclog
                     WHERE  branchCode = :branchCode
-                      AND  userId = :userId AND dateTime = :dateTime
+                      AND  userId = :userId AND datetime_bigdata = :dateTime
                     """,
                     Map.of("branchCode", branchCode == null ? "" : branchCode,
                             "userId", createdUserId == null ? "" : createdUserId,

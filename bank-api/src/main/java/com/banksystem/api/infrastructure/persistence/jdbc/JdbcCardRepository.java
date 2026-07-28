@@ -26,6 +26,14 @@ import org.springframework.stereotype.Repository;
  * detail's custName/custCategory from the Finacle gateway (services
  * 04/05). That view's schema is not yet known, so both are read from
  * archival stcusttab on this connection for now.
+ *
+ * <p>stcardlog timestamps: the workbook documents a {@code dateTime}
+ * column, but the Denodo view does not expose one — it carries the same
+ * YYYYMMDDHH24MISS value as {@code datetime_bigdata}. Selecting the bare
+ * name returns a 500 from the driver, so both log queries below read
+ * {@code datetime_bigdata AS dateTime} and order on it. Same substitution
+ * already applied to stacclog / stcustlog in JdbcAccountRepository and
+ * JdbcCustomerRepository.
  */
 @Repository
 @Profile("denodo")
@@ -213,11 +221,12 @@ public class JdbcCardRepository implements CardRepository {
         // lastRecCount. Supervisor fields are blanked while the row is
         // still pending ('1'/'2') — done here, not in SQL (per-row rule).
         return jdbc.query("""
-                SELECT l.branchCode, l.userId, l.dateTime, l.bmUpdateStatus,
+                SELECT l.branchCode, l.userId, l.datetime_bigdata AS dateTime,
+                       l.bmUpdateStatus,
                        l.supervisorId, l.lastUpdateDateTime, l.requestType
                 FROM   stcardlog l
                 WHERE  l.cardNo = :cardNo
-                ORDER  BY l.cardNo, l.dateTime
+                ORDER  BY l.cardNo, l.datetime_bigdata
                 """,
                 Map.of("cardNo", cardNo),
                 (rs, i) -> {
@@ -262,7 +271,8 @@ public class JdbcCardRepository implements CardRepository {
         // has no request*-named columns (schema file wins over the spec's
         // naming).
         return jdbc.query("""
-                SELECT l.branchCode, l.requestType, l.userId, l.dateTime,
+                SELECT l.branchCode, l.requestType, l.userId,
+                       l.datetime_bigdata AS dateTime,
                        l.cardGeneratedDate, l.cardGeneratedTime, l.cardGeneratedUserId,
                        l.cBranchReceiptDate, l.cBranchReceiptTime, l.cBranchReceiptUserId,
                        l.cCustIssueDate, l.cCustIssueTime, l.cCustIssueUserId,
@@ -274,7 +284,8 @@ public class JdbcCardRepository implements CardRepository {
                 FROM   stcardlog l
                 WHERE  l.cardNo = :cardNo
                   AND  l.bmUpdateStatus = '9'
-                ORDER  BY l.cardNo, l.dateTime
+                ORDER  BY l.cardNo, l.datetime_bigdata
+                FETCH FIRST %d ROWS ONLY
                 """.formatted(MAX_TRACKING_ROWS),
                 Map.of("cardNo", cardNo),
                 (rs, i) -> {
