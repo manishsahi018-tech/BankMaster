@@ -89,6 +89,26 @@ interface ScreenState {
   documents?: string[]
 }
 
+/**
+ * The as-of key a history drill-down puts in the URL path.
+ *
+ * A log row can reach the grid with no timestamp — the repositories map the
+ * column through BmForms.isoToBmTimestamp, which yields "" for a NULL — and an
+ * empty segment silently truncates the URL to `…/snapshot/`, which matches no
+ * mapping and comes back 404. That reads as "the record is missing" when the
+ * real problem is that the row never had a key to look it up by. Guard here so
+ * the operator is told which it is.
+ *
+ * Returns null when there is nothing usable to key on.
+ */
+function asOfKey(value: unknown): string | null {
+  const s = value == null ? '' : String(value).trim()
+  return s === '' || s === 'undefined' || s === 'null' ? null : s
+}
+
+const NO_TIMESTAMP =
+  'This history row carries no timestamp, so the record behind it cannot be opened.'
+
 export default function App() {
   // Restore the persisted session on refresh instead of forcing re-login.
   const [screen, setScreen] = useState<ScreenState>(
@@ -478,7 +498,11 @@ export default function App() {
             // Legacy getCustDetails: fetch the stcustlog snapshot for the
             // row's timestamp and open the matching profile form read-only
             // (loadCorrespondingForm routing, history mode).
-            const dt = String(row.dateTime)
+            const dt = asOfKey(row.dateTime)
+            if (!dt) {
+              setError(NO_TIMESTAMP)
+              return
+            }
             if (customer.mainCategoryCode !== '01') {
               goFetch('juristic', { historyAsOf: dt }, async () => ({
                 profile: await api.customerProfileAsOf(customer.custNo, dt),
@@ -590,13 +614,18 @@ export default function App() {
           rows={screen.gridRows ?? []}
           hasMore={screen.hasMore ?? false}
           onMore={appendPage('gridRows', (p) => api.acctUpdateHistory(screen.account!.accountNumber, p))}
-          onViewDetail={(row) =>
+          onViewDetail={(row) => {
             // Legacy getAcctDetails: stacclog snapshot → frmAccount in
             // history mode (service 33 requestType 01).
-            goFetch('accountDetail', { historyAsOf: String(row.dateTime) }, async () => ({
-              snapshot: await api.accountSnapshot(screen.account!.accountNumber, String(row.dateTime)),
+            const dt = asOfKey(row.dateTime)
+            if (!dt) {
+              setError(NO_TIMESTAMP)
+              return
+            }
+            goFetch('accountDetail', { historyAsOf: dt }, async () => ({
+              snapshot: await api.accountSnapshot(screen.account!.accountNumber, dt),
             }))
-          }
+          }}
           onExit={() => go('accounts')}
         />
       )}
