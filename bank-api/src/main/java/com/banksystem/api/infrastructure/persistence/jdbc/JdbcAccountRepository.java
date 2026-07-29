@@ -332,6 +332,11 @@ public class JdbcAccountRepository implements AccountRepository {
     @Override
     public Map<String, String> snapshot(String accNo, String dateTime) {
         // Point read of the stacclog row behind an update-history entry.
+        // Keyed in both timestamp forms for the reason spelled out in
+        // JdbcCustomerRepository.profileAsOf: updateHistory normalises
+        // datetime_bigdata through BmForms.isoToBmTimestamp before the UI ever
+        // sees it, so binding only the raw value matches nothing whenever the
+        // view types that column as a timestamp rather than a 14-char string.
         // Map keys = the AccountMaintenance screen field names (same keys as
         // the mock / the screen's SAMPLE object); values are the raw archival
         // column values (the UI formats codes), except dormant which the
@@ -362,10 +367,12 @@ public class JdbcAccountRepository implements AccountRepository {
                         FROM stctltabMM m
                         WHERE  m.ledgerCode = SUBSTR(s.accNo, 3, 3)) AS ledgerName
                 FROM   stacclog s
-                WHERE  s.accNo = :accNo AND s.datetime_bigdata = :dateTime
+                WHERE  s.accNo = :accNo
+                  AND  (s.datetime_bigdata = :dateTime OR s.datetime_bigdata = :dateTimeIso)
                 FETCH FIRST 1 ROWS ONLY
                 """,
-                Map.of("accNo", accNo, "dateTime", dateTime));
+                Map.of("accNo", accNo, "dateTime", dateTime,
+                        "dateTimeIso", BmForms.bmToIso(dateTime)));
         if (rows.isEmpty()) {
             return Map.of();
         }

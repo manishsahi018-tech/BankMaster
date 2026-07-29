@@ -168,7 +168,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                    govtShareHoldingPerc, saudiShareHoldingPerc, foreignShareHoldingPerc,
                    crIssueDateType, licenseNo, approvalRefNo
             FROM   stcustlog
-            WHERE  custNo = :custNo AND datetime_bigdata = :dateTime
+            WHERE  custNo = :custNo
+              AND  (datetime_bigdata = :dateTime OR datetime_bigdata = :dateTimeIso)
             """;
 
     /** Column labels shared by PROFILE_SQL / PROFILE_ASOF_SQL. */
@@ -615,17 +616,29 @@ public class JdbcCustomerRepository implements CustomerRepository {
     @Override
     public Optional<CustomerProfile> profileAsOf(String custNo, String dateTime) {
         // The UI's "View Details" passes the history row's stcustlog
-        // dateTime (event timestamp), not lastUpdateDateTime.
-        // Bound RAW, as the legacy does: the C echoes back the same 14-char
-        // dateTime the history list sent (cbbranch2.c:986) and reads on it
+        // dateTime (event timestamp), not lastUpdateDateTime. The legacy
+        // echoes the same 14-char value the history list sent and reads on it
         // byte-for-byte — strncpy(custLogRec.dateTime, ...dateTime, 14) then
-        // readCustLogFile(ISEQUAL) (cbjuristic.c:2055-2057); the companion
-        // log reads copy the same 14 bytes verbatim (cbsaudi.c:3020-3022).
-        // datetime_bigdata carries that same YYYYMMDDHH24MISS string (workbook
-        // stcustlog.dateTime, size 14), so reformatting it to ISO here made the
-        // predicate match nothing and the drill-down 404'd. Same binding as
-        // JdbcAccountRepository.snapshot, which already keys stacclog raw.
-        Map<String, Object> params = Map.of("custNo", padCust(custNo), "dateTime", trim(dateTime));
+        // readCustLogFile(ISEQUAL) (cbjuristic.c:2055-2057); the companion log
+        // reads copy the same 14 bytes verbatim (cbsaudi.c:3020-3022).
+        //
+        // BOUND IN BOTH FORMS, and it has to be. The list side does NOT hand
+        // the UI what the column holds: updateHistory maps the column through
+        // BmForms.isoToBmTimestamp, which is a no-op on a 14-char string but
+        // rewrites an ISO timestamp to YYYYMMDDHH24MISS. So the round trip only
+        // closes when datetime_bigdata is a string — when the view types it as
+        // a timestamp, the list normalises, the UI sends the normalised value
+        // back, this predicate compares it raw, matches nothing, and the
+        // drill-down 404s "History record not found" on a row that demonstrably
+        // exists (it came out of this very table). Binding raw alone was the
+        // earlier fix for the mirror-image bug and is still right for a string
+        // column; the OR keeps that and covers the timestamp case, and can only
+        // ever match more rows than before, never fewer.
+        //
+        // The same pairing is applied to the stidlog / staddrlog overlays below
+        // and to JdbcAccountRepository.snapshot, which has the identical shape.
+        Map<String, Object> params = Map.of("custNo", padCust(custNo),
+                "dateTime", trim(dateTime), "dateTimeIso", BmForms.bmToIso(trim(dateTime)));
         Map<String, String> snapshot = jdbc.query(PROFILE_ASOF_SQL, params, PROFILE_COLUMN_MAPPER)
                 .stream().findFirst().orElse(null);
         if (snapshot == null) {
@@ -639,14 +652,17 @@ public class JdbcCustomerRepository implements CustomerRepository {
         Map<String, Object> logKey = jdbc.query("""
                 SELECT branchCode, userId, datetime_bigdata AS dateTime
                 FROM   stcustlog
-                WHERE  custNo = :custNo AND datetime_bigdata = :dateTime
+                WHERE  custNo = :custNo
+                  AND  (datetime_bigdata = :dateTime OR datetime_bigdata = :dateTimeIso)
                 """,
                 params,
                 (rs, i) -> {
                     Map<String, Object> k = new HashMap<>();
                     k.put("branchCode", rs.getString("branchCode"));
                     k.put("userId", rs.getString("userId"));
-                    k.put("dateTime", BmForms.isoToBmTimestamp(rs.getString("dateTime")));
+                    String bm = BmForms.isoToBmTimestamp(rs.getString("dateTime"));
+                    k.put("dateTime", bm);
+                    k.put("dateTimeIso", BmForms.bmToIso(bm));
                     return k;
                 })
                 .stream().findFirst().orElse(null);
@@ -674,7 +690,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                            idExpiryDateH, idExpiryDateG
                     FROM   stidlog
                     WHERE  branchCode = :branchCode
-                      AND  userId = :userId AND datetime_bigdata = :dateTime
+                      AND  userId = :userId
+                      AND  (datetime_bigdata = :dateTime OR datetime_bigdata = :dateTimeIso)
                       AND  idCategory = 'C'
                     """,
                     logKey,
@@ -723,7 +740,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                            telHomeNo, telOffNo, mobileNo, eMail
                     FROM   staddrlog
                     WHERE  branchCode = :branchCode
-                      AND  userId = :userId AND datetime_bigdata = :dateTime
+                      AND  userId = :userId
+                      AND  (datetime_bigdata = :dateTime OR datetime_bigdata = :dateTimeIso)
                       AND  addressType = '00' AND addressNo = '0000'
                     """,
                     logKey,
@@ -838,7 +856,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     SELECT accNo, accStatus, statementFreq, checkBook, droppedAcc
                     FROM   stacclog
                     WHERE  branchCode = :branchCode
-                      AND  userId = :userId AND datetime_bigdata = :dateTime
+                      AND  userId = :userId
+                      AND  (datetime_bigdata = :dateTime OR datetime_bigdata = :dateTimeIso)
                     """,
                     Map.of("branchCode", branchCode == null ? "" : branchCode,
                             "userId", createdUserId == null ? "" : createdUserId,
