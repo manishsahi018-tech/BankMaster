@@ -1,4 +1,4 @@
-import { SectionCard } from '../components/fields.tsx'
+import { SectionCard, Field, ReadOnlyInput } from '../components/fields.tsx'
 import type { Customer } from '../types.ts'
 
 // Mirrors legacy frmDocuments.frm ("Essential Documents") as a READ-ONLY
@@ -38,6 +38,37 @@ const DOCUMENT_NAMES: Record<string, string> = {
 const docLabel = (code: string) =>
   DOCUMENT_NAMES[code] ? `${code} — ${DOCUMENT_NAMES[code]}` : `${code} — Not defined in local`
 
+/**
+ * One of the two lists. Read-only: rows are not selectable, because the legacy
+ * disables both lists in enquiry mode (frmDocuments.frm:352-358), so there is
+ * nothing a selection could lead to.
+ */
+function DocList({
+  title,
+  items,
+  emptyText,
+}: {
+  title: string
+  items: string[]
+  emptyText: string
+}) {
+  return (
+    <div className="flex-1">
+      <p className="mb-2 text-sm font-semibold text-ink-soft">{title}</p>
+      <ul className="h-64 divide-y divide-edge-soft overflow-y-auto rounded-xl border border-edge-strong bg-surface shadow-xs">
+        {items.length === 0 && (
+          <li className="px-3 py-8 text-center text-sm text-muted-soft">{emptyText}</li>
+        )}
+        {items.map((label) => (
+          <li key={label} className="px-3 py-2.5 text-sm text-ink-soft">
+            {label}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export default function EssentialDocuments({
   customer,
   documents,
@@ -64,19 +95,49 @@ export default function EssentialDocuments({
         </span>
       </div>
 
-      <SectionCard title="Documents List for Sub Category">
-        <ul className="divide-y divide-edge-soft rounded-xl border border-edge-strong bg-surface shadow-xs">
-          {documents.length === 0 && (
-            <li className="px-3 py-8 text-center text-sm text-muted-soft">
-              No documents configured for this sub-category.
-            </li>
-          )}
-          {documents.map((code) => (
-            <li key={code} className="px-3 py-2.5 text-sm text-ink-soft">
-              {docLabel(code)}
-            </li>
-          ))}
-        </ul>
+      <SectionCard title="Documents for Sub Category">
+        <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-center">
+          <DocList
+            title="Documents List for Sub Category"
+            items={documents.map(docLabel)}
+            emptyText="No documents configured for this sub-category."
+          />
+
+          {/* The transfer buttons are present and inert, which is what the
+              legacy shows an enquiry user: cmdAddDoc and cmdRemoveDoc are
+              disabled together with both lists whenever searchAction /
+              supervisorAction / custHistoryAction is set
+              (frmDocuments.frm:352-358). */}
+          <div className="flex shrink-0 flex-row justify-center gap-2 sm:flex-col">
+            {['»', '«'].map((glyph) => (
+              <button
+                key={glyph}
+                type="button"
+                disabled
+                title="Marking documents submitted is a create-time action, not part of this enquiry"
+                className="cursor-not-allowed rounded-lg border border-edge bg-surface-muted px-3 py-2 text-sm font-semibold text-muted-soft shadow-xs"
+              >
+                {glyph}
+              </button>
+            ))}
+          </div>
+
+          <DocList
+            title="Documents Submitted"
+            items={[]}
+            emptyText="Not held in the archive — recorded when the account is opened."
+          />
+        </div>
+
+        <div className="mt-5 border-t border-edge-soft pt-4">
+          <Field label="Others" htmlFor="others">
+            <ReadOnlyInput
+              id="others"
+              value=""
+              placeholder="Not held in the archive"
+            />
+          </Field>
+        </div>
       </SectionCard>
 
       <div className="mt-5 flex items-center gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
