@@ -169,7 +169,11 @@ async function request<T>(
   if (!res.ok) {
     const { detail, reference } = await readProblem(res)
     // 4xx carries the ported legacy message — show it as the legacy did.
-    if (res.status >= 400 && res.status < 500 && detail) {
+    // 501 joins it: "this facility has no data source in this environment" is a
+    // standing condition the operator should read in full, not a fault to chase
+    // with a support reference (see NotAvailableException).
+    const explains = (res.status >= 400 && res.status < 500) || res.status === 501
+    if (explains && detail) {
       throw new ApiError(detail, { status: res.status, reference, isBusinessMessage: true })
     }
     const ref = reference ?? clientReference()

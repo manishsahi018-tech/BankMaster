@@ -1,6 +1,7 @@
 package com.banksystem.api.presentation.rest;
 
 import com.banksystem.api.application.BadRequestException;
+import com.banksystem.api.application.NotAvailableException;
 import com.banksystem.api.application.NotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.security.SecureRandom;
@@ -30,6 +31,16 @@ public class ApiExceptionHandler {
     @ExceptionHandler(BadRequestException.class)
     public ProblemDetail badRequest(BadRequestException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    /**
+     * A facility with no data source in this environment. 501 rather than 503:
+     * the capability is genuinely not implemented here, and retrying will not
+     * help. Not logged as an error — it is a known deployment gap, not a fault.
+     */
+    @ExceptionHandler(NotAvailableException.class)
+    public ProblemDetail notAvailable(NotAvailableException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_IMPLEMENTED, ex.getMessage());
     }
 
     /**
