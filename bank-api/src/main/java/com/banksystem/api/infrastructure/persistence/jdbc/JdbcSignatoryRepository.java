@@ -80,9 +80,9 @@ public class JdbcSignatoryRepository implements SignatoryRepository {
                        COALESCE(NULLIF(TRIM(s.aShortName), ''), s.eShortName) AS signatoryShortName
                 FROM   stsigntab s
                 -- INNER (not LEFT): legacy readSignTabInfo (cbsama.c:4021) treats
-                -- the stidtab read as mandatory — readIdTabFile(ISEQUAL) < 0
-                -- (record-not-found) returns FAILURE / NOT_FOUND with no detail
-                -- row, rather than a signatory row with blank ID fields.
+                -- the stidtab read as mandatory. readIdTabFile(ISEQUAL) below
+                -- zero (record-not-found) returns FAILURE / NOT_FOUND with no
+                -- detail row, rather than a signatory row with blank ID fields.
                 JOIN stidtab i
                        ON  i.custNo = SUBSTR(s.accNo, 6, 7)
                        AND i.idType = s.idType

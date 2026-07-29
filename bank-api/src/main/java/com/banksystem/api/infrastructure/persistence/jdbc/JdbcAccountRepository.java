@@ -451,11 +451,14 @@ public class JdbcAccountRepository implements AccountRepository {
                        -- Currency is encoded in the first 2 chars of the account
                        -- number (legacy: currency+ledger+custNo+00,
                        -- cbtdopen.c:1229 / cbothers.c:8563); resolved to a name
-                       -- via stctltabXC. NOTE: never put an apostrophe in a SQL
-                       -- comment — the Denodo driver does not strip -- comments
-                       -- before counting ? placeholders, so a stray quote opens
-                       -- a string literal that swallows the bind parameter
-                       -- ("This statement has no parameters").
+                       -- via stctltabXC. NOTE: a SQL comment here must stay
+                       -- plain ASCII with no apostrophe and no question mark.
+                       -- The Denodo driver does not strip dash-dash comments
+                       -- before it counts bind placeholders, so a question
+                       -- mark in a comment is counted as one (the value for
+                       -- the parameter 2 has not been set) and an apostrophe
+                       -- opens a string literal that swallows the real bind
+                       -- (this statement has no parameters).
                        SUBSTR(g.accNo, 1, 2) AS currencyCode,
                        SUBSTR(g.accNo, 13, 2) AS subAccount,
                        (SELECT COALESCE(NULLIF(TRIM(x.arabicName), ''), x.englishName)
