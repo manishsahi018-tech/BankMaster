@@ -78,36 +78,142 @@ export interface LoginResult {
   token: string | null
 }
 
-async function get<T>(path: string, params?: Record<string, string>): Promise<T> {
-  const entries = Object.entries(params ?? {}).filter(([, v]) => v !== '')
-  const qs = entries.length ? `?${new URLSearchParams(entries)}` : ''
-  const res = await fetch(`${BASE}${path}${qs}`, { headers: authHeaders() })
-  adoptRefreshedToken(res)
-  if (res.status === 401) onUnauthorized()
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`API ${res.status} on ${path}${body ? ` — ${body.slice(0, 200)}` : ''}`)
+/**
+ * What the operator is told when a call fails.
+ *
+ * The message on screen is deliberately NOT the technical one. It used to be —
+ * `API 500 on /api/accounts/…/transactions — {"detail":…}` went straight into a
+ * toast, which means nothing to a branch user, leaks internal paths and table
+ * names, and leaves support with no way to tie a complaint to a log line.
+ *
+ * The split is by status, not by blanket suppression, because a 4xx body is
+ * usually a BUSINESS message that the legacy showed in a MsgBox and that we
+ * ported deliberately — "Invalid Customer Number..Please Check", "Account
+ * Number cannot be empty..Please enter". Hiding those would make the app less
+ * usable than the VB6 original, so they are shown verbatim.
+ *
+ * Technical failures (5xx, network, unparsable body) become a per-screen
+ * sentence plus a reference. The reference comes from the server when it
+ * reached the server (ApiExceptionHandler logs the stack against it); when the
+ * request never landed, the client mints one so the console line can still be
+ * found.
+ */
+export class ApiError extends Error {
+  readonly status: number
+  readonly reference: string | null
+  /** True when the message came from the server and is safe to show as-is. */
+  readonly isBusinessMessage: boolean
+
+  constructor(
+    message: string,
+    opts: { status: number; reference?: string | null; isBusinessMessage?: boolean },
+  ) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = opts.status
+    this.reference = opts.reference ?? null
+    this.isBusinessMessage = opts.isBusinessMessage ?? false
   }
-  return res.json() as Promise<T>
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify(body),
-  })
-  adoptRefreshedToken(res)
-  if (res.status === 401 && path !== '/api/login') onUnauthorized()
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`API ${res.status} on ${path}${text ? ` — ${text.slice(0, 200)}` : ''}`)
+/** Same alphabet as the server's: no vowels, no 0/O or 1/I to misread aloud. */
+function clientReference(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  return Array.from(
+    { length: 6 },
+    () => alphabet[Math.floor(Math.random() * alphabet.length)],
+  ).join('')
+}
+
+/**
+ * `action` completes "Could not …" and is supplied per endpoint below, so the
+ * operator is told what failed on the screen they are looking at rather than
+ * getting one flat "something went wrong".
+ */
+function technicalMessage(action: string, reference: string): string {
+  return `Could not ${action}. Please try again — if it keeps happening, quote reference ${reference} to the help desk.`
+}
+
+/** Reads a Spring ProblemDetail body, tolerating a non-JSON error page. */
+async function readProblem(
+  res: Response,
+): Promise<{ detail: string; reference: string | null }> {
+  const text = await res.text().catch(() => '')
+  try {
+    const body = JSON.parse(text) as { detail?: string; reference?: string }
+    return { detail: (body.detail ?? '').trim(), reference: body.reference ?? null }
+  } catch {
+    return { detail: '', reference: null }
   }
-  return res.json() as Promise<T>
+}
+
+async function request<T>(
+  path: string,
+  action: string,
+  init: RequestInit,
+  opts: { skipUnauthorized?: boolean } = {},
+): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(`${BASE}${path}`, init)
+  } catch (cause) {
+    // The request never landed — server down, DNS, offline, CORS.
+    const reference = clientReference()
+    console.error(`[${reference}] Request to ${path} failed to reach the server`, cause)
+    throw new ApiError(technicalMessage(action, reference), { status: 0, reference })
+  }
+
+  adoptRefreshedToken(res)
+  if (res.status === 401 && !opts.skipUnauthorized) onUnauthorized()
+
+  if (!res.ok) {
+    const { detail, reference } = await readProblem(res)
+    // 4xx carries the ported legacy message — show it as the legacy did.
+    if (res.status >= 400 && res.status < 500 && detail) {
+      throw new ApiError(detail, { status: res.status, reference, isBusinessMessage: true })
+    }
+    const ref = reference ?? clientReference()
+    console.error(
+      `[${ref}] ${res.status} on ${path}${detail ? ` — ${detail}` : ''}`,
+    )
+    throw new ApiError(technicalMessage(action, ref), { status: res.status, reference: ref })
+  }
+
+  try {
+    return (await res.json()) as T
+  } catch (cause) {
+    // 2xx with a body we cannot read is a server-side defect, not a user error.
+    const reference = clientReference()
+    console.error(`[${reference}] Unreadable response body from ${path}`, cause)
+    throw new ApiError(technicalMessage(action, reference), {
+      status: res.status,
+      reference,
+    })
+  }
+}
+
+function get<T>(path: string, action: string, params?: Record<string, string>): Promise<T> {
+  const entries = Object.entries(params ?? {}).filter(([, v]) => v !== '')
+  const qs = entries.length ? `?${new URLSearchParams(entries)}` : ''
+  return request<T>(`${path}${qs}`, action, { headers: authHeaders() })
+}
+
+function post<T>(path: string, action: string, body: unknown): Promise<T> {
+  return request<T>(
+    path,
+    action,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(body),
+    },
+    // A failed login must not bounce through onUnauthorized — it IS the login.
+    { skipUnauthorized: path === '/api/login' },
+  )
 }
 
 export const api = {
-  session: () => get<SessionInfo>('/api/session'),
+  session: () => get<SessionInfo>('/api/session', 'restore your session'),
 
   /**
    * Legacy service 00 logon; credential check is an LDAP/AD bind behind the API.
@@ -115,89 +221,89 @@ export const api = {
    * crosses the network — the backend decrypts it to perform the bind.
    */
   login: async (userId: string, password: string) =>
-    post<LoginResult>('/api/login', { userId, password: await encryptPassword(password) }),
+    post<LoginResult>('/api/login', 'sign you in', { userId, password: await encryptPassword(password) }),
 
   /** Reference-data code sets (stctltab + combo tables). */
-  codes: () => get<Record<string, CodeEntry[]>>('/api/codes'),
+  codes: () => get<Record<string, CodeEntry[]>>('/api/codes', 'load the reference data'),
 
   /** Legacy service 16; params mirror reqMsgSearch fields. */
   searchCustomers: (params: Record<string, string>, page = 0) =>
-    get<Paged<Customer>>('/api/customers', { ...params, page: String(page) }),
+    get<Paged<Customer>>('/api/customers', 'run the customer search', { ...params, page: String(page) }),
 
   /** Legacy service 67 (msgType 0) — stcustlog rows. */
   custUpdateHistory: (custNo: string, page = 0) =>
-    get<Paged<GridRow>>(`/api/customers/${custNo}/update-history`, { page: String(page) }),
+    get<Paged<GridRow>>(`/api/customers/${custNo}/update-history`, 'load the customer update history', { page: String(page) }),
 
   /** Legacy service 21 — account grid for a customer. */
   accounts: (custNo: string, page = 0) =>
-    get<Paged<Account>>(`/api/customers/${custNo}/accounts`, { page: String(page) }),
+    get<Paged<Account>>(`/api/customers/${custNo}/accounts`, 'load the accounts for this customer', { page: String(page) }),
 
   /**
    * Legacy service 21, SEARCH_BY_ACCTNO branch — an exact read returning that
    * one account (cbbranch2.c:5823 isRead ISEQUAL), or an empty grid.
    */
   accountByNumber: (accNo: string) =>
-    get<Paged<Account>>(`/api/accounts/${accNo}/summary`),
+    get<Paged<Account>>(`/api/accounts/${accNo}/summary`, 'look up this account'),
 
   /** stacclog rows. */
   acctUpdateHistory: (accNo: string, page = 0) =>
-    get<Paged<GridRow>>(`/api/accounts/${accNo}/update-history`, { page: String(page) }),
+    get<Paged<GridRow>>(`/api/accounts/${accNo}/update-history`, 'load the account update history', { page: String(page) }),
 
   /** stchqtab rows. */
   chequeBookRequests: (accNo: string) =>
-    get<GridRow[]>(`/api/accounts/${accNo}/chequebook-requests`),
+    get<GridRow[]>(`/api/accounts/${accNo}/chequebook-requests`, 'load the cheque book requests'),
 
   /** sod0data rows. */
-  standingOrders: (accNo: string) => get<GridRow[]>(`/api/accounts/${accNo}/standing-orders`),
+  standingOrders: (accNo: string) => get<GridRow[]>(`/api/accounts/${accNo}/standing-orders`, 'load the standing orders'),
 
   /** pyd0data rows. */
-  stopCheques: (accNo: string) => get<GridRow[]>(`/api/accounts/${accNo}/stop-cheques`),
+  stopCheques: (accNo: string) => get<GridRow[]>(`/api/accounts/${accNo}/stop-cheques`, 'load the stop cheques'),
 
   /** stacclog SAMA columns (legacy service 57 requestType 1). */
   samaStatusHistory: (accNo: string) =>
-    get<GridRow[]>(`/api/accounts/${accNo}/sama-status-history`),
+    get<GridRow[]>(`/api/accounts/${accNo}/sama-status-history`, 'load the SAMA status history'),
 
   /** stacclog account-status changes incl. reason (service 57 requestType 0). */
   acctStatusHistory: (accNo: string) =>
-    get<GridRow[]>(`/api/accounts/${accNo}/status-history`),
+    get<GridRow[]>(`/api/accounts/${accNo}/status-history`, 'load the account status history'),
 
   // ---- Tier-1 endpoints (QUERY-SPECS.md Part 2) ----
 
   stopChequeDetail: (accNo: string, chequeNo: string) =>
-    get<GridRow>(`/api/accounts/${accNo}/stop-cheques/${chequeNo}`),
+    get<GridRow>(`/api/accounts/${accNo}/stop-cheques/${chequeNo}`, 'open this stop cheque'),
 
   standingOrderDetail: (accNo: string, sodNo: string) =>
-    get<GridRow>(`/api/accounts/${accNo}/standing-orders/${sodNo}`),
+    get<GridRow>(`/api/accounts/${accNo}/standing-orders/${sodNo}`, 'open this standing order'),
 
   chequeBookHistory: (accNo: string, reqDate: string) =>
-    get<GridRow>(`/api/accounts/${accNo}/chequebook-requests/${reqDate}/history`),
+    get<GridRow>(`/api/accounts/${accNo}/chequebook-requests/${reqDate}/history`, 'open this cheque book history'),
 
   blockedAmountBreakup: (accNo: string) =>
-    get<BlockedAmountBreakup>(`/api/accounts/${accNo}/blocked-amount-breakup`),
+    get<BlockedAmountBreakup>(`/api/accounts/${accNo}/blocked-amount-breakup`, 'load the blocked amount breakup'),
 
   /** Exactly one of custNo / accNo / cardNo (legacy priority order). */
   searchCards: (params: Record<string, string>, page = 0) =>
-    get<CardSearchResult>('/api/cards', { ...params, page: String(page) }),
+    get<CardSearchResult>('/api/cards', 'load the cards', { ...params, page: String(page) }),
 
-  cardDetail: (cardNo: string) => get<GridRow>(`/api/cards/${cardNo}`),
+  cardDetail: (cardNo: string) => get<GridRow>(`/api/cards/${cardNo}`, 'open this card'),
 
   cardUpdateHistory: (cardNo: string, page = 0) =>
-    get<Paged<GridRow>>(`/api/cards/${cardNo}/update-history`, { page: String(page) }),
+    get<Paged<GridRow>>(`/api/cards/${cardNo}/update-history`, 'load the card update history', { page: String(page) }),
 
   /** Card/PIN lifecycle — completed records only, max 50. */
-  cardTrackingHistory: (cardNo: string) => get<GridRow[]>(`/api/cards/${cardNo}/history`),
+  cardTrackingHistory: (cardNo: string) => get<GridRow[]>(`/api/cards/${cardNo}/history`, 'load the card and PIN history'),
 
   sarieTransfers: (accNo: string, params: Record<string, string>, page = 0) =>
-    get<Paged<GridRow>>(`/api/accounts/${accNo}/transfers`, { ...params, page: String(page) }),
+    get<Paged<GridRow>>(`/api/accounts/${accNo}/transfers`, 'fetch the transfers', { ...params, page: String(page) }),
 
   transferDetail: (refNo: string, transDate = '') =>
-    get<GridRow>(`/api/transfers/${refNo}`, transDate ? { transDate } : undefined),
+    get<GridRow>(`/api/transfers/${refNo}`, 'open this transfer', transDate ? { transDate } : undefined),
 
   bmTransactions: (accNo: string, params: Record<string, string>, page = 0) =>
-    get<Paged<GridRow>>(`/api/accounts/${accNo}/transactions`, { ...params, page: String(page) }),
+    get<Paged<GridRow>>(`/api/accounts/${accNo}/transactions`, 'fetch the transactions', { ...params, page: String(page) }),
 
   bmTransactionDetail: (accNo: string, refNo: string) =>
-    get<GridRow>(`/api/accounts/${accNo}/transactions/${refNo}`),
+    get<GridRow>(`/api/accounts/${accNo}/transactions/${refNo}`, 'open this transaction'),
 
   /**
    * One page of a merchant statement (legacy frmMerchantStmt, authority ~81).
@@ -212,58 +318,58 @@ export const api = {
     fromDate: string
     toDate: string
     lastTransPtr: string
-  }) => get<MerchantStatementPage>('/api/merchant/statement', params),
+  }) => get<MerchantStatementPage>('/api/merchant/statement', 'generate the merchant statement', params),
 
   signatoriesByAccount: (accNo: string, page = 0) =>
-    get<Paged<GridRow>>(`/api/accounts/${accNo}/signatories`, { page: String(page) }),
+    get<Paged<GridRow>>(`/api/accounts/${accNo}/signatories`, 'load the signatories', { page: String(page) }),
 
   signatoryDetail: (accNo: string, signatoryNo: string) =>
-    get<GridRow>(`/api/accounts/${accNo}/signatories/${signatoryNo}`),
+    get<GridRow>(`/api/accounts/${accNo}/signatories/${signatoryNo}`, 'open this signatory'),
 
   // ---- Tier-2: customer profile + related parties (QUERY-SPECS.md §22) ----
 
   /** stcusttab record for the customer detail screens. */
-  customerProfile: (custNo: string) => get<GridRow>(`/api/customers/${custNo}/profile`),
+  customerProfile: (custNo: string) => get<GridRow>(`/api/customers/${custNo}/profile`, 'open the customer profile'),
 
   /** stcustlog snapshot (legacy service 11 requestType 01, history mode). */
   customerProfileAsOf: (custNo: string, dateTime: string) =>
-    get<GridRow>(`/api/customers/${custNo}/profile-asof/${dateTime}`),
+    get<GridRow>(`/api/customers/${custNo}/profile-asof/${dateTime}`, 'open the customer profile as it was on that date'),
 
   /** stacclog snapshot (legacy service 33 requestType 01, history mode). */
   accountSnapshot: (accNo: string, dateTime: string) =>
-    get<Record<string, string>>(`/api/accounts/${accNo}/snapshot/${dateTime}`),
+    get<Record<string, string>>(`/api/accounts/${accNo}/snapshot/${dateTime}`, 'open the account as it was on that date'),
 
   /** Current account master (gld0data) for the AccountMaintenance screen. */
   accountDetail: (accNo: string) =>
-    get<Record<string, string>>(`/api/accounts/${accNo}/detail`),
+    get<Record<string, string>>(`/api/accounts/${accNo}/detail`, 'open the account details'),
 
   /** Juristic page 2 (frmJuristicAccountInfo) enquiry data. */
   juristicAccountInfo: (custNo: string) =>
-    get<GridRow>(`/api/customers/${custNo}/juristic-account-info`),
+    get<GridRow>(`/api/customers/${custNo}/juristic-account-info`, 'load the account details page'),
 
   /** stheirtab rows. */
   heirs: (custNo: string, page = 0) =>
-    get<Paged<GridRow>>(`/api/customers/${custNo}/heirs`, { page: String(page) }),
+    get<Paged<GridRow>>(`/api/customers/${custNo}/heirs`, 'load the heirs and proxies', { page: String(page) }),
 
   /** stjointtab rows. */
   jointHolders: (custNo: string, page = 0) =>
-    get<Paged<GridRow>>(`/api/customers/${custNo}/joint-holders`, { page: String(page) }),
+    get<Paged<GridRow>>(`/api/customers/${custNo}/joint-holders`, 'load the joint holders', { page: String(page) }),
 
   /** stcreftab rows. */
   references: (custNo: string, page = 0) =>
-    get<Paged<GridRow>>(`/api/customers/${custNo}/references`, { page: String(page) }),
+    get<Paged<GridRow>>(`/api/customers/${custNo}/references`, 'load the references', { page: String(page) }),
 
   /** stowntab rows (juristic owner/management). */
   owners: (custNo: string, page = 0) =>
-    get<Paged<GridRow>>(`/api/customers/${custNo}/owners`, { page: String(page) }),
+    get<Paged<GridRow>>(`/api/customers/${custNo}/owners`, 'load the owners and management', { page: String(page) }),
 
   /** Individual page-2 attributes (stcusttab) for the Account Details screen. */
   customerAcctInfo: (custNo: string) =>
-    get<Record<string, string>>(`/api/customers/${custNo}/acct-info`),
+    get<Record<string, string>>(`/api/customers/${custNo}/acct-info`, 'load the account information page'),
 
   /** Required document codes for the customer's SAMA sub-category (stctltabDC). */
   requiredDocuments: (custNo: string) =>
-    get<string[]>(`/api/customers/${custNo}/documents`),
+    get<string[]>(`/api/customers/${custNo}/documents`, 'load the required documents'),
 }
 
 /** Blocked amount breakup — QUERY-SPECS.md §16. */
