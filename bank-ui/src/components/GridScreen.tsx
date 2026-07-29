@@ -42,6 +42,10 @@ interface GridScreenProps {
   emptyText?: string
   buttonGroups?: GridButton[][]
   minWidth?: string
+  /** The server has further rows; the pager's Next fetches them. */
+  hasMore?: boolean
+  /** Appends the next server page (App's appendPage). */
+  onMore?: () => void
 }
 
 const btnKinds = {
@@ -53,49 +57,71 @@ const btnKinds = {
     'rounded-lg border border-danger/30 bg-surface px-4 py-2.5 text-sm font-medium text-danger shadow-xs transition-colors hover:bg-danger-soft',
 }
 
-// Standard cmdMore_Click behaviour shared by every grid form.
-export const moreAction = ({ rows, notify }: GridButtonContext) => {
-  if (rows.length < PAGE_SIZE) {
-    notify('warn', 'No more match found.')
-    return
-  }
-  notify('info', `Fetching next ${PAGE_SIZE} records — needs the backend.`)
-}
-
-/** Footer pager for the loaded rows; hidden while they fit on one page. */
+/**
+ * Footer pager. Hidden while everything loaded fits on one page AND the server
+ * has nothing more.
+ *
+ * This replaced the legacy "More" button, which sat in the action row and was
+ * the ONLY way to pull the next server page — the pager walked loaded rows
+ * only. The two disagreed at the boundary: on the last loaded page with more
+ * rows on the server, "Next ›" was disabled while "More" would still have
+ * produced rows, so the grid claimed to be at the end when it was not. Next now
+ * fetches when it runs past what is loaded, so there is one control and it
+ * tells the truth.
+ *
+ * The count grows rather than lying: `total` is what is LOADED, so while the
+ * server has more it reads "of 20+" and settles to a firm "of 34" on the last
+ * page. Showing a bare "of 20" would state a total nobody knows — the API
+ * returns hasMore, not a count.
+ */
 export function Pager({
   total,
   page,
   onPage,
+  hasMore = false,
+  onMore,
 }: {
   total: number
   page: number
   onPage: (page: number) => void
+  hasMore?: boolean
+  onMore?: () => void
 }) {
-  const pageCount = Math.ceil(total / PAGE_SIZE)
-  if (pageCount <= 1) return null
+  const loadedPages = Math.ceil(total / PAGE_SIZE)
+  const canFetchMore = hasMore && !!onMore
+  if (loadedPages <= 1 && !canFetchMore) return null
+
   const from = page * PAGE_SIZE + 1
   const to = Math.min(total, from + PAGE_SIZE - 1)
+  const onLastLoadedPage = page >= loadedPages - 1
+  const atEnd = onLastLoadedPage && !canFetchMore
+
   const pagerBtn =
     'rounded-lg border border-edge-strong bg-surface px-3 py-1.5 text-xs font-medium text-ink-soft shadow-xs transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:border-edge disabled:text-muted-soft'
+
+  // Stepping off the last loaded page asks the server for the next one. The
+  // page index still advances: GridScreen clamps it to the rows that actually
+  // arrive, so a fetch returning nothing leaves the operator where they were.
+  const next = () => {
+    if (onLastLoadedPage && canFetchMore) onMore()
+    onPage(page + 1)
+  }
+
   return (
     <div className="flex items-center justify-between gap-3 border-t border-edge px-4 py-3">
       <span className="text-xs text-muted">
         Showing {from}–{to} of {total}
+        {canFetchMore && '+'}
       </span>
       <div className="flex items-center gap-2">
         <button type="button" disabled={page === 0} onClick={() => onPage(page - 1)} className={pagerBtn}>
           ‹ Previous
         </button>
         <span className="text-xs tabular-nums text-muted">
-          Page {page + 1} of {pageCount}
+          Page {page + 1} of {loadedPages}
+          {canFetchMore && '+'}
         </span>
-        <button
-          type="button"
-          disabled={page >= pageCount - 1}
-          onClick={() => onPage(page + 1)}
-          className={pagerBtn}
-        >
+        <button type="button" disabled={atEnd} onClick={next} className={pagerBtn}>
           Next ›
         </button>
       </div>
@@ -113,6 +139,8 @@ export default function GridScreen({
   emptyText = 'No records found.',
   buttonGroups = [],
   minWidth = 'min-w-[900px]',
+  hasMore = false,
+  onMore,
 }: GridScreenProps) {
   const [selected, setSelected] = useState(0)
   const [page, setPage] = useState(0)
@@ -207,7 +235,13 @@ export default function GridScreen({
             </tbody>
           </table>
         </div>
-        <Pager total={rows.length} page={currentPage} onPage={turnPage} />
+        <Pager
+          total={rows.length}
+          page={currentPage}
+          onPage={turnPage}
+          hasMore={hasMore}
+          onMore={onMore}
+        />
       </div>
 
       <div className="mt-5 grid gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">

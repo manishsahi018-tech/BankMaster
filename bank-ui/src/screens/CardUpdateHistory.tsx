@@ -41,15 +41,10 @@ export default function CardUpdateHistory({
       columns={COLUMNS}
       rows={rows}
       emptyText="No update history for this card."
+      hasMore={hasMore}
+      onMore={onMore}
       buttonGroups={[
         [
-          {
-            label: 'More',
-            onClick: ({ notify }) => {
-              if (hasMore && onMore) onMore()
-              else notify('warn', 'No more match found.')
-            },
-          },
           { label: 'Exit', kind: 'danger', alignEnd: true, onClick: () => onExit() },
         ],
       ]}

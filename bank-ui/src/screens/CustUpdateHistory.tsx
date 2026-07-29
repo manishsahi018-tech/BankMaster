@@ -51,15 +51,10 @@ export default function CustUpdateHistory({
       columns={COLUMNS}
       rows={rows}
       emptyText="No update history found."
+      hasMore={hasMore}
+      onMore={onMore}
       buttonGroups={[
         [
-          {
-            label: 'More',
-            onClick: ({ notify }) => {
-              if (hasMore && onMore) onMore()
-              else notify('warn', 'No more match found.')
-            },
-          },
           {
             // Legacy getCustDetails: opens the profile form in history mode
             // with the stcustlog snapshot (service 11 requestType 01).

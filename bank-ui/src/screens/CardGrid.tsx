@@ -55,18 +55,13 @@ export default function CardGrid({
       columns={COLUMNS}
       rows={result.rows}
       emptyText="No cards found."
+      hasMore={result.hasMore}
+      onMore={onMore}
       buttonGroups={[
         [
           { label: 'Card Detail', kind: 'primary', onClick: needRow(onDetail) },
           { label: 'Card / Pin History', onClick: needRow(onHistory) },
           { label: 'Update History', onClick: needRow(onUpdateHistory) },
-          {
-            label: 'More',
-            onClick: ({ notify }) => {
-              if (result.hasMore && onMore) onMore()
-              else notify('warn', 'No more match found.')
-            },
-          },
           { label: 'Exit', kind: 'danger', alignEnd: true, onClick: () => onExit() },
         ],
       ]}

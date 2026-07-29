@@ -42,15 +42,10 @@ export default function HeirsProxy({
       columns={COLUMNS}
       rows={rows}
       emptyText="No heirs or proxies recorded for this customer."
+      hasMore={hasMore}
+      onMore={onMore}
       buttonGroups={[
         [
-          {
-            label: 'More',
-            onClick: ({ notify }) => {
-              if (hasMore && onMore) onMore()
-              else notify('warn', 'No more match found.')
-            },
-          },
           { label: 'Exit', kind: 'danger', alignEnd: true, onClick: () => onExit() },
         ],
       ]}

@@ -51,15 +51,10 @@ export default function AcctUpdateHistory({
       columns={COLUMNS}
       rows={rows}
       emptyText="No update history found for this account."
+      hasMore={hasMore}
+      onMore={onMore}
       buttonGroups={[
         [
-          {
-            label: 'More',
-            onClick: ({ notify }) => {
-              if (hasMore && onMore) onMore()
-              else notify('warn', 'No more match found.')
-            },
-          },
           {
             // Legacy getAcctDetails: opens frmAccount in history mode with
             // the stacclog snapshot (service 33 requestType 01).

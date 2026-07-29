@@ -41,15 +41,10 @@ export default function Owners({
       columns={COLUMNS}
       rows={rows}
       emptyText="No owners recorded for this customer."
+      hasMore={hasMore}
+      onMore={onMore}
       buttonGroups={[
         [
-          {
-            label: 'More',
-            onClick: ({ notify }) => {
-              if (hasMore && onMore) onMore()
-              else notify('warn', 'No more match found.')
-            },
-          },
           { label: 'Exit', kind: 'danger', alignEnd: true, onClick: () => onExit() },
         ],
       ]}

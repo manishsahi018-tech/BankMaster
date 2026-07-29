@@ -91,16 +91,11 @@ export default function AccountInfo({
       columns={COLUMNS}
       rows={rows}
       emptyText="No accounts found for this customer."
+      hasMore={hasMore}
+      onMore={onMore}
       buttonGroups={[
         [
           { label: 'Enquiry', kind: 'primary', onClick: needRow((row) => onEnquiry(row)) },
-          {
-            label: 'More',
-            onClick: ({ notify }) => {
-              if (hasMore && onMore) onMore()
-              else notify('warn', 'No more match found.')
-            },
-          },
           { label: 'Ondemand Statement', disabled: !canView, title: canView ? undefined : noAuthority, onClick: stub('On-demand statement') },
           // Legacy cmdTransaction ("Transaction Inquiry") — frmTransaction.frm
           // speaks the ONLINE GATEWAY envelope (checkSum/branchName/Source/EOT,

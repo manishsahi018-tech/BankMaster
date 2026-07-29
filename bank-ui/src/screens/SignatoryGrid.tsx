@@ -36,6 +36,8 @@ export default function SignatoryGrid({
       columns={COLUMNS}
       rows={rows}
       emptyText="No signatories for this account."
+      hasMore={hasMore}
+      onMore={onMore}
       buttonGroups={[
         [
           {
@@ -47,13 +49,6 @@ export default function SignatoryGrid({
                 return
               }
               onDetail(row)
-            },
-          },
-          {
-            label: 'More',
-            onClick: ({ notify }) => {
-              if (hasMore && onMore) onMore()
-              else notify('warn', 'No more match found.')
             },
           },
           { label: 'Exit', kind: 'danger', alignEnd: true, onClick: () => onExit() },

@@ -86,15 +86,6 @@ export default function EnquirySelect({
     onHistory?.(selectedRow)
   }
 
-  // cmdMore_Click: the server reports whether a further page exists.
-  const handleMore = () => {
-    if (!hasMore || !onMore) {
-      toast.warn('No more match found.')
-      return
-    }
-    onMore()
-  }
-
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="mb-6">
@@ -194,7 +185,15 @@ export default function EnquirySelect({
             </tbody>
           </table>
         </div>
-        <Pager total={rows.length} page={currentPage} onPage={turnPage} />
+        {/* Next fetches the following server page when it runs past what is
+            loaded — the separate "More" button this replaced is gone. */}
+        <Pager
+          total={rows.length}
+          page={currentPage}
+          onPage={turnPage}
+          hasMore={hasMore}
+          onMore={onMore}
+        />
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
@@ -239,10 +238,6 @@ export default function EnquirySelect({
 
         <button type="button" onClick={handleHistory} className={secondaryBtn}>
           Customer Update History
-        </button>
-
-        <button type="button" onClick={handleMore} className={secondaryBtn}>
-          More
         </button>
 
         {SHOW_DORMANT_FACILITIES && (
