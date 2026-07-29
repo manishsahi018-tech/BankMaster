@@ -1,21 +1,24 @@
 import { useState } from 'react'
 import { Field, TextInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
+import { api } from '../api.ts'
 
 // Mirrors legacy frmMerchantStmt.frm ("Merchant Statement Printing", the
 // frmEnquiry cmdMerchant button, authority ~81).
 //
-// THE ROWS HAVE NO SOURCE IN THIS CODEBASE. The legacy screen does not talk to
-// cbcmssrv at all: Form_Load reads its own mrchdata.ini (HOST=ndev, PORT=8200)
-// and opens a second Winsock to the acquiring/POS system, which returns the
-// statement already rendered as 150-char print lines. QUERY-SPECS §21 records
-// the same verdict from the C sweep — role 81 is all that exists here; there is
-// no merchant Denodo view and no merchant table in the archival dictionary.
+// THE ROWS HAVE NO REAL SOURCE. The legacy screen does not talk to cbcmssrv at
+// all: Form_Load reads its own mrchdata.ini (HOST=ndev, PORT=8200) and opens a
+// second Winsock to the acquiring/POS system, which returns the statement
+// already rendered as 150-char print lines. QUERY-SPECS §21 records the same
+// verdict from the C sweep — role 81 is all that exists here; there is no
+// merchant Denodo view and no merchant table in the archival dictionary.
 //
-// So everything below is ported for real — the form, the validation order, the
-// month shift, the paging semantics, View and Print — and the single call that
-// would fetch the lines is stubbed at fetchStatement(). When the POS data
-// source is identified, that one function is the only thing that changes.
+// /api/merchant/statement is therefore backed by MockMerchantRepository, which
+// stands in for that external system rather than for a database. The rows are
+// synthetic; the banner below says so on screen. Everything else — the form,
+// the validation order, the month shift, the paging, View and Print — is ported
+// from the legacy and works unchanged once a real acquirer client replaces the
+// mock.
 
 const STMT_TYPES = [
   { key: 'item', code: '0', label: 'Itemwise' },
@@ -106,37 +109,33 @@ function formatMerchRequest(
   }
 }
 
-/** Raised by fetchStatement until a merchant data source exists. */
-class MerchantSourceUnavailable extends Error {
-  constructor() {
-    super(
-      'Merchant statements come from the acquiring/POS system (legacy mrchdata.ini ' +
-        'host:port), which has no data source in this deployment. The screen is ready — ' +
-        'wire fetchStatement() in MerchantStatement.tsx once that source is identified.',
-    )
-    this.name = 'MerchantSourceUnavailable'
-  }
-}
-
 /**
- * THE STUB SEAM. Returns the statement's print lines for one request page.
+ * Fetches the statement's print lines for one request page.
  *
- * The real contract, from parseMerchStmtMessage (:893) and generateMerchStmt
- * (:475): the server answers with status(3), remarks, lastRecCount(5),
- * noOfRecs(2), merchNo(16), completionFlag(1), filler(10), then noOfRecs *
- * 150-char lines from offset 140. The client re-sends with lastRecCount as the
- * next pointer while completionFlag <> "1", appending every line to the spool
- * file. Nothing is parsed out of a line — the POS system does the formatting,
- * pagination (Chr(12) page breaks) and totalling.
- *
- * Replace the throw with that loop and the rest of this screen works unchanged.
+ * The contract mirrors parseMerchStmtMessage (:893) and generateMerchStmt
+ * (:475): the reply carries lastRecCount, completionFlag and the page's
+ * 150-char lines. The caller re-sends with lastRecCount as the next pointer
+ * while completionFlag <> "1", appending every line. Nothing is parsed out of
+ * a line — the acquiring system does the formatting, pagination (Chr(12) page
+ * breaks) and totalling, exactly as the legacy's merchant server did.
  */
-async function fetchStatement(_req: MerchantRequest): Promise<{
+async function fetchStatement(req: MerchantRequest): Promise<{
   lines: string[]
   lastRecCount: string
   completionFlag: string
 }> {
-  throw new MerchantSourceUnavailable()
+  const page = await api.merchantStatement({
+    merchantNo: req.merchantNo.trim(),
+    stmtType: req.stmtType,
+    fromDate: req.fromDate,
+    toDate: req.toDate,
+    lastTransPtr: req.lastTransPtr,
+  })
+  return {
+    lines: page.lines,
+    lastRecCount: page.lastRecCount,
+    completionFlag: page.completionFlag,
+  }
 }
 
 // The legacy loops until completionFlag = "1" with no cap. MAX_PAGES bounds a
@@ -298,12 +297,12 @@ export default function MerchantStatement({ onExit }: { onExit: () => void }) {
           the screen, not a response to an action. Matches the HistoryBanner
           convention for state that stays true while the screen is open. */}
       <div className="mb-5 rounded-2xl border border-warn/40 bg-warn-soft px-4 py-3 text-sm text-warn sm:px-5">
-        <p className="font-semibold">Merchant data source not configured</p>
+        <p className="font-semibold">Demo data — no acquiring system connected</p>
         <p className="mt-0.5">
-          The form, validation and report layout below are ported from the legacy. Generate cannot
-          return rows until the acquiring/POS source (legacy <code>mrchdata.ini</code> host:port) is
-          available — there is no merchant view in Denodo and no merchant table in the archival
-          schema.
+          These statements are generated by <code>MockMerchantRepository</code>, which stands in for
+          the acquiring/POS system the legacy reaches over its own{' '}
+          <code>mrchdata.ini</code> host:port. There is no merchant view in Denodo and no merchant
+          table in the archival schema, so every figure below is synthetic.
         </p>
       </div>
 

@@ -199,6 +199,21 @@ export const api = {
   bmTransactionDetail: (accNo: string, refNo: string) =>
     get<GridRow>(`/api/accounts/${accNo}/transactions/${refNo}`),
 
+  /**
+   * One page of a merchant statement (legacy frmMerchantStmt, authority ~81).
+   * Unlike every other call here the rows are pre-rendered fixed-width print
+   * lines, not records — the acquiring/POS system formats and totals them.
+   * Page by sending back the previous reply's lastRecCount until
+   * completionFlag is "1".
+   */
+  merchantStatement: (params: {
+    merchantNo: string
+    stmtType: string
+    fromDate: string
+    toDate: string
+    lastTransPtr: string
+  }) => get<MerchantStatementPage>('/api/merchant/statement', params),
+
   signatoriesByAccount: (accNo: string, page = 0) =>
     get<Paged<GridRow>>(`/api/accounts/${accNo}/signatories`, { page: String(page) }),
 
@@ -256,6 +271,18 @@ export interface BlockedAmountBreakup {
   accNo: string
   blockedBal: string
   details: GridRow[]
+}
+
+/**
+ * One page of a merchant statement (§21). `lines` are the server's rendered
+ * 150-char print lines — a leading \f marks a printer page break. Nothing
+ * parses them; the client only spools what it is given.
+ */
+export interface MerchantStatementPage {
+  merchantNo: string
+  lines: string[]
+  lastRecCount: string
+  completionFlag: string
 }
 
 /** Card grid response — local card rows + DB #2 customer header (§13). */

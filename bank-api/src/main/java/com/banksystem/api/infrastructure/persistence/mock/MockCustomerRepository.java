@@ -29,13 +29,18 @@ import java.util.Optional;
 @Repository
 public class MockCustomerRepository implements CustomerRepository {
 
-    private static final List<CustomerSummary> RESULTS = List.of(
-            new CustomerSummary("0415741", "I", "1009326404", "6642791", "",
-                    "حسين", "سعيد", "كاظم", "سعيد عبدالوهاب ,", "0127", "01", "01"),
-            new CustomerSummary("0415742", "Q", "1004458821", "6641150", "24",
-                    "Ahmed", "Khalid", "Al-Otaibi", "Ahmed K. Al-Otaibi", "0001", "01", "02"),
-            new CustomerSummary("0417003", "C", "4030099812", "6607744", "",
-                    "", "", "", "Al Noor Trading Est.", "0127", "02", "01"));
+    /** The roster, projected into the search-result shape. */
+    private static final List<CustomerSummary> RESULTS = DemoData.CUSTOMERS.stream()
+            .map(c -> new CustomerSummary(c.custNo(), c.idType(), c.idNo(), c.telNo(), c.telExt(),
+                    firstOf(c.aFirstName(), c.eFirstName()),
+                    firstOf(c.aSecondName(), c.eSecondName()),
+                    firstOf(c.aLastName(), c.eLastName()),
+                    c.shortName(), c.branchCode(), c.mainCategory(), c.subCategory()))
+            .toList();
+
+    private static String firstOf(String preferred, String fallback) {
+        return preferred == null || preferred.isBlank() ? fallback : preferred;
+    }
 
     private static List<CustUpdateHistoryEntry> buildHistory() {
         var rows = new java.util.ArrayList<>(BASE_HISTORY);
@@ -70,18 +75,83 @@ public class MockCustomerRepository implements CustomerRepository {
         // routing stays exercisable), unknown ones borrow the first fixture's
         // shape. Every downstream read (profile, accounts, cards) resolves the
         // same way, so any number stays navigable end to end.
-        if (c.custNo() != null && !c.custNo().isBlank()) {
-            String padded = padCust(c.custNo());
-            CustomerSummary base = RESULTS.stream()
-                    .filter(r -> r.custNo().equals(padded))
-                    .findFirst()
-                    .orElse(RESULTS.get(0));
-            return SearchScan.complete(List.of(new CustomerSummary(padded, base.idType(), base.idNo(),
-                    base.telNo(), base.telExt(), base.firstName(), base.secondName(), base.lastName(),
-                    base.shortName(), base.branchCode(), base.mainCategoryCode(), base.subCategoryCode())));
+        if (notBlank(c.custNo())) {
+            DemoData.Customer cust = DemoData.customer(c.custNo());
+            return SearchScan.complete(List.of(new CustomerSummary(cust.custNo(), cust.idType(),
+                    cust.idNo(), cust.telNo(), cust.telExt(),
+                    firstOf(cust.aFirstName(), cust.eFirstName()),
+                    firstOf(cust.aSecondName(), cust.eSecondName()),
+                    firstOf(cust.aLastName(), cust.eLastName()),
+                    cust.shortName(), cust.branchCode(), cust.mainCategory(), cust.subCategory())));
+        }
+
+        // Every other criterion narrows the roster, so the demo's search screen
+        // behaves like a search rather than always returning everyone. The
+        // legacy's own precedence is ID, then CR, then phone, then category,
+        // then branch, then name (cbbranch.c processSearchRequest); each branch
+        // there is a distinct keyed scan, so they are not combined here either.
+        List<CustomerSummary> rows = RESULTS;
+        if (notBlank(c.idNo())) {
+            rows = filter(rows, r -> r.idNo().equals(c.idNo().trim()));
+        } else if (notBlank(c.crNo())) {
+            rows = filter(rows, r -> crNoOf(r.custNo()).equals(c.crNo().trim()));
+        } else if (notBlank(c.telNo())) {
+            rows = filter(rows, r -> r.telNo().equals(c.telNo().trim()));
+        } else if (notBlank(c.mobileNo())) {
+            rows = filter(rows, r -> DemoData.customer(r.custNo()).mobileNo().equals(c.mobileNo().trim()));
+        } else if (notBlank(c.mainCategoryCode()) || notBlank(c.subCategoryCode())) {
+            rows = filter(rows, r -> (!notBlank(c.mainCategoryCode())
+                            || r.mainCategoryCode().equals(code(c.mainCategoryCode())))
+                    && (!notBlank(c.subCategoryCode())
+                            || r.subCategoryCode().equals(code(c.subCategoryCode()))));
+        } else if (notBlank(c.branchCode())) {
+            rows = filter(rows, r -> r.branchCode().equals(code(c.branchCode())));
+        } else if (notBlank(c.firstName()) || notBlank(c.secondName()) || notBlank(c.lastName())) {
+            rows = filter(rows, r -> matchesName(r, c));
         }
         // Mock scans are instant, so they are never incomplete.
-        return SearchScan.complete(RESULTS);
+        return SearchScan.complete(rows);
+    }
+
+    /** Combo values arrive as "<code>-<description>"; the code is the key. */
+    private static String code(String value) {
+        String t = value.trim();
+        int dash = t.indexOf('-');
+        return dash > 0 ? t.substring(0, dash) : t;
+    }
+
+    private static String crNoOf(String custNo) {
+        return DemoData.customer(custNo).crNo();
+    }
+
+    /**
+     * Name search is a case-insensitive prefix match over both scripts, which
+     * is close enough to the legacy's partial-key ISGTEQ scan for a demo and
+     * lets an operator type "al" and see the Al-Otaibis.
+     */
+    private static boolean matchesName(CustomerSummary r, CustomerSearchCriteria c) {
+        DemoData.Customer cust = DemoData.customer(r.custNo());
+        return startsWith(c.firstName(), cust.aFirstName(), cust.eFirstName())
+                && startsWith(c.secondName(), cust.aSecondName(), cust.eSecondName())
+                && startsWith(c.lastName(), cust.aLastName(), cust.eLastName());
+    }
+
+    private static boolean startsWith(String typed, String arabic, String english) {
+        if (!notBlank(typed)) {
+            return true;
+        }
+        String t = typed.trim().toLowerCase(java.util.Locale.ROOT);
+        return arabic.toLowerCase(java.util.Locale.ROOT).startsWith(t)
+                || english.toLowerCase(java.util.Locale.ROOT).startsWith(t);
+    }
+
+    private static List<CustomerSummary> filter(
+            List<CustomerSummary> rows, java.util.function.Predicate<CustomerSummary> p) {
+        return rows.stream().filter(p).toList();
+    }
+
+    private static boolean notBlank(String s) {
+        return s != null && !s.isBlank();
     }
 
     @Override
@@ -172,25 +242,94 @@ public class MockCustomerRepository implements CustomerRepository {
 
     /** 7-char BM customer number, zero-padded — same form the JDBC side uses. */
     private static String padCust(String custNo) {
-        String trimmed = custNo.trim();
-        return "0".repeat(Math.max(0, 7 - trimmed.length())) + trimmed;
+        return DemoData.padCust(custNo);
     }
 
     /**
-     * Mock mode is a data stand-in, so EVERY customer number resolves: known
-     * fixtures return themselves, anything else borrows the first fixture's
-     * shape stamped with the number asked for. This mirrors search() and the
-     * account/card/heir/reference mocks, which all ignore the key too — so a
-     * made-up customer number stays navigable across every screen instead of
-     * 404-ing the moment you click Enquiry.
+     * Mock mode is a data stand-in, so EVERY customer number resolves. The
+     * three detailed fixtures return themselves; every other roster customer is
+     * stamped onto whichever fixture matches its profile route (individual
+     * Saudi / individual other / juristic), so the screens show that person's
+     * own names, ID, branch and contact details rather than Kadem's. Anything
+     * off the roster borrows the first fixture's shape under the number asked
+     * for, so a made-up number stays navigable instead of 404-ing on Enquiry.
      */
     private static CustomerProfile profileFor(String custNo) {
-        CustomerProfile known = PROFILES.get(padCust(custNo));
+        String padded = padCust(custNo);
+        CustomerProfile known = PROFILES.get(padded);
         if (known != null) {
             return known;
         }
-        CustomerProfile base = PROFILES.get(RESULTS.get(0).custNo());
-        return base.withIdentity(padCust(custNo), base.mobileNo(), base.eMail());
+        DemoData.Customer c = DemoData.customer(padded);
+        return stamp(template(c), c);
+    }
+
+    /** The fixture whose shape matches this customer's profile route. */
+    private static CustomerProfile template(DemoData.Customer c) {
+        if (c.juristic()) {
+            return PROFILES.get("0417003");
+        }
+        return PROFILES.get("I".equals(c.idType()) ? "0415741" : "0415742");
+    }
+
+    /**
+     * Copies a fixture, replacing only the fields that identify the customer.
+     * Everything else — the dates, flags, memos, address lines and the ID
+     * document list — is deliberately inherited, because the point is a
+     * plausible screen, not a second hand-written record per customer.
+     */
+    private static CustomerProfile stamp(CustomerProfile t, DemoData.Customer c) {
+        boolean juristic = c.juristic();
+        String domain = juristic ? slug(c.shortName()) : "";
+        String email = juristic
+                ? "info@" + ("demo".equals(domain) ? "cust" + c.custNo() : domain) + ".com.sa"
+                : slug(c.eFirstName() + "." + c.eLastName()).replace("-", ".") + "@example.com";
+        return new CustomerProfile(
+                c.custNo(), t.custType(), c.mainCategory(), c.subCategory(), c.branchCode(),
+                t.nationality(), t.preferredLang(), c.idType(), c.idNo(), t.idIssuedAt(),
+                t.idIssueDateH(), t.idIssueDateG(), t.idExpiryDateH(), t.idExpiryDateG(),
+                c.aFirstName(), c.aSecondName(), c.aThirdName(), c.aLastName(),
+                juristic ? "" : c.shortName(),
+                c.eFirstName(), c.eSecondName(), c.eThirdName(), c.eLastName(),
+                juristic ? "" : englishShortName(c),
+                juristic ? c.shortName() : "", juristic ? c.shortName() : "",
+                juristic ? c.shortName() : "", juristic ? c.shortName() : "",
+                c.crNo(), t.crIssuedAt(), t.crIssueDateH(), t.crIssueDateG(),
+                t.dobDateH(), t.dobDateG(), t.sexCode(), t.marritalStatus(), t.businessType(),
+                t.address1(), t.address2(), c.poBox(), c.city(), c.zipCode(), t.country(),
+                c.telNo(), t.telOffNo(), c.mobileNo(), email, c.openDate(), t.relationshipManager(),
+                t.altBranchCode(), t.titleCode(), t.certificateOfBirthNo(), t.referenceReqdFor(),
+                t.idDateType(), t.dobDateType(), t.noOfDependents(), t.residentStatus(),
+                t.addressType(), t.gprsNo(), t.unitNo(),
+                t.passportNo(), t.hafizaNo(), t.samaAuthNo(), t.familyRegnNo(), t.succDeedNo(),
+                t.telOffAreaCode(), t.telOffExt(), t.telHomeAreaCode(), c.telExt(),
+                t.faxAreaCode(), t.faxNo(), t.faxExt(), t.pagerNo(),
+                t.lastUpdateUser(), t.lastUpdateDateTime(), t.vipCode(), t.visaNo(),
+                t.aOrgName2(), t.eOrgName2(), t.orgAlphaSearchCode(), t.purposeOfAccount(),
+                t.govtShareHoldingPerc(), t.saudiShareHoldingPerc(), t.foreignShareHoldingPerc(),
+                t.crIssueDateType(), t.licenseNo(), t.approvalRefNo(),
+                List.of(new IdDocument(c.idType(), c.idNo(), t.idIssuedAt(), t.idDateType(), "",
+                        t.idIssueDateH(), t.idIssueDateG(), t.idExpiryDateH(), t.idExpiryDateG(), "")),
+                new OpenUpdateInfo(c.openDate(), c.branchCode(), "MIGRATION", "MIGRATION",
+                        t.openUpdate().lastUpdateDate(), c.branchCode(),
+                        t.openUpdate().updateMakerId(), t.openUpdate().updateSupervisorId()));
+    }
+
+    private static String englishShortName(DemoData.Customer c) {
+        return (c.eFirstName() + " " + c.eSecondName() + " " + c.eLastName())
+                .replaceAll("\\s+", " ").trim();
+    }
+
+    /**
+     * Latin domain slug for a demo email address. An Arabic-only company name
+     * has nothing left after stripping, which produced "info@.com.sa" — so the
+     * customer number is the fallback rather than an empty domain.
+     */
+    private static String slug(String name) {
+        String s = name.toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("(^-+|-+$)", "");
+        return s.isBlank() ? "demo" : s;
     }
 
     @Override
@@ -222,38 +361,107 @@ public class MockCustomerRepository implements CustomerRepository {
                 p.relationshipManager(), "Trade licence renewed 1994", "", "0"));
     }
 
+    // Related-party name pools. Kept small and obviously synthetic; the point is
+    // that two customers never show the same heirs, not that any name is real.
+    private static final List<String> ARABIC_NAMES = List.of(
+            "فاطمة حسين سعيد كاظم", "سالم عبدالله المري", "خالد محمد الدوسري",
+            "نورة سعيد الكاظم", "عبدالرحمن ناصر النور", "هند فهد القحطاني",
+            "ماجد سلطان الحربي", "لطيفة عبدالعزيز الزهراني", "بدر خالد العنزي",
+            "منى راشد الغامدي", "طارق يوسف البقمي", "أمل صالح السبيعي");
+
+    private static final List<String> ENGLISH_NAMES = List.of(
+            "Ibrahim A. Hakeem", "Faisal S. Al-Harbi", "Yousef M. Bin Salem",
+            "Layla H. Al-Amoudi", "Omar T. Baeshen", "Sara N. Al-Juhani",
+            "Tariq R. Al-Mutairi", "Huda K. Al-Sudairi", "Nabil W. Kassem",
+            "Reem A. Al-Faisal", "Hassan D. Al-Yami", "Dana S. Al-Rashid");
+
+    private static String partyName(String custNo, int salt, boolean arabic) {
+        return DemoData.pick(custNo, salt, arabic ? ARABIC_NAMES : ENGLISH_NAMES);
+    }
+
+    /** Synthetic 10-digit national/iqama number, stable per party. */
+    private static String partyId(String custNo, int salt) {
+        return String.valueOf(1000000000L + DemoData.seed(custNo, salt) % 899999999L);
+    }
+
     @Override
     public List<HeirEntry> heirs(String custNo) {
-        return List.of(
-                new HeirEntry("001", "H", "فاطمة حسين سعيد كاظم", "I", "1022334455",
-                        "", "", "", "1", "0127"),
-                new HeirEntry("002", "P", "سالم عبدالله المري", "I", "1033445566",
-                        "PRX-2214", "14290305", "20080312", "1", "0127"));
+        DemoData.Customer c = DemoData.customer(custNo);
+        if (c.juristic()) {
+            return List.of(); // heirs are an individual-customer concept
+        }
+        int count = 1 + DemoData.pick(c.custNo(), 11, 3); // 1-3
+        var rows = new java.util.ArrayList<HeirEntry>();
+        for (int i = 0; i < count; i++) {
+            boolean proxy = i % 2 == 1;
+            rows.add(new HeirEntry(String.format("%03d", i + 1), proxy ? "P" : "H",
+                    partyName(c.custNo(), 20 + i, true), "I", partyId(c.custNo(), 20 + i),
+                    proxy ? "PRX-" + (2000 + DemoData.pick(c.custNo(), 30 + i, 900)) : "",
+                    proxy ? "14290305" : "", proxy ? "20080312" : "",
+                    "1", c.branchCode()));
+        }
+        return List.copyOf(rows);
     }
 
     @Override
     public List<JointHolderEntry> jointHolders(String custNo) {
-        return List.of(
-                new JointHolderEntry("0415799", "نورة سعيد الكاظم", "I", "1044556677",
-                        "001", "0509876543", "20050614", "1", "0127"));
+        DemoData.Customer c = DemoData.customer(custNo);
+        if (c.juristic()) {
+            return List.of();
+        }
+        int count = DemoData.pick(c.custNo(), 12, 3); // 0-2, so some customers have none
+        var rows = new java.util.ArrayList<JointHolderEntry>();
+        for (int i = 0; i < count; i++) {
+            DemoData.Customer other =
+                    DemoData.CUSTOMERS.get(DemoData.pick(c.custNo(), 40 + i, DemoData.CUSTOMERS.size()));
+            rows.add(new JointHolderEntry(other.custNo(), other.shortName(), other.idType(),
+                    other.idNo(), "001", other.mobileNo(),
+                    DemoData.dateBack(600 + DemoData.pick(c.custNo(), 50 + i, 2000)),
+                    "1", c.branchCode()));
+        }
+        return List.copyOf(rows);
     }
 
     @Override
     public List<ReferenceEntry> references(String custNo) {
-        return List.of(
-                new ReferenceEntry("001", "L", "N", "خالد محمد الدوسري", "I", "1055667788",
-                        "1", "0127"),
-                new ReferenceEntry("002", "R", "M", "Ibrahim A. Hakeem", "Q", "2233445566",
-                        "1", "0001"));
+        DemoData.Customer c = DemoData.customer(custNo);
+        int count = 1 + DemoData.pick(c.custNo(), 13, 3); // 1-3
+        var rows = new java.util.ArrayList<ReferenceEntry>();
+        for (int i = 0; i < count; i++) {
+            boolean arabic = i % 2 == 0;
+            rows.add(new ReferenceEntry(String.format("%03d", i + 1),
+                    i % 2 == 0 ? "L" : "R", i % 2 == 0 ? "N" : "M",
+                    partyName(c.custNo(), 60 + i, arabic), arabic ? "I" : "Q",
+                    partyId(c.custNo(), 60 + i), "1", c.branchCode()));
+        }
+        return List.copyOf(rows);
     }
 
     @Override
     public List<OwnerEntry> owners(String custNo) {
-        return List.of(
-                new OwnerEntry("001", "O", "عبدالرحمن النور", "I", "1066778899",
-                        "", "060.00", "1", "0127"),
-                new OwnerEntry("002", "M", "Faisal S. Al-Harbi", "I", "1077889900",
-                        "Al Noor Holding", "040.00", "1", "0127"));
+        DemoData.Customer c = DemoData.customer(custNo);
+        if (!c.juristic()) {
+            return List.of(); // owners/management are a juristic concept
+        }
+        int count = 2 + DemoData.pick(c.custNo(), 14, 3); // 2-4
+        var rows = new java.util.ArrayList<OwnerEntry>();
+        // Shares are apportioned so the column sums to 100%, as a real
+        // shareholding register would.
+        int remaining = 100;
+        for (int i = 0; i < count; i++) {
+            int share = i == count - 1
+                    ? remaining
+                    : Math.max(5, Math.min(remaining - 5 * (count - i - 1),
+                            10 + DemoData.pick(c.custNo(), 70 + i, 40)));
+            remaining -= share;
+            boolean arabic = i % 2 == 0;
+            rows.add(new OwnerEntry(String.format("%03d", i + 1), i == 0 ? "O" : "M",
+                    partyName(c.custNo(), 70 + i, arabic), arabic ? "I" : "Q",
+                    partyId(c.custNo(), 70 + i),
+                    i == 0 ? "" : c.shortName() + " Holding",
+                    String.format("%03d.00", share), "1", c.branchCode()));
+        }
+        return List.copyOf(rows);
     }
 
     @Override
