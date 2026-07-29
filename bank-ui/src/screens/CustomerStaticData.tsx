@@ -101,10 +101,12 @@ export default function CustomerStaticData({
   onSearch,
   onAccounts,
   onCards,
+  onMerchant,
 }: {
   onSearch?: (criteria: SearchCriteria) => void
   onAccounts?: (custNo: string | null, accNo?: string, cardNo?: string) => void
   onCards?: (params: Record<string, string>) => void
+  onMerchant?: () => void
 }) {
   const [form, setForm] = useState(initialForm)
   // Validation messages now surface as the shared top-center toast. The shim
@@ -570,10 +572,18 @@ export default function CustomerStaticData({
                 ATM Cards
               </button>
 
+              {/* cmdMerchant — gated on ~81 alone (search.bas:89/257/432,
+                  globalFunctions.bas:4511). Needs no customer context: the
+                  merchant number is keyed on the statement form itself. */}
               <button
                 type="button"
                 disabled={!hasAuthority('~81')}
-                title="Merchant statement facilities"
+                onClick={() => onMerchant?.()}
+                title={
+                  hasAuthority('~81')
+                    ? 'Merchant statement facilities'
+                    : 'Requires merchant statement authority (~81)'
+                }
                 className={secondaryBtn}
               >
                 Merchant

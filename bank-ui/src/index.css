@@ -178,7 +178,32 @@ body {
   .print-sheet tr {
     break-inside: avoid;
   }
+  /* Server-rendered fixed-width reports (Merchant Statement). The legacy prints
+     the spool file with Printer.FontName = "Courier New (Arabic)", FontSize 10,
+     Orientation = vbPRORLandscape, and starts a new page on a leading Chr(12)
+     (frmMerchantStmt.frm cmdPrintStmt_Click). */
+  .print-sheet pre {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 9pt;
+    line-height: 1.25;
+    white-space: pre;
+    margin: 0;
+  }
+  .print-sheet .page-break {
+    break-before: page;
+  }
   @page {
     margin: 12mm;
   }
+}
+
+/* Landscape only for the sheets that need it; the table reports stay portrait. */
+@media print {
+  .print-sheet.print-landscape {
+    page: landscape-sheet;
+  }
+}
+@page landscape-sheet {
+  size: landscape;
+  margin: 12mm;
 }

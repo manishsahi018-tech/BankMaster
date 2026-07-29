@@ -42,6 +42,7 @@ import HeirsProxy from './screens/HeirsProxy.tsx'
 import JointHolders from './screens/JointHolders.tsx'
 import References from './screens/References.tsx'
 import Owners from './screens/Owners.tsx'
+import MerchantStatement from './screens/MerchantStatement.tsx'
 
 interface ScreenState {
   name: string
@@ -223,6 +224,9 @@ export default function App() {
               page: 0,
             }))
           }
+          // cmdMerchant opens frmMerchantStmt directly — no search or customer
+          // context is carried across; the merchant number is keyed there.
+          onMerchant={() => go('merchant')}
           onAccounts={(custNo, accNo, cardNo) => {
             if (!custNo && !accNo && !cardNo) {
               setError('Enter a customer no, account no or card number first.')
@@ -662,6 +666,9 @@ export default function App() {
       {screen.name === 'transfers' && (
         <TransferEnquiry account={screen.account!} onExit={() => go('accounts')} />
       )}
+
+      {/* cmdExit unloads frmMerchantStmt and returns to frmEnquiry. */}
+      {screen.name === 'merchant' && <MerchantStatement onExit={() => go('search')} />}
 
       {screen.name === 'cards' && screen.cardsResult && (
         <CardGrid

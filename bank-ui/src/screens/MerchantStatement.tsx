@@ -1,0 +1,486 @@
+import { useState } from 'react'
+import { Field, TextInput, Select } from '../components/fields.tsx'
+import { useToast } from '../components/Toast.tsx'
+
+// Mirrors legacy frmMerchantStmt.frm ("Merchant Statement Printing", the
+// frmEnquiry cmdMerchant button, authority ~81).
+//
+// THE ROWS HAVE NO SOURCE IN THIS CODEBASE. The legacy screen does not talk to
+// cbcmssrv at all: Form_Load reads its own mrchdata.ini (HOST=ndev, PORT=8200)
+// and opens a second Winsock to the acquiring/POS system, which returns the
+// statement already rendered as 150-char print lines. QUERY-SPECS §21 records
+// the same verdict from the C sweep — role 81 is all that exists here; there is
+// no merchant Denodo view and no merchant table in the archival dictionary.
+//
+// So everything below is ported for real — the form, the validation order, the
+// month shift, the paging semantics, View and Print — and the single call that
+// would fetch the lines is stubbed at fetchStatement(). When the POS data
+// source is identified, that one function is the only thing that changes.
+
+const STMT_TYPES = [
+  { key: 'item', code: '0', label: 'Itemwise' },
+  { key: 'group', code: '1', label: 'Groupwise' },
+  { key: 'chain', code: '2', label: 'Chain' },
+  { key: 'outlet', code: '3', label: 'Outlet' },
+] as const
+
+type StmtKey = (typeof STMT_TYPES)[number]['key']
+
+const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
+
+// Legacy message text, transcribed from the inline VB comments beside each
+// MsgBox in frmMerchantStmt.frm — the errXxx(UserLang) string table itself is
+// not in the source dump, so these comments are the only record of the wording.
+const MSG = {
+  // errSpaceAccNo — the legacy really does say "Account Number" on the merchant
+  // number field; it reuses the account message rather than a merchant one.
+  emptyMerchantNo: 'Account Number cannot be empty..Please enter',
+  invalidFromDate: 'From Date is blank or Incomplete From Date',
+  invalidToDate: 'To_Date is blank or Incomplete To Date',
+  invalidMerchantNo: 'Invalid Merchant no.. Please check and correct....',
+  noStatement: 'No report found for this merchant for the given period',
+} as const
+
+const isLeap = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0
+
+// globalFunctions.bas:4734 — lastDay("YYYYMM") -> "DD".
+function lastDay(yyyymm: string): string {
+  const days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  const month = Number(yyyymm.slice(4, 6))
+  if (month === 2 && isLeap(Number(yyyymm.slice(0, 4)))) return '29'
+  return String(days[month - 1]).padStart(2, '0')
+}
+
+// globalFunctions.bas:2902 — validDate("YYYYMMDD").
+function validDate(yyyymmdd: string): boolean {
+  const year = Number(yyyymmdd.slice(0, 4))
+  const month = Number(yyyymmdd.slice(4, 6))
+  const day = Number(yyyymmdd.slice(6, 8))
+  if (!year || month < 1 || month > 12 || day < 1) return false
+  return day <= Number(lastDay(yyyymmdd.slice(0, 6)))
+}
+
+// frmMerchantStmt.frm:988 — incMonth("YYYYMM") rolls 12 into January of YYYY+1.
+function incMonth(yyyymm: string): string {
+  const year = Number(yyyymm.slice(0, 4))
+  const month = Number(yyyymm.slice(4, 6))
+  if (month === 12) return `${year + 1}01`
+  return `${year}${String(month + 1).padStart(2, '0')}`
+}
+
+/**
+ * The request the legacy builds in formatMerchRequest (:863) — kept as a real
+ * function because it encodes the one piece of behaviour a reader would
+ * otherwise never guess: BOTH dates are pushed forward one month before they go
+ * on the wire. Typing Jan 2024 -> Mar 2024 requests 20240201 -> 20240430.
+ *
+ * userId is 10 chars and merchantNo 16, both LEFT-justified and blank-padded
+ * (Format masks "!@@@@@@@@@@" / "!@@@@@@@@@@@@@@@@"). The literal msgLen
+ * "00386" in the legacy never reaches the wire — lines 401-402 overwrite the
+ * first 6 bytes with the actual computed length — so it is not modelled here.
+ */
+interface MerchantRequest {
+  service: '00'
+  lastTransPtr: string
+  stmtType: string
+  merchantNo: string
+  fromDate: string
+  toDate: string
+}
+
+function formatMerchRequest(
+  merchantNo: string,
+  fromYyyymm: string,
+  toYyyymm: string,
+  stmtType: string,
+  lastTransPtr: string,
+): MerchantRequest {
+  const to = incMonth(toYyyymm)
+  return {
+    service: '00',
+    lastTransPtr,
+    stmtType,
+    merchantNo: merchantNo.trim().padEnd(16),
+    fromDate: `${incMonth(fromYyyymm)}01`,
+    toDate: `${to}${lastDay(to)}`,
+  }
+}
+
+/** Raised by fetchStatement until a merchant data source exists. */
+class MerchantSourceUnavailable extends Error {
+  constructor() {
+    super(
+      'Merchant statements come from the acquiring/POS system (legacy mrchdata.ini ' +
+        'host:port), which has no data source in this deployment. The screen is ready — ' +
+        'wire fetchStatement() in MerchantStatement.tsx once that source is identified.',
+    )
+    this.name = 'MerchantSourceUnavailable'
+  }
+}
+
+/**
+ * THE STUB SEAM. Returns the statement's print lines for one request page.
+ *
+ * The real contract, from parseMerchStmtMessage (:893) and generateMerchStmt
+ * (:475): the server answers with status(3), remarks, lastRecCount(5),
+ * noOfRecs(2), merchNo(16), completionFlag(1), filler(10), then noOfRecs *
+ * 150-char lines from offset 140. The client re-sends with lastRecCount as the
+ * next pointer while completionFlag <> "1", appending every line to the spool
+ * file. Nothing is parsed out of a line — the POS system does the formatting,
+ * pagination (Chr(12) page breaks) and totalling.
+ *
+ * Replace the throw with that loop and the rest of this screen works unchanged.
+ */
+async function fetchStatement(_req: MerchantRequest): Promise<{
+  lines: string[]
+  lastRecCount: string
+  completionFlag: string
+}> {
+  throw new MerchantSourceUnavailable()
+}
+
+// The legacy loops until completionFlag = "1" with no cap. MAX_PAGES bounds a
+// runaway server here for the same reason TransactionEnquiry does, and hitting
+// it is reported rather than silently truncating the statement.
+const MAX_PAGES = 500
+
+const initialForm = {
+  merchantNo: '',
+  fromMonth: '',
+  fromYear: '',
+  // Form_Load (:653-654) seeds only the To date with the current month/year.
+  toMonth: String(new Date().getMonth() + 1).padStart(2, '0'),
+  toYear: String(new Date().getFullYear()),
+}
+
+export default function MerchantStatement({ onExit }: { onExit: () => void }) {
+  const [form, setForm] = useState(initialForm)
+  const [stmtType, setStmtType] = useState<StmtKey>('item')
+  const [lines, setLines] = useState<string[] | null>(null)
+  const [showReport, setShowReport] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const toast = useToast()
+
+  // Legacy disableButton (:970): ANY edit re-enables Generate and kills View +
+  // Print, so a report can never be viewed or printed against a changed form.
+  const set = (key: keyof typeof initialForm, value: string) => {
+    setForm((f) => ({ ...f, [key]: value }))
+    setLines(null)
+    setShowReport(false)
+  }
+
+  const setType = (key: StmtKey) => {
+    setStmtType(key)
+    setLines(null)
+    setShowReport(false)
+  }
+
+  const digitsOnly = (value: string) => value.replace(/\D/g, '')
+
+  /**
+   * cmdGenerate_Click (:322) validation, in the legacy's own order.
+   *
+   * The length rules are deliberately asymmetric and are reproduced as-is:
+   *   Itemwise      leading digit -> exactly 12 or 16; leading "S1" -> exactly 8;
+   *                 any other non-numeric prefix -> unchecked
+   *   Chain/Outlet  exactly 16
+   *   Groupwise     no length check at all
+   */
+  const validate = (): string | null => {
+    const merchantNo = form.merchantNo.trim()
+    if (merchantNo.length === 0) return MSG.emptyMerchantNo
+    if (form.fromMonth === '' || form.fromYear === '') return MSG.invalidFromDate
+    if (form.toMonth === '' || form.toYear === '') return MSG.invalidToDate
+
+    if (stmtType === 'item') {
+      if (/^\d/.test(merchantNo)) {
+        if (merchantNo.length !== 12 && merchantNo.length !== 16) return MSG.invalidMerchantNo
+      } else if (merchantNo.slice(0, 2).toUpperCase() === 'S1') {
+        if (merchantNo.length !== 8) return MSG.invalidMerchantNo
+      }
+    } else if (stmtType === 'chain' || stmtType === 'outlet') {
+      if (merchantNo.length !== 16) return MSG.invalidMerchantNo
+    }
+
+    if (!validDate(`${form.fromYear}${form.fromMonth}01`)) return MSG.invalidFromDate
+    if (!validDate(`${form.toYear}${form.toMonth}01`)) return MSG.invalidToDate
+    return null
+  }
+
+  const handleGenerate = async () => {
+    const problem = validate()
+    if (problem) {
+      toast.warn(problem)
+      return
+    }
+
+    const code = STMT_TYPES.find((t) => t.key === stmtType)!.code
+    setGenerating(true)
+    try {
+      // generateMerchStmt (:475): page until completionFlag = "1", appending
+      // every batch's lines. lastTransPtr starts at "00000" (:396).
+      const all: string[] = []
+      let pointer = '00000'
+      let page = 0
+      let complete = false
+      while (!complete && page < MAX_PAGES) {
+        const req = formatMerchRequest(
+          form.merchantNo,
+          `${form.fromYear}${form.fromMonth}`,
+          `${form.toYear}${form.toMonth}`,
+          code,
+          pointer,
+        )
+        const r = await fetchStatement(req)
+        all.push(...r.lines)
+        pointer = r.lastRecCount
+        complete = r.completionFlag === '1'
+        page += 1
+      }
+
+      // reportFoundFlag (:486-488): no rows across every page is not an error,
+      // it is "no report found", and View/Print stay disabled.
+      if (all.length === 0) {
+        toast.warn(MSG.noStatement)
+        return
+      }
+      setLines(all)
+      setShowReport(true)
+      if (!complete) {
+        toast.warn(
+          `Stopped after ${all.length} lines — the server did not signal completion. ` +
+            'Narrow the period; the report below is partial.',
+        )
+      } else {
+        toast.success(`Statement generated — ${all.length} lines.`)
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const hasReport = lines !== null && lines.length > 0
+  const typeLabel = STMT_TYPES.find((t) => t.key === stmtType)!.label
+  // What actually went on the wire, shown so the month shift is visible rather
+  // than silent. Only meaningful once both halves of a date are filled in.
+  const wire =
+    form.fromMonth && form.fromYear && form.toMonth && form.toYear
+      ? formatMerchRequest(
+          form.merchantNo,
+          `${form.fromYear}${form.fromMonth}`,
+          `${form.toYear}${form.toMonth}`,
+          STMT_TYPES.find((t) => t.key === stmtType)!.code,
+          '00000',
+        )
+      : null
+
+  const secondaryBtn =
+    'rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft ' +
+    'shadow-xs transition-colors hover:bg-surface-muted ' +
+    'disabled:cursor-not-allowed disabled:border-edge disabled:bg-surface-muted disabled:text-muted-soft'
+
+  return (
+    <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      <div className="mb-6">
+        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">Merchant</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
+          Merchant Statement Printing
+        </h1>
+        <p className="mt-1 text-sm text-muted">
+          Legacy frmMerchantStmt — authority ~81. Served by the acquiring/POS system, not by the
+          customer-static-data host.
+        </p>
+      </div>
+
+      {/* Persistent status banner, not a toast: this is a standing condition of
+          the screen, not a response to an action. Matches the HistoryBanner
+          convention for state that stays true while the screen is open. */}
+      <div className="mb-5 rounded-2xl border border-warn/40 bg-warn-soft px-4 py-3 text-sm text-warn sm:px-5">
+        <p className="font-semibold">Merchant data source not configured</p>
+        <p className="mt-0.5">
+          The form, validation and report layout below are ported from the legacy. Generate cannot
+          return rows until the acquiring/POS source (legacy <code>mrchdata.ini</code> host:port) is
+          available — there is no merchant view in Denodo and no merchant table in the archival
+          schema.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-edge bg-surface p-5 shadow-sm sm:p-6">
+        <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Merchant Number" htmlFor="merchantNo">
+            <TextInput
+              id="merchantNo"
+              value={form.merchantNo}
+              maxLength={16}
+              onChange={(e) => set('merchantNo', e.target.value)}
+              placeholder="12 or 16 digits, or S1 + 6"
+            />
+          </Field>
+
+          {/* Month + year sit side by side as they do on the legacy form. Both
+              controls carry w-full from the shared field styles, so the widths
+              live on wrappers with shrink-0 — otherwise the year input squeezes
+              the month select until its value is clipped. */}
+          <Field label="From Date (month / year)" htmlFor="fromMonth">
+            <div className="flex gap-2">
+              <div className="w-24 shrink-0">
+                <Select
+                  id="fromMonth"
+                  options={MONTHS}
+                  value={form.fromMonth}
+                  placeholder="MM"
+                  onChange={(e) => set('fromMonth', e.target.value)}
+                />
+              </div>
+              <div className="w-28 shrink-0">
+                <TextInput
+                  aria-label="From year"
+                  inputMode="numeric"
+                  value={form.fromYear}
+                  maxLength={4}
+                  onChange={(e) => set('fromYear', digitsOnly(e.target.value))}
+                  placeholder="YYYY"
+                />
+              </div>
+            </div>
+          </Field>
+
+          <Field label="To Date (month / year)" htmlFor="toMonth">
+            <div className="flex gap-2">
+              <div className="w-24 shrink-0">
+                <Select
+                  id="toMonth"
+                  options={MONTHS}
+                  value={form.toMonth}
+                  placeholder="MM"
+                  onChange={(e) => set('toMonth', e.target.value)}
+                />
+              </div>
+              <div className="w-28 shrink-0">
+                <TextInput
+                  aria-label="To year"
+                  inputMode="numeric"
+                  value={form.toYear}
+                  maxLength={4}
+                  onChange={(e) => set('toYear', digitsOnly(e.target.value))}
+                  placeholder="YYYY"
+                />
+              </div>
+            </div>
+          </Field>
+        </div>
+
+        {/* frameReportType — four mutually exclusive options, Itemwise default. */}
+        <fieldset className="mt-5 border-t border-edge-soft pt-4">
+          <legend className="sr-only">Statement Type</legend>
+          <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-soft">
+            Statement Type
+          </p>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            {STMT_TYPES.map((t) => (
+              <label key={t.key} className="flex items-center gap-2 text-sm text-ink-soft">
+                <input
+                  type="radio"
+                  name="stmtType"
+                  value={t.key}
+                  checked={stmtType === t.key}
+                  onChange={() => setType(t.key)}
+                  className="h-4 w-4 accent-primary"
+                />
+                {t.label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        {/* The month shift is invisible in the legacy — the operator types one
+            period and a different one is requested. Surfacing it costs nothing
+            and stops it being rediscovered as a bug later. */}
+        {wire && (
+          <p className="mt-4 text-xs text-muted">
+            Requests <span className="font-medium tabular-nums text-ink-soft">{wire.fromDate}</span>{' '}
+            to <span className="font-medium tabular-nums text-ink-soft">{wire.toDate}</span> — the
+            legacy advances both dates one month (formatMerchRequest).
+          </p>
+        )}
+
+        <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-edge-soft pt-4">
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={generating}
+            className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong disabled:cursor-not-allowed disabled:bg-faint"
+          >
+            {generating ? 'Generating…' : 'Generate Statement'}
+          </button>
+
+          {/* Legacy View shells WordPad on c:\merchStmt\mrchstmt.prt; in the
+              browser the equivalent is revealing the spooled text inline. */}
+          <button
+            type="button"
+            disabled={!hasReport}
+            onClick={() => setShowReport((v) => !v)}
+            title={hasReport ? undefined : 'Generate a statement first'}
+            className={secondaryBtn}
+          >
+            {showReport ? 'Hide Statement' : 'View Statement'}
+          </button>
+
+          <button
+            type="button"
+            disabled={!hasReport}
+            onClick={() => window.print()}
+            title={hasReport ? undefined : 'Generate a statement first'}
+            className={secondaryBtn}
+          >
+            Print Statement
+          </button>
+
+          <button
+            type="button"
+            onClick={onExit}
+            className="ml-auto rounded-lg border border-danger/30 bg-surface px-4 py-2.5 text-sm font-medium text-danger shadow-xs transition-colors hover:bg-danger-soft"
+          >
+            Exit
+          </button>
+        </div>
+      </div>
+
+      {/* The spooled report. Server-rendered fixed-width lines, so it is shown
+          as-is in a monospace block — there are no columns to parse out. */}
+      {hasReport && showReport && (
+        <section className="mt-5 overflow-x-auto rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
+          <pre className="whitespace-pre font-mono text-xs leading-5 text-ink">
+            {lines!.join('\n')}
+          </pre>
+        </section>
+      )}
+
+      {/* Print-only sheet. cmdPrintStmt_Click prints the spool file in Courier
+          New 10pt landscape, treating Chr(12) at the start of a line as a page
+          break — reproduced by @page landscape and a break-before on those
+          lines. */}
+      {hasReport && (
+        <section className="print-sheet print-landscape" aria-hidden="true">
+          <h1>
+            Merchant Statement — {form.merchantNo.trim()} ({typeLabel})
+          </h1>
+          <p className="print-meta">
+            Period {wire?.fromDate} to {wire?.toDate} · Printed{' '}
+            {new Date().toLocaleString('en-GB')}
+          </p>
+          <pre>
+            {lines!.map((line, i) => (
+              <span key={i} className={line.startsWith('\f') ? 'page-break' : undefined}>
+                {line.replace(/^\f/, '')}
+                {'\n'}
+              </span>
+            ))}
+          </pre>
+        </section>
+      )}
+    </main>
+  )
+}
