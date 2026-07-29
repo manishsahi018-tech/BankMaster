@@ -287,7 +287,7 @@ public class MockAccountRepository implements AccountRepository {
         AccountSummary a = summary(accNo);
         long blocked = Math.round(Double.parseDouble(a.blockedBalance()) * 100);
         if (blocked == 0) {
-            return new BlockedAmountBreakup(accNo, "0.000", List.of());
+            return BlockedAmountBreakup.complete(accNo, "0.000", List.of());
         }
         // Splits the account's blocked balance across the three product types
         // the legacy breakup shows, so the parts add up to the header figure.
@@ -308,7 +308,8 @@ public class MockAccountRepository implements AccountRepository {
                     DemoData.amount2(part) + "0",
                     i == 0 ? "" : String.valueOf(540 + DemoData.pick(accNo, 40 + i, 400))));
         }
-        return new BlockedAmountBreakup(accNo, DemoData.amount2(blocked) + "0", List.copyOf(items));
+        return BlockedAmountBreakup.complete(accNo, DemoData.amount2(blocked) + "0",
+                List.copyOf(items));
     }
 
     private static final List<String> SAMA_REASONS = List.of(

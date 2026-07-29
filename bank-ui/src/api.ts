@@ -271,6 +271,15 @@ export interface BlockedAmountBreakup {
   accNo: string
   blockedBal: string
   details: GridRow[]
+  /**
+   * Legacy view names whose query failed (§16 sources — bkd0data and ccarrblk
+   * are absent from Denodo today). The header total comes from gld0data and is
+   * read independently of the rows, so when a source drops out the total
+   * exceeds what is listed.
+   */
+  unavailableSources?: string[]
+  /** True when the legacy 31-row cap stopped further rows. */
+  truncated?: boolean
 }
 
 /**

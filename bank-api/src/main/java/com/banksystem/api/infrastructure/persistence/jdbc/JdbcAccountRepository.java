@@ -898,6 +898,9 @@ public class JdbcAccountRepository implements AccountRepository {
         }
 
         List<BlockedAmountItem> items = new ArrayList<>();
+        // Sources whose query failed, so the screen can account for the gap
+        // between the gld0data header total and the rows it managed to list.
+        List<String> unavailable = new ArrayList<>();
 
         // 1. gld0data — BM loans blocking this settlement account ('B');
         //    productNo = matchingLoan when present, else the loan account.
@@ -912,7 +915,7 @@ public class JdbcAccountRepository implements AccountRepository {
         //    The customer comes from the account number itself — gld0data has no
         //    custNo field in the legacy record; the archival column is an ETL
         //    addition and is deliberately not used.
-        blockedSource(items, "gld0data", """
+        blockedSource(items, unavailable, "gld0data", """
                 SELECT accNo AS productNo, matchingLoan, blockedArrear2 AS blockedAmt
                 FROM   gld0data
                 WHERE  SUBSTR(accNo, 6, 7) = SUBSTR(:accNo, 6, 7)
@@ -933,7 +936,7 @@ public class JdbcAccountRepository implements AccountRepository {
         //    The C displays it through bmAccToActual (cbblock.c:357), which
         //    turns the 13-char Memo(5)+Loan(8) value into the 14-char form
         //    with a '0' inserted — actualAccOf reproduces that exactly.
-        blockedSource(items, "aad0data", """
+        blockedSource(items, unavailable, "aad0data", """
                 SELECT FinoneAlcoAccNo AS productNo, loanBlockBal AS blockedAmt
                 FROM   aad0data
                 WHERE  settlementAccNo = :accNo
@@ -947,7 +950,7 @@ public class JdbcAccountRepository implements AccountRepository {
         //    workbook; column names (refNo, amount, userId) assumed from the
         //    spec's source table, and the legacy 13-char BM account key is
         //    kept (no workbook evidence of a converted form).
-        blockedSource(items, "bkd0data", """
+        blockedSource(items, unavailable, "bkd0data", """
                 SELECT refNo AS productNo, amount AS blockedAmt, userId
                 FROM   bkd0data
                 WHERE  accNo = :bmAccNo
@@ -997,6 +1000,7 @@ public class JdbcAccountRepository implements AccountRepository {
                     }
                 }
             } catch (DataAccessException e) {
+                unavailable.add("ccarrblk");
                 log.warn("Blocked-amount source ccarrblk unavailable (schema gap?): {}",
                         e.getMessage());
             }
@@ -1007,7 +1011,7 @@ public class JdbcAccountRepository implements AccountRepository {
         //    non-zero/ABS handling stays in Java. The blocking user gets the
         //    requestBranch overlay when it starts with a digit
         //    (cbblock.c:482-484).
-        blockedSource(items, "staccblk", """
+        blockedSource(items, unavailable, "staccblk", """
                 SELECT bmAccNo AS productNo, blockedAmt, lastBlockedUserId, requestBranch
                 FROM   staccblk
                 WHERE  bmAccNo = :displayAccNo
@@ -1018,7 +1022,8 @@ public class JdbcAccountRepository implements AccountRepository {
                         overlayBranch(str(row, "lastBlockedUserId"),
                                 str(row, "requestBranch"))));
 
-        return new BlockedAmountBreakup(accNo, total, items);
+        return new BlockedAmountBreakup(accNo, total, items,
+                List.copyOf(unavailable), items.size() >= MAX_BLOCKED_ITEMS);
     }
 
     /**
@@ -1027,8 +1032,8 @@ public class JdbcAccountRepository implements AccountRepository {
      * bkd0data / ccarrblk views absent from the archival schema) only logs
      * a warning so the other sources still contribute.
      */
-    private void blockedSource(List<BlockedAmountItem> items, String source, String sql,
-            Map<String, String> params,
+    private void blockedSource(List<BlockedAmountItem> items, List<String> unavailable,
+            String source, String sql, Map<String, String> params,
             java.util.function.Function<Map<String, Object>, BlockedAmountItem> mapper) {
         if (items.size() >= MAX_BLOCKED_ITEMS) {
             return;
@@ -1047,6 +1052,7 @@ public class JdbcAccountRepository implements AccountRepository {
                         amount, item.userIdBlocked()));
             }
         } catch (DataAccessException e) {
+            unavailable.add(source);
             log.warn("Blocked-amount source {} unavailable (schema gap?): {}",
                     source, e.getMessage());
         }
