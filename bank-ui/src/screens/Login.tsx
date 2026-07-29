@@ -6,26 +6,12 @@
 // ~6 ~3 ~99 ~8). The branch-match gate (:490) is dropped: the web client
 // has no local statdata.ini branch; the branch comes from the profile.
 // Password lifecycle statuses (101/106/107) are gone — LDAP owns them.
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { api } from '../api.ts'
 import { applySession, setToken } from '../session.ts'
 import { initCodes } from '../codes.ts'
 
 const ALLOWED_AT_LOGIN = ['~00', '~01', '~02', '~4', '~6', '~3', '~99', '~8']
-
-function Clock() {
-  const [now, setNow] = useState(() => new Date())
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 500)
-    return () => clearInterval(t)
-  }, [])
-  return (
-    <div className="flex items-center gap-4 text-xs text-muted">
-      <span>{now.toLocaleDateString('en-GB')}</span>
-      <span className="tabular-nums">{now.toLocaleTimeString('en-GB')}</span>
-    </div>
-  )
-}
 
 export default function Login({ onLogin }: { onLogin: () => void }) {
   const [userId, setUserId] = useState('')
@@ -75,15 +61,14 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
         onSubmit={submit}
         className="relative w-full max-w-md rounded-2xl border border-edge bg-surface p-8 shadow-sm"
       >
-        <div className="mb-6 flex items-start justify-between">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-strong text-white shadow-sm">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-6 w-6">
-              <path d="M3 9.5 12 4l9 5.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M5 10v7M9.5 10v7M14.5 10v7M19 10v7" strokeLinecap="round" />
-              <path d="M3 20h18" strokeLinecap="round" />
-            </svg>
-          </div>
-          <Clock />
+        {/* The date/time readout that sat opposite the logo is gone, so this is
+            no longer a two-column row — just the mark. */}
+        <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-strong text-white shadow-sm">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-6 w-6">
+            <path d="M3 9.5 12 4l9 5.5" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M5 10v7M9.5 10v7M14.5 10v7M19 10v7" strokeLinecap="round" />
+            <path d="M3 20h18" strokeLinecap="round" />
+          </svg>
         </div>
 
         <h1 className="text-lg font-semibold tracking-wide text-ink">STATIC DATA MAINTENANCE</h1>
