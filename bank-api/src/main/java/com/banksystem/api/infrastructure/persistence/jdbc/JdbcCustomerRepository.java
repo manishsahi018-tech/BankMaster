@@ -1042,8 +1042,14 @@ public class JdbcCustomerRepository implements CustomerRepository {
     public List<String> requiredDocuments(String custNo) {
         // Customer's SAMA category from stcusttab, then the required document
         // codes from stctltabDC (documnetNo1..20) for that main+sub category
-        // (frmDocuments "Documents List for Sub Category"). The document names
-        // are a static UI list, as in the legacy client.
+        // (frmDocuments "Documents List for Sub Category").
+        //
+        // Codes only, because there is nothing here to resolve them against:
+        // stctltabDC carries the mapping and no name columns, and the legacy
+        // looked names up in a documentinfo table in the client's LOCAL Access
+        // database (frmDocuments.frm:337), which has no archival counterpart.
+        // The UI therefore holds the names; note that its map is incomplete —
+        // see the comment on DOCUMENT_NAMES in EssentialDocuments.tsx.
         List<String[]> cat = jdbc.query("""
                 SELECT samaMainCategory, samaSubCategory
                 FROM   stcusttab

@@ -3,10 +3,24 @@ import type { Customer } from '../types.ts'
 
 // Mirrors legacy frmDocuments.frm ("Essential Documents") as a READ-ONLY
 // enquiry: the documents REQUIRED for the customer's SAMA sub-category, from
-// stctltabDC (api.requiredDocuments). Document names are a static client list,
-// as in the legacy VB6. The legacy "documents submitted" tracking is create-time
-// and not part of the archival enquiry data.
-
+// stctltabDC (api.requiredDocuments). The legacy "documents submitted" tracking
+// is create-time and not part of the archival enquiry data.
+//
+// NAMES ARE INCOMPLETE, and the map below is not the legacy's design.
+// frmDocuments.frm:337-347 resolved every code against a documentinfo table in
+// the client's local Access database —
+//
+//     select * from documentinfo where documentcode = '<code>'
+//     tmpStr = tCode & "-" & rs("englishname")   ' or arabicname
+//
+// — so the legacy carried the FULL set, client-side but data-driven. That table
+// has no archival counterpart (stctltabDC is only the category-to-codes
+// mapping, with no name columns) and it is not in this repo; only the compiled
+// statdata.exe is. These seven entries were transcribed from screenshots and
+// cover the mock's fixture codes exactly, which is why mock mode always looked
+// complete and real stctltabDC data shows bare codes like 028, 030, 032.
+//
+// Fill this from the office Access DB's documentinfo table when it is to hand.
 const DOCUMENT_NAMES: Record<string, string> = {
   '001': 'Signature of a/c holder',
   '002': 'Thump Imprint/Personal Stamp',
@@ -17,8 +31,12 @@ const DOCUMENT_NAMES: Record<string, string> = {
   '074': 'Family Record',
 }
 
+// The legacy did not show a bare code either: a code missing from documentinfo
+// rendered as "<code>-Not defined in local" (frmDocuments.frm:347). Saying so
+// beats a naked number, which reads as a broken screen rather than a name this
+// deployment cannot resolve.
 const docLabel = (code: string) =>
-  DOCUMENT_NAMES[code] ? `${code} — ${DOCUMENT_NAMES[code]}` : code
+  DOCUMENT_NAMES[code] ? `${code} — ${DOCUMENT_NAMES[code]}` : `${code} — Not defined in local`
 
 export default function EssentialDocuments({
   customer,
