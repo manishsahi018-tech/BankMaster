@@ -257,6 +257,7 @@ export default function App() {
           // cmdMerchant opens frmMerchantStmt directly — no search or customer
           // context is carried across; the merchant number is keyed there.
           onMerchant={() => go('merchant')}
+          onDeletedAcctStatement={() => go('deletedAcctStatement')}
           onAccounts={(custNo, accNo, cardNo) => {
             if (!custNo && !accNo && !cardNo) {
               setError('Enter a customer no, account no or card number first.')
@@ -760,6 +761,12 @@ export default function App() {
       {/* cmdExit unloads frmHistStmt and returns to the account grid. */}
       {screen.name === 'histStatement' && (
         <HistoricalStatement account={screen.account!} onExit={() => go('accounts')} />
+      )}
+
+      {/* The same screen on the legacy's tag = "D" route: no account context,
+          the number is typed, and Exit returns to search rather than a grid. */}
+      {screen.name === 'deletedAcctStatement' && (
+        <HistoricalStatement deletedAccountRoute onExit={() => go('search')} />
       )}
 
       {/* The two online-gateway screens. Both carry the customer's name from

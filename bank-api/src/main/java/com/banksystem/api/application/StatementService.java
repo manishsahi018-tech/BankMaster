@@ -2,6 +2,7 @@ package com.banksystem.api.application;
 
 import com.banksystem.api.domain.model.EnquiryUser;
 import com.banksystem.api.domain.model.HistoricalStatement;
+import com.banksystem.api.domain.repository.AccountRepository;
 import com.banksystem.api.domain.repository.StatementRepository;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -42,21 +43,38 @@ public class StatementService {
     private static final String ERR_STAFF_BRANCH =
             "Not authorized to print the statement for the staff branch";
 
-    private final StatementRepository statements;
+    /**
+     * errHistStmtNotAllowed (globalVaribles.bas:7358), verbatim — the legacy
+     * spells out why the refusal is not a permission problem.
+     */
+    private static final String ERR_ACCOUNT_STILL_EXISTS =
+            "9031-Account number exists in Bankmaster; This option is avaiable to generate "
+                    + "historical statements for deleted accounts; hence, the historical "
+                    + "statements cannot be produced through this route";
 
-    public StatementService(StatementRepository statements) {
+    private final StatementRepository statements;
+    private final AccountRepository accounts;
+
+    public StatementService(StatementRepository statements, AccountRepository accounts) {
         this.statements = statements;
+        this.accounts = accounts;
     }
 
     /**
-     * @param branchCode    the account's GL branch, which the legacy copies from
-     *                      the grid into txtBranchCode (frmAccount.frm:853)
-     * @param fromYearMonth YYYYMM inclusive
-     * @param toYearMonth   YYYYMM inclusive
+     * @param branchCode     the account's GL branch, which the legacy copies from
+     *                       the grid into txtBranchCode (frmAccount.frm:853)
+     * @param fromYearMonth  YYYYMM inclusive
+     * @param toYearMonth    YYYYMM inclusive
+     * @param deletedAccount the DELETED-ACCOUNT route — the legacy's
+     *                       {@code frmHistStmt.tag = "D"}, opened from the search
+     *                       screen rather than the account grid
+     *                       (frmCustomerSearch.frm:1177). It differs in exactly
+     *                       two ways, both handled below: the account must NOT
+     *                       still exist, and the staff-branch rule is skipped.
      */
     public List<HistoricalStatement> historicalStatements(
             String accNo, String branchCode, String fromYearMonth, String toYearMonth,
-            EnquiryUser caller) {
+            boolean deletedAccount, EnquiryUser caller) {
 
         String branch = trim(branchCode);
         String account = trim(accNo);
@@ -73,10 +91,19 @@ public class StatementService {
         requireYearMonth(fromYearMonth, ERR_FROM_YEAR, ERR_FROM_MONTH);
         requireYearMonth(toYearMonth, ERR_TO_YEAR, ERR_TO_MONTH);
 
-        // frmHistStmt.frm:781-786. The legacy skips this for the deleted-account
-        // route (tag = "D"); that route is not reachable in the enquiry-only
-        // build, so the check is unconditional here.
-        if (STAFF_BRANCH.equals(branch) && !STAFF_BRANCH.equals(caller.branchCode())) {
+        if (deletedAccount) {
+            // frmHistStmt.frm:730-751 — the route sends service 21 for the typed
+            // account and refuses if it comes back with ANY rows. The point is
+            // not permission: an account that still exists has a live statement
+            // path through the account grid, and this route exists only for ones
+            // that no longer do.
+            if (accounts.accountByNumber(account).isPresent()) {
+                throw new BadRequestException(ERR_ACCOUNT_STILL_EXISTS);
+            }
+        } else if (STAFF_BRANCH.equals(branch) && !STAFF_BRANCH.equals(caller.branchCode())) {
+            // frmHistStmt.frm:782 guards this with `tag <> "D"` — the staff-branch
+            // rule keys on the account's branch as the GRID reported it, and the
+            // deleted-account route has no grid row to have reported one.
             throw new BadRequestException(ERR_STAFF_BRANCH);
         }
 

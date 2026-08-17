@@ -46,6 +46,7 @@ public class StatementController {
             @RequestParam String branchCode,
             @RequestParam String fromYearMonth,
             @RequestParam String toYearMonth,
+            @RequestParam(defaultValue = "false") boolean deletedAccount,
             HttpServletRequest request) {
 
         EnquiryUser user = caller.resolve(request);
@@ -56,7 +57,16 @@ public class StatementController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "Historical statements require account enquiry authority (~60, ~61 or ~62)");
         }
+        // The deleted-account route carries its own authority. The legacy gates
+        // it by ENABLING the account-number box only for ~87
+        // (frmCustomerSearch.frm:1180) — without it the operator cannot type an
+        // account, so the route is unusable. A disabled input is not a control,
+        // so the rule is enforced here as well as reflected on the screen.
+        if (deletedAccount && !user.has("~87")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Historical statements for deleted accounts require authority ~87");
+        }
         return statements.historicalStatements(
-                accNo, branchCode, fromYearMonth, toYearMonth, user);
+                accNo, branchCode, fromYearMonth, toYearMonth, deletedAccount, user);
     }
 }

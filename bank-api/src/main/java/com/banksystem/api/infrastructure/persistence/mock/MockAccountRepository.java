@@ -115,6 +115,14 @@ public class MockAccountRepository implements AccountRepository {
         if (wanted.length() < 12) {
             return Optional.empty();
         }
+        // ...with one carve-out, or the deleted-account statement route could
+        // never succeed here: it exists precisely for accounts that DO NOT
+        // resolve, and a fixture that resolves everything refuses every request
+        // with "account exists in Bankmaster". Numbers ending 9999 stand in for
+        // closed-and-purged accounts.
+        if (wanted.endsWith("9999")) {
+            return Optional.empty();
+        }
         return Optional.of(summary(wanted));
     }
 

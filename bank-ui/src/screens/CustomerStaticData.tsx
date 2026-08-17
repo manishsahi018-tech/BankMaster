@@ -33,10 +33,11 @@ const MAX_LEN = {
 // this flag so they can be resurrected if a later version enables them.
 const SHOW_DORMANT_FACILITIES = false
 
-// The whole "Enquiries & Services" section (Historical Statement, and the dormant
-// facilities above) is hidden for now — none of its actions are wired yet. Flip
-// to true to bring it back with its original per-button authority gating.
-const SHOW_ENQUIRIES_SERVICES = false
+// The "Enquiries & Services" section. Historical Statement — Deleted A/c is
+// wired (legacy cmdHistoricalStmt, frmCustomerSearch.frm:1177); the dormant
+// facilities beside it are still behind SHOW_DORMANT_FACILITIES, so the section
+// shows only when the operator has ~87 or that flag is on.
+const SHOW_ENQUIRIES_SERVICES = true
 
 const secondaryBtn =
   'rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft ' +
@@ -102,11 +103,13 @@ export default function CustomerStaticData({
   onAccounts,
   onCards,
   onMerchant,
+  onDeletedAcctStatement,
 }: {
   onSearch?: (criteria: SearchCriteria) => void
   onAccounts?: (custNo: string | null, accNo?: string, cardNo?: string) => void
   onCards?: (params: Record<string, string>) => void
   onMerchant?: () => void
+  onDeletedAcctStatement?: () => void
 }) {
   const [form, setForm] = useState(initialForm)
   // Validation messages now surface as the shared top-center toast. The shim
@@ -608,9 +611,13 @@ export default function CustomerStaticData({
                 Enquiries &amp; Services
               </p>
               <div className="flex flex-wrap items-center gap-3">
+                {/* cmdHistoricalStmt: opens frmHistStmt with tag = "D" and
+                    enables its account-number box, which the legacy does only
+                    for ~87 — so the button itself is shown only for ~87 too. */}
                 {hasAuthority('~87') && (
                   <button
                     type="button"
+                    onClick={onDeletedAcctStatement}
                     title="Historical statement for deleted accounts"
                     className={secondaryBtn}
                   >

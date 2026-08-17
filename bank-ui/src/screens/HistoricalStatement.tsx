@@ -4,6 +4,7 @@ import { useToast } from '../components/Toast.tsx'
 import type { Account } from '../types.ts'
 import type { HistoricalStatement as Statement } from '../api.ts'
 import { api } from '../api.ts'
+import { hasAuthority } from '../session.ts'
 import { formatDate, formatPlainAmount } from '../schema/helpers.ts'
 
 // Mirrors legacy frmHistStmt.frm ("Historical Statement Printing", the
@@ -257,14 +258,25 @@ function StatementCard({ statement }: { statement: Statement }) {
 
 export default function HistoricalStatement({
   account,
+  deletedAccountRoute = false,
   onExit,
 }: {
-  account: Account
+  /** Absent on the deleted-account route — there is no grid row to carry one. */
+  account?: Account
+  /**
+   * The legacy's frmHistStmt.tag = "D" (frmCustomerSearch.frm:1177): the same
+   * form opened from the SEARCH screen instead of the account grid, to produce
+   * statements for accounts that no longer exist.
+   */
+  deletedAccountRoute?: boolean
   onExit: () => void
 }) {
   // frmAccount.frm:852-853 copies the account's GL branch and number onto the
-  // form; the account number is display-only there (txtAccNo.Enabled = 0).
-  const [branchCode, setBranchCode] = useState(account.branchCode ?? '')
+  // form; the account number is display-only there (txtAccNo.Enabled = 0). On
+  // the deleted-account route there is nothing to copy, so both are typed.
+  const canKeyAccount = deletedAccountRoute && hasAuthority('~87')
+  const [accNo, setAccNo] = useState(account?.accountNumber ?? '')
+  const [branchCode, setBranchCode] = useState(account?.branchCode ?? '')
   const [form, setForm] = useState({
     fromMonth: '',
     fromYear: '',
@@ -285,7 +297,7 @@ export default function HistoricalStatement({
   /** cmdGenerate_Click (:686) validation, in the legacy's own order. */
   const validate = (): string | null => {
     if (branchCode.trim().length !== 4) return MSG.branchCode
-    if (account.accountNumber.trim() === '') return MSG.emptyAccount
+    if (accNo.trim() === '') return MSG.emptyAccount
     if (form.fromYear === '') return MSG.fromYear
     if (form.fromMonth === '') return MSG.fromMonth
     if (form.toYear === '') return MSG.toYear
@@ -301,10 +313,13 @@ export default function HistoricalStatement({
     }
     setGenerating(true)
     try {
-      const rows = await api.historicalStatements(account.accountNumber, {
+      const rows = await api.historicalStatements(accNo.trim(), {
         branchCode: branchCode.trim(),
         fromYearMonth: `${form.fromYear}${form.fromMonth}`,
         toYearMonth: `${form.toYear}${form.toMonth}`,
+        // The route is a server-side decision, not just a screen mode: it
+        // skips the staff-branch rule and adds the still-exists refusal.
+        ...(deletedAccountRoute ? { deletedAccount: 'true' } : {}),
       })
       // reportFoundFlag (:1383, :1414): no statement in any month is not an
       // error, it is "no report found", and View/Print stay disabled.
@@ -359,9 +374,35 @@ export default function HistoricalStatement({
             />
           </Field>
 
-          {/* txtAccNo.Enabled = 0 — carried from the grid, never typed. */}
+          {/* txtAccNo.Enabled = 0 by default — carried from the grid. The
+              deleted-account route enables it, and only for ~87
+              (frmCustomerSearch.frm:1179-1181): without that authority the
+              legacy leaves the box disabled, so the route cannot be used. */}
           <Field label="Account Number" htmlFor="accNo">
-            <ReadOnlyInput id="accNo" value={account.accountNumber} readOnly />
+            {canKeyAccount ? (
+              <TextInput
+                id="accNo"
+                value={accNo}
+                maxLength={14}
+                inputMode="numeric"
+                placeholder="14 digits"
+                onChange={(e) => {
+                  setAccNo(digitsOnly(e.target.value))
+                  setStatements(null)
+                }}
+              />
+            ) : (
+              <ReadOnlyInput
+                id="accNo"
+                value={accNo}
+                readOnly
+                title={
+                  deletedAccountRoute
+                    ? 'Keying an account here requires authority ~87'
+                    : undefined
+                }
+              />
+            )}
           </Field>
 
           <Field label="From Date (month / year)" htmlFor="fromMonth">
@@ -473,7 +514,7 @@ export default function HistoricalStatement({
           legacy's printed layout. */}
       {hasReport && (
         <section className="print-sheet print-landscape" aria-hidden="true">
-          <h1>Historical Statement — {account.accountNumber}</h1>
+          <h1>Historical Statement — {accNo}</h1>
           <p className="print-meta">
             Branch {branchCode} · {form.fromMonth}/{form.fromYear} to {form.toMonth}/{form.toYear} ·
             Printed {new Date().toLocaleString('en-GB')}

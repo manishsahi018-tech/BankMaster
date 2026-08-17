@@ -332,7 +332,13 @@ export const api = {
    */
   historicalStatements: (
     accNo: string,
-    params: { branchCode: string; fromYearMonth: string; toYearMonth: string },
+    params: {
+      branchCode: string
+      fromYearMonth: string
+      toYearMonth: string
+      /** "true" selects the deleted-account route (legacy tag "D", needs ~87). */
+      deletedAccount?: string
+    },
   ) =>
     get<HistoricalStatement[]>(
       `/api/accounts/${accNo}/historical-statement`,
