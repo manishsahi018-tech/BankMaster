@@ -1,5 +1,5 @@
-import { useState, type ChangeEvent } from 'react'
-import { Field, TextInput, ReadOnlyInput, SectionCard } from '../components/fields.tsx'
+import { useState } from 'react'
+import { Field, ReadOnlyInput, SectionCard } from '../components/fields.tsx'
 import HistoryBanner from '../components/HistoryBanner.tsx'
 import { codeLabel } from '../codes.ts'
 import type { Account } from '../types.ts'
@@ -27,8 +27,15 @@ const BLANK = {
   lastUpdateCsd: '', supervisorApproved: '',
 }
 
-// Enquiry-only build: write actions hidden and edit toggles made read-only
-// (values still display, but can't be changed). Flip to false to restore.
+// Enquiry-only build: write actions hidden, and the Dormant / Statement Day
+// toggles disabled — values still display, they just can't be changed.
+//
+// The text and code-set fields are NOT gated by this flag: they are
+// ReadOnlyInput outright. Nothing on this screen ever saved — there is no
+// submit and no API to call — so an editable box only ever offered an edit
+// that evaporated on navigation. Flipping this flag back to false therefore
+// restores the two toggles but NOT the fields; a real maintenance mode needs
+// them swapped back to TextInput along with the save path that never existed.
 const ENQUIRY_ONLY = true
 
 const YesNo = ({ value, onChange }: { value: string; onChange?: (opt: string) => void }) => (
@@ -71,8 +78,6 @@ export default function AccountMaintenance({
   const [data, setData] = useState({ ...BLANK, ...(account?.maintenance ?? {}) })
 
   const set = (key: keyof typeof BLANK) => (value: string) => setData((d) => ({ ...d, [key]: value }))
-  const setInput = (key: keyof typeof BLANK) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    set(key)(e.target.value)
 
   const labelCls = 'mb-1.5 block text-sm font-medium text-ink-soft'
   const roCls =
@@ -134,7 +139,7 @@ export default function AccountMaintenance({
                   this replaced were both incomplete and wrong: the domain has
                   four values (gld0data.intApplication), and 1 is "Pay to another
                   account", not "Transfer". */}
-              <ReadOnlyInput id="intApp" readOnly value={codeLabel('intApplication', data.intApplication)} />
+              <ReadOnlyInput id="intApp" value={codeLabel('intApplication', data.intApplication)} />
             </Field>
             <div>
               <span className={labelCls}>Dormant</span>
@@ -147,7 +152,7 @@ export default function AccountMaintenance({
                   both counts: it offered an edit that can never be saved, and
                   its list disagreed with the archival domain (stctltab 'SF'
                   has seven values, and 01 is Non-automatic, not Monthly). */}
-              <ReadOnlyInput id="stmtFreq" readOnly value={codeLabel('stmtFreq', data.stmtFrequency)} />
+              <ReadOnlyInput id="stmtFreq" value={codeLabel('stmtFreq', data.stmtFrequency)} />
             </Field>
             <div>
               <span className={labelCls}>Statement Day</span>
@@ -168,13 +173,13 @@ export default function AccountMaintenance({
               </div>
             </div>
             <Field label="Account Status" htmlFor="accStatus">
-              <ReadOnlyInput id="accStatus" readOnly value={codeLabel('accStatus', data.accountStatus)} />
+              <ReadOnlyInput id="accStatus" value={codeLabel('accStatus', data.accountStatus)} />
             </Field>
             <Field label="A/c Status Upd Reason" htmlFor="statusReason">
-              <TextInput id="statusReason" value={data.statusUpdReason} onChange={setInput('statusUpdReason')} />
+              <ReadOnlyInput id="statusReason" value={data.statusUpdReason} />
             </Field>
             <Field label="Other Reason" htmlFor="otherReason">
-              <TextInput id="otherReason" value={data.otherReason} onChange={setInput('otherReason')} />
+              <ReadOnlyInput id="otherReason" value={data.otherReason} />
             </Field>
             <Field label="SAMA Status" htmlFor="samaStatus">
               {/* Maintained by SAMA processes; read-only on this screen. */}
@@ -186,56 +191,56 @@ export default function AccountMaintenance({
         <SectionCard title="Limits, Interest & References">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Unique No" htmlFor="uniqueNo">
-              <TextInput id="uniqueNo" value={data.uniqueNo} onChange={setInput('uniqueNo')} />
+              <ReadOnlyInput id="uniqueNo" value={data.uniqueNo} />
             </Field>
             <Field label="Unique Sub" htmlFor="uniqueSub">
-              <TextInput id="uniqueSub" value={data.uniqueSub} onChange={setInput('uniqueSub')} />
+              <ReadOnlyInput id="uniqueSub" value={data.uniqueSub} />
             </Field>
             <Field label="Credit Limit" htmlFor="creditLimit">
-              <TextInput id="creditLimit" value={data.creditLimit} onChange={setInput('creditLimit')} />
+              <ReadOnlyInput id="creditLimit" value={data.creditLimit} />
             </Field>
             <Field label="Int. Last Run" htmlFor="intLastRun">
               <input id="intLastRun" readOnly value={data.intLastRun} className={roCls} />
             </Field>
             <Field label="Pay Account No" htmlFor="payAcct">
-              <TextInput id="payAcct" value={data.payAccountNo} onChange={setInput('payAccountNo')} />
+              <ReadOnlyInput id="payAcct" value={data.payAccountNo} />
             </Field>
             <Field label="A/c Open Date" htmlFor="openDate">
               <input id="openDate" readOnly value={data.acOpenDate} className={roCls} />
             </Field>
             <Field label="Int. Freq Code" htmlFor="intFreq">
-              <TextInput id="intFreq" maxLength={3} value={data.intFreqCode} onChange={setInput('intFreqCode')} />
+              <ReadOnlyInput id="intFreq" value={data.intFreqCode} />
             </Field>
             <Field label="Int. Appl Day" htmlFor="intApplDay">
-              <TextInput id="intApplDay" maxLength={2} value={data.intApplDay} onChange={setInput('intApplDay')} />
+              <ReadOnlyInput id="intApplDay" value={data.intApplDay} />
             </Field>
             <div>
               <span className={labelCls}>Dr Interest Rate</span>
               <div className="flex items-center gap-2">
-                <TextInput aria-label="Dr interest rate" value={data.drInterestRate} onChange={setInput('drInterestRate')} className="w-24" />
+                <ReadOnlyInput aria-label="Dr interest rate" value={data.drInterestRate} className="w-24" />
                 <span className="text-sm text-muted">%</span>
               </div>
             </div>
             <div>
               <span className={labelCls}>Cr Interest Rate</span>
               <div className="flex items-center gap-2">
-                <TextInput aria-label="Cr interest rate" value={data.crInterestRate} onChange={setInput('crInterestRate')} className="w-24" />
+                <ReadOnlyInput aria-label="Cr interest rate" value={data.crInterestRate} className="w-24" />
                 <span className="text-sm text-muted">%</span>
               </div>
             </div>
             <Field label="Collateral" htmlFor="collateral">
-              <TextInput id="collateral" value={data.collateral} onChange={setInput('collateral')} />
+              <ReadOnlyInput id="collateral" value={data.collateral} />
             </Field>
             <Field label="Branch Code" htmlFor="branchCode">
               {/* branch has been a served code set all along; this Select was
                   offering three hard-coded branches instead. */}
-              <ReadOnlyInput id="branchCode" readOnly value={codeLabel('branch', data.branchCode)} />
+              <ReadOnlyInput id="branchCode" value={codeLabel('branch', data.branchCode)} />
             </Field>
             <Field label="Memo Note 1" htmlFor="memo1">
-              <TextInput id="memo1" value={data.memoNote1} onChange={setInput('memoNote1')} />
+              <ReadOnlyInput id="memo1" value={data.memoNote1} />
             </Field>
             <Field label="Memo Note 2" htmlFor="memo2">
-              <TextInput id="memo2" value={data.memoNote2} onChange={setInput('memoNote2')} />
+              <ReadOnlyInput id="memo2" value={data.memoNote2} />
             </Field>
             <Field label="Last Trans Date" htmlFor="lastTrans">
               <input id="lastTrans" readOnly value={data.lastTransDate} className={roCls} />
