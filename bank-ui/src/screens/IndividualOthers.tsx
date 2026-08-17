@@ -10,6 +10,7 @@ import {
   DateTriple,
   DocTable,
   AuditCards,
+  NextPageButton,
   isFirst,
   btnKinds,
   type IdRowData,
@@ -28,6 +29,7 @@ export default function IndividualOthers({
   historyAsOf,
   onAccounts,
   onCards,
+  onNextPage,
   onHeirs,
   onReferences,
   onJointHolders,
@@ -37,6 +39,7 @@ export default function IndividualOthers({
   historyAsOf?: string
   onAccounts: () => void
   onCards?: () => void
+  onNextPage?: () => void
   onHeirs: () => void
   onReferences: () => void
   onJointHolders: () => void
@@ -322,6 +325,9 @@ export default function IndividualOthers({
           >
             Supervisor Comments
           </button>
+          {/* cmdNext — frmIndividualOthers has one and so does the Saudi form;
+              it was the only profile here without its page 2. */}
+          <NextPageButton onClick={() => onNextPage?.()} />
           <button type="button" onClick={onBack} className={`${btnKinds.danger} ml-auto`}>
             Cancel
           </button>

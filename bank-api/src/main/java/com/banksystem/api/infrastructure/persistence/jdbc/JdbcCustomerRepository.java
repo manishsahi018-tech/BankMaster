@@ -999,16 +999,30 @@ public class JdbcCustomerRepository implements CustomerRepository {
 
     @Override
     public Map<String, String> acctInfo(String custNo) {
-        // frmIndividualSaudiAcctInfo page-2 enquiry fields — all stcusttab
-        // customer attributes. Keys match the screen; codes are raw (the UI maps
-        // them via /api/codes). Account-open and card-delivery inputs are a
-        // create-flow concern and are not part of enquiry.
+        // Page-2 enquiry fields for BOTH individual profiles — stcusttab
+        // customer attributes, plus the account-facility rows. Keys match the
+        // screens; codes are raw (the UI maps them via /api/codes).
+        //
+        // The facility rows are here because frmIndividualOthersAcctInfo has
+        // nothing else: its whole form is the accounts block, card delivery and
+        // signature nature. Card DELIVERY stays out — which card to issue and
+        // where to post it is a create-time instruction with no archival
+        // counterpart, and issued cards already have their own screens off
+        // stcardtab. The accounts block is not create-only in the same way:
+        // getAcctInfo reads it back from the account log, and
+        // frmJuristicAccountInfo already renders exactly these fields as
+        // enquiry data.
+        //
+        // branchCode / createdUserId / createdDateTime are selected only to key
+        // acctFacilityRows — the same three the juristic caller seeds it with
+        // (cbjuristic.c:3304-3313) — and are not returned.
         List<Map<String, String>> rows = jdbc.query("""
                 SELECT educationCode, professionCode, positionCode, monthlyIncome,
                        segmentation, employerName, employerPoBox, employerCity,
                        employerZipCode, packageAcc, signatureNature, custAdviceFlag,
                        updatedForSama, relationshipManager, generalMemo, marketingMemo,
-                       accFreezingGracePeriod
+                       accFreezingGracePeriod,
+                       branchCode, createdUserId, createdDateTime
                 FROM   stcusttab
                 WHERE  custNo = :custNo
                 FETCH FIRST 1 ROWS ONLY
@@ -1033,6 +1047,22 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     d.put("generalMemo", trim(rs.getString("generalMemo")));
                     d.put("marketingMemo", trim(rs.getString("marketingMemo")));
                     d.put("freezingGracePeriod", trim(rs.getString("accFreezingGracePeriod")));
+                    String[] f = acctFacilityRows(rs.getString("branchCode"),
+                            rs.getString("createdUserId"), rs.getString("createdDateTime"));
+                    d.put("currentAcFlag", f[0]);
+                    d.put("currentAcCurrency", f[1]);
+                    d.put("currentAcStmtFreq", f[2]);
+                    d.put("currentAcChequeBook", f[3]);
+                    d.put("currentAcStatus", f[4]);
+                    d.put("savingAcFlag", f[5]);
+                    d.put("savingAcCurrency", f[6]);
+                    d.put("savingAcStmtFreq", f[7]);
+                    d.put("savingAcStatus", f[8]);
+                    d.put("otherAcLedger", f[9]);
+                    d.put("otherAcCurrency", f[10]);
+                    d.put("otherAcStmtFreq", f[11]);
+                    d.put("otherAcChequeBook", f[12]);
+                    d.put("otherAcStatus", f[13]);
                     return d;
                 });
         return rows.isEmpty() ? Map.of() : rows.get(0);

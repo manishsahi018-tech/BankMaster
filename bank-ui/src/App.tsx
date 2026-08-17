@@ -38,6 +38,7 @@ import SignatoryDetail from './screens/SignatoryDetail.tsx'
 import JuristicMain from './screens/JuristicMain.tsx'
 import JuristicAccountInfo from './screens/JuristicAccountInfo.tsx'
 import IndividualOthers from './screens/IndividualOthers.tsx'
+import IndividualOthersAcctInfo from './screens/IndividualOthersAcctInfo.tsx'
 import HeirsProxy from './screens/HeirsProxy.tsx'
 import JointHolders from './screens/JointHolders.tsx'
 import References from './screens/References.tsx'
@@ -458,6 +459,11 @@ export default function App() {
               page: 0,
             }))
           }
+          onNextPage={() =>
+            goFetch('others2', {}, async () => ({
+              acctInfo: await api.customerAcctInfo(customer!.custNo),
+            }))
+          }
           onHeirs={() =>
             goFetch('heirs', { partyFrom: 'individualOthers' }, async () => {
               const _r = await api.heirs(customer!.custNo)
@@ -505,6 +511,20 @@ export default function App() {
             // Reset docsFrom rather than relying on its default — the juristic
             // page 2 sets it, and `go` would carry that value into here.
             goFetch('documents', { docsFrom: 'detail2' }, async () => ({
+              documents: await api.requiredDocuments(customer!.custNo),
+            }))
+          }
+          onCancel={() => setScreen({ name: 'search' })}
+        />
+      )}
+
+      {screen.name === 'others2' && screen.acctInfo && (
+        <IndividualOthersAcctInfo
+          customer={customer}
+          acctInfo={screen.acctInfo}
+          onPrevPage={() => go('individualOthers')}
+          onDocuments={() =>
+            goFetch('documents', { docsFrom: 'others2' }, async () => ({
               documents: await api.requiredDocuments(customer!.custNo),
             }))
           }

@@ -483,7 +483,25 @@ public class MockCustomerRepository implements CustomerRepository {
                 java.util.Map.entry("relationshipManager", ""),
                 java.util.Map.entry("generalMemo", ""),
                 java.util.Map.entry("marketingMemo", ""),
-                java.util.Map.entry("freezingGracePeriod", "0"));
+                java.util.Map.entry("freezingGracePeriod", "0"),
+                // Account-facility rows, as the Jdbc side derives them from
+                // stacclog. The "flag" slots carry "1" when a row was found —
+                // the legacy screen's facility check-box. Saving is present but
+                // has no cheque book; "other" carries its ledger code.
+                java.util.Map.entry("currentAcFlag", "1"),
+                java.util.Map.entry("currentAcCurrency", "01"),
+                java.util.Map.entry("currentAcStmtFreq", "01"),
+                java.util.Map.entry("currentAcChequeBook", "1"),
+                java.util.Map.entry("currentAcStatus", "00"),
+                java.util.Map.entry("savingAcFlag", "1"),
+                java.util.Map.entry("savingAcCurrency", "01"),
+                java.util.Map.entry("savingAcStmtFreq", "03"),
+                java.util.Map.entry("savingAcStatus", "00"),
+                java.util.Map.entry("otherAcLedger", "108"),
+                java.util.Map.entry("otherAcCurrency", "01"),
+                java.util.Map.entry("otherAcStmtFreq", "03"),
+                java.util.Map.entry("otherAcChequeBook", "0"),
+                java.util.Map.entry("otherAcStatus", "00"));
     }
 
     @Override
