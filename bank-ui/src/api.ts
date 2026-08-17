@@ -5,6 +5,7 @@ import type { Account, Customer } from './types.ts'
 import type { GridRow } from './components/GridScreen.tsx'
 import { getToken, setToken, signOut } from './session.ts'
 import { encryptPassword } from './pocCrypto.ts'
+import { beginRequest, endRequest } from './pending.ts'
 
 /** Bearer header from the stored JWT (empty before login / for public calls). */
 function authHeaders(): Record<string, string> {
@@ -147,11 +148,44 @@ async function readProblem(
   }
 }
 
+/**
+ * The two requests that must NOT raise the blocking overlay.
+ *
+ * /api/login — the login screen has its own button state, and App does not even
+ * mount the overlay until past it.
+ *
+ * /api/codes — loaded in the background at boot on purpose; blocking the first
+ * paint on reference data was removed deliberately (see initCodes in main.tsx).
+ * Covering it with a modal would put that back.
+ */
+const SILENT_PATHS = ['/api/login', '/api/codes']
+
+const raisesOverlay = (path: string) => !SILENT_PATHS.some((p) => path.startsWith(p))
+
 async function request<T>(
   path: string,
   action: string,
   init: RequestInit,
   opts: { skipUnauthorized?: boolean } = {},
+): Promise<T> {
+  // Every call in this module funnels through here, which is why the overlay is
+  // counted at this level rather than per screen.
+  const tracked = raisesOverlay(path)
+  if (tracked) beginRequest()
+  try {
+    return await send<T>(path, action, init, opts)
+  } finally {
+    // finally, not after the return: a thrown ApiError must still release the
+    // counter, or the overlay stays up for the rest of the session.
+    if (tracked) endRequest()
+  }
+}
+
+async function send<T>(
+  path: string,
+  action: string,
+  init: RequestInit,
+  opts: { skipUnauthorized?: boolean },
 ): Promise<T> {
   let res: Response
   try {

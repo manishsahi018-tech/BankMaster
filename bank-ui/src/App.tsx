@@ -9,6 +9,7 @@ import TopNav from './components/TopNav.tsx'
 import Login from './screens/Login.tsx'
 import { session, signOut } from './session.ts'
 import { useCodes } from './codes.ts'
+import { useRequestPending } from './pending.ts'
 import CustomerStaticData from './screens/CustomerStaticData.tsx'
 import EnquirySelect from './screens/EnquirySelect.tsx'
 import IndividualSaudi from './screens/IndividualSaudi.tsx'
@@ -125,6 +126,10 @@ export default function App() {
     session.loggedIn ? { name: 'search' } : { name: 'login' },
   )
   const [busy, setBusy] = useState(false)
+  // Any request raises the overlay now, wherever it was started from — the
+  // self-fetching screens included. busy stays because it also covers the
+  // state-swap after goFetch's request settles.
+  const requestPending = useRequestPending()
   const [error, setError] = useState<string | null>(null)
   const toast = useToast()
   // /api/codes is loaded in the background; re-render here when it lands so
@@ -232,7 +237,7 @@ export default function App() {
 
       {/* Blocking processing modal while a server call is in flight; errors are
           routed to the top-center toast (see the effect above). */}
-      <ProcessingOverlay show={busy} label="Fetching from server…" />
+      <ProcessingOverlay show={busy || requestPending} label="Fetching from server…" />
 
       {screen.name === 'search' && (
         <CustomerStaticData
