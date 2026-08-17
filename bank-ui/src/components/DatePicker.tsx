@@ -11,6 +11,14 @@ const MONTHS = [
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
+// How far back the year dropdown reaches when the caller gives no `min` bound.
+// The archival data predates the app by a long way, so this is deliberately
+// generous; widen it here if a teller ever needs to reach further.
+const YEARS_BACK = 30
+// …and how far forward with no `max`. Enquiry screens look at the past, so one
+// year of headroom is enough to cover a post-dated value already in the field.
+const YEARS_FORWARD = 1
+
 /** Parse a YYYYMMDD string to a Date, or null if it isn't a valid date. */
 function parse(v: string): Date | null {
   if (!/^\d{8}$/.test(v)) return null
@@ -97,6 +105,46 @@ export function DatePicker({
   const todayYmd = toYmd(today)
   const todayDisabled = outOfRange(todayYmd)
 
+  // A month is reachable when any day in it is inside [min, max] — i.e. it does
+  // not end before min nor start after max. Used to grey out dead months in the
+  // dropdown and to stop the ‹ › arrows walking out of the allowed range.
+  const monthInRange = (y: number, m: number) =>
+    !(
+      (!!min && toYmd(new Date(y, m + 1, 0)) < min) ||
+      (!!max && toYmd(new Date(y, m, 1)) > max)
+    )
+
+  // Years the dropdown offers: the bounds when the caller gave them, otherwise a
+  // window around today. The viewed and selected years are folded in so a value
+  // already outside that window still shows up rather than silently vanishing.
+  const minYear = parse(min)?.getFullYear()
+  const maxYear = parse(max)?.getFullYear()
+  const selectedYear = selected?.getFullYear() ?? year
+  const firstYear = Math.min(minYear ?? today.getFullYear() - YEARS_BACK, year, selectedYear)
+  const lastYear = Math.max(maxYear ?? today.getFullYear() + YEARS_FORWARD, year, selectedYear)
+  // Newest first — enquiries are far more often about recent dates than old ones.
+  const years = Array.from({ length: lastYear - firstYear + 1 }, (_, i) => lastYear - i)
+
+  // Jumping straight to a year can land on a month outside [min, max] (picking
+  // 2026 while viewing December when max is 2026-03-15). Snap to the nearest
+  // reachable month in that year so the grid is never entirely disabled.
+  const showMonth = (y: number, m: number) => {
+    let month0 = m
+    if (!monthInRange(y, month0)) {
+      if (maxYear === y && !!max && toYmd(new Date(y, month0, 1)) > max) {
+        month0 = parse(max)!.getMonth()
+      } else if (minYear === y) {
+        month0 = parse(min)!.getMonth()
+      }
+    }
+    setView(new Date(y, month0, 1))
+  }
+
+  const headerControl =
+    'rounded-lg border border-edge-strong bg-surface px-2 py-1 text-sm font-semibold text-ink ' +
+    'transition-colors hover:bg-surface-muted focus:outline-none focus-visible:ring-2 ' +
+    'focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-40'
+
   const pick = (d: number) => {
     onChange(toYmd(new Date(year, month, d)))
     setOpen(false)
@@ -123,26 +171,56 @@ export function DatePicker({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-12 z-50 w-64 rounded-2xl border border-edge bg-surface p-3 shadow-lg">
-          <div className="mb-2 flex items-center justify-between">
+        <div className="absolute left-0 top-12 z-50 w-72 rounded-2xl border border-edge bg-surface p-3 shadow-lg">
+          {/* Month and year are dropdowns, not just a label: reaching a date
+              years back through the ‹ › arrows alone is 12 clicks per year. The
+              arrows stay for stepping a month at a time. */}
+          <div className="mb-2 flex items-center gap-1">
             <button
               type="button"
               onClick={() => setView(new Date(year, month - 1, 1))}
+              disabled={!monthInRange(year, month - 1)}
               aria-label="Previous month"
-              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-muted hover:text-ink"
+              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
             >
               <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                 <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 0 1 0 1.06L9.06 10l3.73 3.71a.75.75 0 1 1-1.06 1.06l-4.25-4.24a.75.75 0 0 1 0-1.06l4.25-4.24a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
               </svg>
             </button>
-            <span className="text-sm font-semibold text-ink">
-              {MONTHS[month]} {year}
-            </span>
+
+            <div className="flex flex-1 items-center justify-center gap-1">
+              <select
+                value={month}
+                onChange={(e) => showMonth(year, +e.target.value)}
+                aria-label="Month"
+                className={headerControl}
+              >
+                {MONTHS.map((name, i) => (
+                  <option key={name} value={i} disabled={!monthInRange(year, i)}>
+                    {name.slice(0, 3)}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={year}
+                onChange={(e) => showMonth(+e.target.value, month)}
+                aria-label="Year"
+                className={headerControl}
+              >
+                {years.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <button
               type="button"
               onClick={() => setView(new Date(year, month + 1, 1))}
+              disabled={!monthInRange(year, month + 1)}
               aria-label="Next month"
-              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-muted hover:text-ink"
+              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
             >
               <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                 <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 0 1 0-1.06L10.94 10 7.21 6.29a.75.75 0 1 1 1.06-1.06l4.25 4.24a.75.75 0 0 1 0 1.06l-4.25 4.24a.75.75 0 0 1-1.06 0Z" clipRule="evenodd" />
