@@ -131,10 +131,16 @@ datasource too.
 
 1. **The three missing views (see Availability above).** All three are also
    absent from `BM archival Version 9.xlsx`, so their column names are assumed
-   rather than verified: `bkd0data` refNo/amount/userId and `ccarrblk`
-   cardNo/blockedAmt/lastBlockedUserId from the query spec, `stswiftlog`
-   transRefNo/issueDate/bmUpdateStatus from the C record layout
-   (`stlayout.h struct stswiftlog`). Worth one round with the Denodo team:
+   rather than verified: `bkd0data` refNo/recType/blockedAmt/userId and
+   `ccarrblk` cardNo/blockedAmt/lastBlockedUserId, both from the C record
+   layouts (`layout.h:3055` and `:3162`), `stswiftlog`
+   transRefNo/issueDate/bmUpdateStatus likewise
+   (`stlayout.h struct stswiftlog`). Note the query spec names `bkd0data`'s
+   amount column `amount`; the record has no such field and the C reads
+   `bkdRec.blockedAmt` (cbblock.c:390) — following the spec there is what put
+   `bkd0data` in `unavailableSources` on a view that exists. Prefer the record
+   layout over the spec table for any view the workbook does not cover. Worth
+   one round with the Denodo team:
    `bkd0data`/`ccarrblk` are online/Finacle-side and may genuinely not exist,
    but `stswiftlog` sits alongside `stacclog`/`stcustlog`, which were both
    delivered — a naming difference is more likely than a real absence. Ask for

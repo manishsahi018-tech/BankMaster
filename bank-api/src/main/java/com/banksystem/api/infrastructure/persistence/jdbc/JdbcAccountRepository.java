@@ -50,10 +50,12 @@ import org.springframework.stereotype.Repository;
  *       SUBSTR(requestDateTime,1,8); we follow the spec so the grid value
  *       and the history key are guaranteed to agree.</li>
  *   <li>bkd0data and ccarrblk (§16 sources 3–4) are missing from the
- *       archival workbook; their column names are assumed from the spec
- *       table (bkd0data: refNo/amount/userId; ccarrblk:
- *       cardNo/blockedAmt/lastBlockedUserId). Each §16 source runs in its
- *       own try/catch so a missing view degrades to a warning.</li>
+ *       archival workbook, so their column names come from the legacy ISAM
+ *       record layouts (bkd0data: refNo/recType/blockedAmt/userId,
+ *       layout.h:3055-3072; ccarrblk: cardNo/blockedAmt/lastBlockedUserId,
+ *       layout.h:3162-3182) — NOT from the spec's source table, whose
+ *       bkd0data amount column name does not exist. Each §16 source runs in
+ *       its own try/catch so a missing view degrades to a logged error.</li>
  *   <li>Key forms follow the WORKBOOK (new-DB truth), not the legacy files:
  *       the legacy C keyed gld0data / sod0data / pyd0data / ststchqlog /
  *       stsodlog on the 13-char BM account form (and gld0data index 3 on
@@ -972,19 +974,28 @@ public class JdbcAccountRepository implements AccountRepository {
                         str(row, "blockedAmt"), ""));
 
         // 3. bkd0data — other BM blocking ('O'). NOT in the archival
-        //    workbook; column names (refNo, amount, userId) assumed from the
-        //    spec's source table, and the legacy 13-char BM account key is
-        //    kept (no workbook evidence of a converted form).
+        //    workbook, so the columns come from the ISAM record layout
+        //    (layout.h:3055-3072): refNo[10], recType, blockedAmt[14],
+        //    userId[3]. The spec's source table calls the amount column
+        //    "amount"; no such field exists in the record and the C reads
+        //    bkdRec.blockedAmt (cbblock.c:390), so blockedAmt it is. The
+        //    legacy 13-char BM account key is kept (no workbook evidence of a
+        //    converted form). Faithful to cbblock.c:376-399: key on the BM
+        //    account, keep recType '1' only, decode, skip zero, ABS.
+        //    The zero filter stays in Java (absAmount) rather than SQL —
+        //    blockedAmt is a 14-char overpunch-signed string, so "<> 0" would
+        //    be a numeric comparison against text, exactly as for staccblk.
         blockedSource(items, unavailable, "bkd0data", """
-                SELECT refNo AS productNo, amount AS blockedAmt, userId
+                SELECT refNo AS productNo, blockedAmt, userId
                 FROM   bkd0data
                 WHERE  accNo = :bmAccNo
-                  AND  recType = '1' AND amount <> 0
+                  AND  recType = '1'
                 """,
                 Map.of("bmAccNo", bmAccNo),
-                // Legacy copies only the FIRST 3 chars of the blocking userId for
-                // the 'O' source (cbblock.c:399, strncpy(...,3)) — unique to this
-                // branch; every other source keeps the full 10.
+                // userId is only 3 bytes wide in this record, so the legacy
+                // strncpy(...,3) at cbblock.c:399 copies the whole field — the
+                // 3-char cap mirrors the column width, it is not a truncation
+                // rule peculiar to the 'O' source.
                 row -> new BlockedAmountItem("O", str(row, "productNo"),
                         str(row, "blockedAmt"), first3(str(row, "userId"))));
 
@@ -1026,8 +1037,9 @@ public class JdbcAccountRepository implements AccountRepository {
                 }
             } catch (DataAccessException e) {
                 unavailable.add("ccarrblk");
-                log.warn("Blocked-amount source ccarrblk unavailable (schema gap?): {}",
-                        e.getMessage());
+                log.error("Blocked-amount source ccarrblk failed — its rows are missing from"
+                        + " the breakup. Either the view is absent (schema gap) or the query is"
+                        + " wrong; the message below names which: {}", e.getMessage());
             }
         }
 
@@ -1054,8 +1066,15 @@ public class JdbcAccountRepository implements AccountRepository {
     /**
      * Runs one §16 source query, ABS-ing amounts and skipping zero/blank
      * rows, respecting the overall 31-item cap. A failing source (e.g. the
-     * bkd0data / ccarrblk views absent from the archival schema) only logs
-     * a warning so the other sources still contribute.
+     * bkd0data / ccarrblk views absent from the archival schema) is named in
+     * {@code unavailable} and logged, so the other sources still contribute.
+     *
+     * <p>This degradation diverges from the legacy deliberately: service 86
+     * opened all five ISAM files up front and failed the whole request on any
+     * one of them (cbblock.c:129-157, INTERNALERR naming the file). Denodo may
+     * genuinely lack a view, hence the softer handling — but that also means a
+     * plain SQL defect surfaces as "source unavailable", so the log is at ERROR
+     * and callers should treat a non-empty unavailableSources as actionable.
      */
     private void blockedSource(List<BlockedAmountItem> items, List<String> unavailable,
             String source, String sql, Map<String, String> params,
@@ -1078,8 +1097,9 @@ public class JdbcAccountRepository implements AccountRepository {
             }
         } catch (DataAccessException e) {
             unavailable.add(source);
-            log.warn("Blocked-amount source {} unavailable (schema gap?): {}",
-                    source, e.getMessage());
+            log.error("Blocked-amount source {} failed — its rows are missing from the"
+                    + " breakup. Either the view is absent (schema gap) or the query is"
+                    + " wrong; the message below names which: {}", source, e.getMessage());
         }
     }
 
