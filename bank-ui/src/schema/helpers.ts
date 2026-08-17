@@ -96,6 +96,25 @@ export function formatAmount(value: unknown): string {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
 }
 
+/**
+ * Amounts that are ORDINARY signed decimals, not archival overpunch strings.
+ *
+ * Only the statement archive (DB #3) supplies these: its CR_AMT/DR_AMT/RUN_BAL
+ * are Oracle NUMBER(30,3) and carry a real sign. Running formatAmount over them
+ * would misread any value whose last character falls in P-Y — "1500.25P" is a
+ * legitimate impossibility there, but "…P" cannot occur, whereas a plain
+ * decimal fed to the overpunch decoder is only safe by luck. Kept as a separate
+ * function so the distinction is explicit at every call site rather than being
+ * a comment someone has to notice.
+ */
+export function formatPlainAmount(value: unknown): string {
+  const raw = String(value ?? '').trim()
+  if (raw === '') return ''
+  const n = Number(raw)
+  if (Number.isNaN(n)) return raw
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
+}
+
 const RENDERERS: Partial<Record<string, (value: unknown) => string>> = {
   date: formatDate,
   timestamp: formatTimestamp,

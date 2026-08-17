@@ -29,7 +29,7 @@ public class CallerResolver {
         // The C concatenates authorityLevel + authorityLevel2 into one ~NN
         // string before every strstr("~NN") check.
         String authority = str(jwt.getClaim("authorityLevel")) + str(jwt.getClaim("authorityLevel2"));
-        return new EnquiryUser(str(jwt.getSubject()), authority);
+        return new EnquiryUser(str(jwt.getSubject()), authority, str(jwt.getClaim("branchCode")));
     }
 
     private static String str(Object value) {

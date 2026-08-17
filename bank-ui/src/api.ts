@@ -324,6 +324,22 @@ export const api = {
     lastTransPtr: string
   }) => get<MerchantStatementPage>('/api/merchant/statement', 'generate the merchant statement', params),
 
+  /**
+   * Archived statements for an account (legacy frmHistStmt, cmdHistStmt).
+   * Served from DB #3, the statement archive — a different database from every
+   * other call here. Both months are inclusive YYYYMM, matching the legacy
+   * form's year+month controls.
+   */
+  historicalStatements: (
+    accNo: string,
+    params: { branchCode: string; fromYearMonth: string; toYearMonth: string },
+  ) =>
+    get<HistoricalStatement[]>(
+      `/api/accounts/${accNo}/historical-statement`,
+      'generate the historical statement',
+      params,
+    ),
+
   signatoriesByAccount: (accNo: string, page = 0) =>
     get<Paged<GridRow>>(`/api/accounts/${accNo}/signatories`, 'load the signatories', { page: String(page) }),
 
@@ -402,6 +418,61 @@ export interface MerchantStatementPage {
   lines: string[]
   lastRecCount: string
   completionFlag: string
+}
+
+/**
+ * One transaction line of an archived statement (STMT_TXN / PDP_STMT_TXN).
+ *
+ * Amounts are plain decimal strings from Oracle NUMBER(30,3) — NOT the
+ * overpunch-signed archival strings, so they must be rendered with
+ * formatPlainAmount, never formatAmount. Dates are YYYYMMDD.
+ */
+export interface HistoricalStatementLine {
+  txnOrder: string
+  txnBranchCode: string
+  txnDate: string
+  valueDate: string
+  narrative1: string
+  narrative2: string
+  narrative3: string
+  narrative4: string
+  crAmt: string
+  drAmt: string
+  runBal: string
+  runBalType: string
+}
+
+/**
+ * One archived statement: a header plus its transaction lines.
+ *
+ * `source` says which of the two archives it came from ("STMT" or "PDP").
+ * Nothing in the legacy records what separates them, so both are queried and
+ * tagged rather than one being guessed at — see JdbcStatementRepository.
+ * Fields only one archive carries arrive empty on the other.
+ */
+export interface HistoricalStatement {
+  source: string
+  acctNum: string
+  stmtDate: string
+  stmtNum: string
+  branchCode: string
+  branchName: string
+  acctType: string
+  custNum: string
+  custName: string
+  custAdr1: string
+  custAdr2: string
+  custAdr3: string
+  custAdr4: string
+  crncy: string
+  iban: string
+  refNum: string
+  langCode: string
+  pageNum: string
+  pageCount: number
+  branchData: string
+  fileName: string
+  lines: HistoricalStatementLine[]
 }
 
 /** Card grid response — local card rows + DB #2 customer header (§13). */

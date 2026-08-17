@@ -4,6 +4,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,21 +13,32 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 /**
- * The two logical databases of the revamp:
+ * The three logical databases of the revamp:
  *
- *   archival-db (DB #1) — the BM archival schema (stcusttab, gld0data, …)
- *                         served by Denodo views (Hive-backed) over the
- *                         Denodo JDBC driver; replaces the legacy MS
- *                         Access source.
- *   online-db   (DB #2) — replaces the legacy cbcmssrv TCP/IP / Finacle
- *                         gateway source. Engine still undecided (may not
- *                         be Denodo) — configured purely via properties,
- *                         so switching engines needs only a URL/driver
- *                         change. Defaults to the archival connection.
+ *   archival-db  (DB #1) — the BM archival schema (stcusttab, gld0data, …)
+ *                          served by Denodo views (Hive-backed) over the
+ *                          Denodo JDBC driver; replaces the legacy MS
+ *                          Access source.
+ *   online-db    (DB #2) — replaces the legacy cbcmssrv TCP/IP / Finacle
+ *                          gateway source. Engine still undecided (may not
+ *                          be Denodo) — configured purely via properties,
+ *                          so switching engines needs only a URL/driver
+ *                          change. Defaults to the archival connection.
+ *   statement-db (DB #3) — the statement archive behind Historical Statement
+ *                          only. NOT Denodo: a separate Oracle instance whose
+ *                          STMT_HDR/STMT_TXN (and PDP_ prefixed) tables replace
+ *                          the legacy's Btrieve statement index plus the
+ *                          zipped pre-rendered page files it pointed at
+ *                          (frmHistStmt.frm generateReport/processStmt). Off by
+ *                          default — see JdbcStatementRepository.
  *
- * Driver jars (Denodo's is not on Maven Central) are loaded at runtime
- * from the directory given via -Dloader.path (see README "Deploying
- * against Denodo").
+ * The class keeps its Denodo name because DB #1, the only one that must be
+ * Denodo, is defined here; DB #2 and DB #3 are plain JDBC and are grouped with
+ * it so all three connections are configured in one place.
+ *
+ * Driver jars (Denodo's is not on Maven Central, and neither is Oracle's) are
+ * loaded at runtime from the directory given via -Dloader.path (see README
+ * "Deploying against Denodo").
  */
 @Configuration
 @Profile("denodo")
@@ -57,6 +69,41 @@ public class DenodoDataSourceConfig {
     public NamedParameterJdbcTemplate onlineJdbc(
             @Qualifier("onlineDataSource") DataSource dataSource,
             @Value("${bank.online-db.table-prefix:}") String tablePrefix) {
+        return new NamedParameterJdbcTemplate(prefixed(dataSource, tablePrefix));
+    }
+
+    /**
+     * DB #3 — the statement archive. Separate from {@code online-db} on purpose:
+     * that slot is reserved for the Finacle/cbcmssrv replacement (Transaction
+     * Inquiry, On-demand Statement), and this one holds statements only.
+     *
+     * <p>Created ONLY when {@code bank.statement-db.enabled} is true. It has to
+     * be conditional rather than merely unconfigured, because binding this
+     * datasource loads its driver class eagerly: an Oracle driver is a new
+     * requirement that a site running only DB #1 and DB #2 has no reason to
+     * have deployed, and Hikari's ClassNotFoundException on driver-class-name
+     * fails the whole context — taking every other screen down over a facility
+     * that is switched off. {@code UnavailableStatementRepository} answers in
+     * its place when it is off.
+     */
+    @Bean
+    @ConditionalOnProperty(name = "bank.statement-db.enabled", havingValue = "true")
+    @ConfigurationProperties("bank.statement-db")
+    public HikariDataSource statementDataSource() {
+        return new HikariDataSource();
+    }
+
+    /**
+     * The prefix here is a SCHEMA qualifier, not a view-name prefix: set
+     * {@code bank.statement-db.table-prefix=O2MS_UPG1.} and {@code FROM STMT_TXN}
+     * is rewritten to {@code FROM O2MS_UPG1.STMT_TXN}. Leave it blank if the
+     * connection's own schema already resolves the tables.
+     */
+    @Bean
+    @ConditionalOnProperty(name = "bank.statement-db.enabled", havingValue = "true")
+    public NamedParameterJdbcTemplate statementJdbc(
+            @Qualifier("statementDataSource") DataSource dataSource,
+            @Value("${bank.statement-db.table-prefix:}") String tablePrefix) {
         return new NamedParameterJdbcTemplate(prefixed(dataSource, tablePrefix));
     }
 

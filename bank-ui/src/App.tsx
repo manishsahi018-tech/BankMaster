@@ -43,6 +43,7 @@ import JointHolders from './screens/JointHolders.tsx'
 import References from './screens/References.tsx'
 import Owners from './screens/Owners.tsx'
 import MerchantStatement from './screens/MerchantStatement.tsx'
+import HistoricalStatement from './screens/HistoricalStatement.tsx'
 
 interface ScreenState {
   name: string
@@ -560,6 +561,7 @@ export default function App() {
           }
           onTransactions={(account) => go('transactions', { account })}
           onTransfers={(account) => go('transfers', { account })}
+          onHistStatement={(account) => go('histStatement', { account })}
           onExit={() => go(screen.from ?? 'detail')}
         />
       )}
@@ -694,6 +696,11 @@ export default function App() {
 
       {screen.name === 'transfers' && (
         <TransferEnquiry account={screen.account!} onExit={() => go('accounts')} />
+      )}
+
+      {/* cmdExit unloads frmHistStmt and returns to the account grid. */}
+      {screen.name === 'histStatement' && (
+        <HistoricalStatement account={screen.account!} onExit={() => go('accounts')} />
       )}
 
       {/* cmdExit unloads frmMerchantStmt and returns to frmEnquiry. */}

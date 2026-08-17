@@ -28,6 +28,10 @@ export type Account = {
   accountStatus: string
   creditLimit: string
   dormantFlag: string
+  /** gld0data.branchCode — the account's own branch (AccountSummary.branchCode). */
+  branchCode?: string
+  /** "1" when this operator may not see the balance; blocks every row action. */
+  balEnqRestricted?: string
 }
 
 export type SearchCriteria = {

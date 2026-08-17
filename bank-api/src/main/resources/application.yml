@@ -113,3 +113,52 @@ bank:
     # Prefix for DB #2's views (defaults to the archival prefix until DB #2 has
     # its own source). See archival-db.table-prefix above.
     table-prefix: ${ONLINE_DB_TABLE_PREFIX:${ARCHIVAL_DB_TABLE_PREFIX:}}
+  statement-db:           # DB #3 — the statement archive, Historical Statement only.
+                          # A SEPARATE Oracle instance, not Denodo and not DB #2:
+                          # it replaces the legacy's Btrieve statement index plus
+                          # the zipped pre-rendered pages it pointed at
+                          # (frmHistStmt.frm), and holds nothing else. Drop
+                          # ojdbc*.jar next to the Denodo driver in the
+                          # -Dloader.path directory.
+                          #
+                          # OFF by default: with no URL configured the screen
+                          # reports itself unavailable rather than failing with a
+                          # driver error. Set STATEMENT_DB_ENABLED=true once the
+                          # URL, credentials and table names below are filled in.
+    enabled: ${STATEMENT_DB_ENABLED:false}
+    jdbc-url: ${STATEMENT_DB_URL:}
+    username: ${STATEMENT_DB_USER:}
+    password: ${STATEMENT_DB_PASSWORD:}
+    driver-class-name: ${STATEMENT_DB_DRIVER:oracle.jdbc.OracleDriver}
+    read-only: true
+    maximum-pool-size: 2
+    # Schema qualifier, applied after FROM/JOIN exactly like the archival prefix
+    # (SqlTablePrefixer). Note the trailing dot: "O2MS_UPG1." turns
+    # "FROM STMT_TXN" into "FROM O2MS_UPG1.STMT_TXN". Blank if the connection's
+    # own default schema already resolves the tables.
+    table-prefix: ${STATEMENT_DB_TABLE_PREFIX:O2MS_UPG1.}
+    # ---------------------------------------------------------------------
+    # Table names. Only PDP_STMT_TXN was confirmed from the DBA screenshots;
+    # the other three are placeholders following the same naming. CORRECT THESE
+    # against the real schema before switching `enabled` on — a wrong name is a
+    # startup-clean, query-time ORA-00942.
+    #
+    # Two header/detail PAIRS exist with near-identical shapes. They are paired
+    # by their key, not by name: one header and one detail carry STMT_NUM and
+    # one of each does not, and a detail can only join a header sharing its key.
+    # PDP_STMT_TXN (confirmed) has NO STMT_NUM, so the PDP header is the one
+    # keyed on ACCT_NUM + STMT_DATE alone — the one with CUST_NUM,
+    # TITLE/FIRST_NAME/SECOND_NAME, PAGE_NUM and BRANCH_DATA. The non-PDP pair
+    # is the one WITH STMT_NUM, whose header carries a single CUST_NAME plus
+    # IBAN and REF_NUM.
+    #
+    # What actually distinguishes the two archives is not recorded anywhere:
+    # "PDP" appears nowhere in the VB6, the C, or the archival dictionary. So
+    # BOTH pairs are queried and every statement is tagged with the pair it came
+    # from, rather than one being guessed at and the other dropped. Blank out a
+    # pair's header name to stop querying it.
+    # ---------------------------------------------------------------------
+    hdr-table: ${STATEMENT_DB_HDR_TABLE:STMT_HDR}
+    txn-table: ${STATEMENT_DB_TXN_TABLE:STMT_TXN}
+    pdp-hdr-table: ${STATEMENT_DB_PDP_HDR_TABLE:PDP_STMT_HDR}
+    pdp-txn-table: ${STATEMENT_DB_PDP_TXN_TABLE:PDP_STMT_TXN}

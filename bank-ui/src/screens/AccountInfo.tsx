@@ -39,6 +39,7 @@ export default function AccountInfo({
   onBlockedBreakup,
   onTransactions,
   onTransfers,
+  onHistStatement,
   hasMore = false,
   onMore,
   onExit,
@@ -53,6 +54,7 @@ export default function AccountInfo({
   onBlockedBreakup: (account: Account) => void
   onTransactions: (account: Account) => void
   onTransfers: (account: Account) => void
+  onHistStatement: (account: Account) => void
   hasMore?: boolean
   onMore?: () => void
   onExit: () => void
@@ -118,7 +120,17 @@ export default function AccountInfo({
           ...(ENQUIRY_ONLY
             ? []
             : [{ label: 'Destroy Cheque', disabled: !canDestroyCheque, title: canDestroyCheque ? undefined : noAuthority, onClick: stub('Destroy cheque') }]),
-          { label: 'Historical Statement', disabled: !canView, title: canView ? undefined : noAuthority, onClick: stub('Historical statement') },
+          // Legacy cmdHistStmt ("Historical Statement") — frmHistStmt.frm. The
+          // only screen served by DB #3, the statement archive: the legacy read
+          // it from Btrieve indexes and zipped page files on a mapped drive,
+          // which that database replaces. Unlike the two buttons above it does
+          // NOT need the Finacle/online source.
+          {
+            label: 'Historical Statement',
+            disabled: !canView,
+            title: canView ? undefined : noAuthority,
+            onClick: needRow((row) => onHistStatement(row)),
+          },
           // Legacy cmdTransEnq ("Transaction Type Enquiry") — service 85 over
           // thd0data, with the date range + trans-type filter.
           { label: 'Transaction Type Enquiry', onClick: needRow((row) => onTransactions(row)) },
