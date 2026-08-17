@@ -44,6 +44,8 @@ import References from './screens/References.tsx'
 import Owners from './screens/Owners.tsx'
 import MerchantStatement from './screens/MerchantStatement.tsx'
 import HistoricalStatement from './screens/HistoricalStatement.tsx'
+import OnDemandStatement from './screens/OnDemandStatement.tsx'
+import TransactionInquiry from './screens/TransactionInquiry.tsx'
 
 interface ScreenState {
   name: string
@@ -562,6 +564,8 @@ export default function App() {
           onTransactions={(account) => go('transactions', { account })}
           onTransfers={(account) => go('transfers', { account })}
           onHistStatement={(account) => go('histStatement', { account })}
+          onOndemandStatement={(account) => go('ondemandStatement', { account })}
+          onTransactionInquiry={(account) => go('transactionInquiry', { account })}
           onExit={() => go(screen.from ?? 'detail')}
         />
       )}
@@ -701,6 +705,24 @@ export default function App() {
       {/* cmdExit unloads frmHistStmt and returns to the account grid. */}
       {screen.name === 'histStatement' && (
         <HistoricalStatement account={screen.account!} onExit={() => go('accounts')} />
+      )}
+
+      {/* The two online-gateway screens. Both carry the customer's name from
+          the grid context, as the legacy copies it onto the form. */}
+      {screen.name === 'ondemandStatement' && (
+        <OnDemandStatement
+          account={screen.account!}
+          customerName={customer?.name ?? ''}
+          onExit={() => go('accounts')}
+        />
+      )}
+
+      {screen.name === 'transactionInquiry' && (
+        <TransactionInquiry
+          account={screen.account!}
+          customerName={customer?.name ?? ''}
+          onExit={() => go('accounts')}
+        />
       )}
 
       {/* cmdExit unloads frmMerchantStmt and returns to frmEnquiry. */}

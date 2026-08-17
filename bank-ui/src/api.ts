@@ -340,6 +340,35 @@ export const api = {
       params,
     ),
 
+  /**
+   * On-demand Statement (legacy frmInputform, service 07) — one gateway page.
+   * Day-granular. Page by sending back lastTransPtr until completionFlag "1".
+   */
+  onDemandStatement: (
+    accNo: string,
+    params: { fromDate: string; toDate: string; lastTransPtr: string },
+  ) =>
+    get<OnlineStatementPage>(
+      `/api/accounts/${accNo}/ondemand-statement`,
+      'generate the on-demand statement',
+      params,
+    ),
+
+  /**
+   * Transaction Inquiry (legacy frmTransaction, service 11) — one gateway page.
+   * There is no toDate: the gateway supplies its own current date, because the
+   * branch PC's clock could not be trusted (frmTransaction.frm:860-864).
+   */
+  onlineTransactions: (
+    accNo: string,
+    params: { fromDate: string; startTrans: string; lastTransPtr: string },
+  ) =>
+    get<OnlineStatementPage>(
+      `/api/accounts/${accNo}/online-transactions`,
+      'fetch the transactions',
+      params,
+    ),
+
   signatoriesByAccount: (accNo: string, page = 0) =>
     get<Paged<GridRow>>(`/api/accounts/${accNo}/signatories`, 'load the signatories', { page: String(page) }),
 
@@ -473,6 +502,50 @@ export interface HistoricalStatement {
   branchData: string
   fileName: string
   lines: HistoricalStatementLine[]
+}
+
+/**
+ * One transaction as the online gateway returns it.
+ *
+ * `transAmt` is a signed decimal string in MINOR units whose leading character
+ * is the side: "+" is credit, anything else debit. Divide by 10^decimalPlace
+ * before display — see onlineAmount() in the screens.
+ */
+export interface OnlineTransaction {
+  userId: string
+  postDate: string
+  valueDate: string
+  transType: string
+  transAmt: string
+  narrative1: string
+  narrative2: string
+  narrative3: string
+  referenceNo: string
+  supervisorId: string
+  transCounter: string
+  stmtFlag: string
+}
+
+/**
+ * One page of an online-gateway reply, shared by On-demand Statement and
+ * Transaction Inquiry. `bfBalance` (minor units) seeds the running balance and
+ * arrives only on the first page; keep paging while completionFlag is not "1".
+ */
+export interface OnlineStatementPage {
+  responseStatus: string
+  accNo: string
+  custName: string
+  address: string
+  branchCode: string
+  branchName: string
+  langCode: string
+  decimalPlace: string
+  bfBalance: string
+  fromDate: string
+  toDate: string
+  transactions: OnlineTransaction[]
+  lastTransPtr: string
+  completionFlag: string
 }
 
 /** Card grid response — local card rows + DB #2 customer header (§13). */

@@ -40,6 +40,8 @@ export default function AccountInfo({
   onTransactions,
   onTransfers,
   onHistStatement,
+  onOndemandStatement,
+  onTransactionInquiry,
   hasMore = false,
   onMore,
   onExit,
@@ -55,6 +57,8 @@ export default function AccountInfo({
   onTransactions: (account: Account) => void
   onTransfers: (account: Account) => void
   onHistStatement: (account: Account) => void
+  onOndemandStatement: (account: Account) => void
+  onTransactionInquiry: (account: Account) => void
   hasMore?: boolean
   onMore?: () => void
   onExit: () => void
@@ -98,17 +102,23 @@ export default function AccountInfo({
       buttonGroups={[
         [
           { label: 'Enquiry', kind: 'primary', onClick: needRow((row) => onEnquiry(row)) },
-          { label: 'Ondemand Statement', disabled: !canView, title: canView ? undefined : noAuthority, onClick: stub('On-demand statement') },
-          // Legacy cmdTransaction ("Transaction Inquiry") — frmTransaction.frm
-          // speaks the ONLINE GATEWAY envelope (checkSum/branchName/Source/EOT,
-          // services 07/11), not cbcmssrv, so there is no archival view behind
-          // it. Blocked on DB #2, like the two statement buttons. The archival
-          // transaction enquiry is "Transaction Type Enquiry" below.
+          // Legacy cmdStatement — frmInputform (OnlineStmt.frm) over the ONLINE
+          // GATEWAY envelope (checkSum/branchName/Source/EOT), service 07, not
+          // cbcmssrv. No archival view behind it; the screen says so at the top.
+          {
+            label: 'Ondemand Statement',
+            disabled: !canView,
+            title: canView ? undefined : noAuthority,
+            onClick: needRow((row) => onOndemandStatement(row)),
+          },
+          // Legacy cmdTransaction — frmTransaction.frm, same gateway, service
+          // 11. The ARCHIVAL transaction enquiry is "Transaction Type Enquiry"
+          // below; these two are different screens against different sources.
           {
             label: 'Transaction Inquiry',
             disabled: !canView,
-            title: canView ? 'Needs the online (Finacle) source — not yet available' : noAuthority,
-            onClick: stub('Transaction inquiry'),
+            title: canView ? undefined : noAuthority,
+            onClick: needRow((row) => onTransactionInquiry(row)),
           },
           { label: 'Cheque Book Request', disabled: !canView, title: canView ? undefined : noAuthority, onClick: needRow((row) => onChequeBook(row)) },
           { label: 'Standing Order', disabled: !canTellerOps, title: canTellerOps ? undefined : noAuthority, onClick: needRow((row) => onStandingOrder(row)) },

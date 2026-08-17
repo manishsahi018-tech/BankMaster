@@ -217,8 +217,16 @@ export default function EnquirySelect({
           <>
             <button
               type="button"
+              // Not "to be built" — OUT OF SCOPE. frmCustCategorize is a router,
+              // not an enquiry: it picks a main/sub category and then launches
+              // one of five CREATE screens (New/Upd Customer, Quick Customer,
+              // Internal Customer, New Customer via phone, Quick Pension
+              // Customer). This build is enquiry-only, so the whole branch stays
+              // behind ENQUIRY_ONLY rather than waiting on a data source.
               onClick={() =>
-                toast.info('Opens Customer Categorize for a new customer (to be built).')
+                toast.info(
+                  'Customer Categorize opens the customer-creation screens, which are outside this enquiry-only build.',
+                )
               }
               className={secondaryBtn}
             >

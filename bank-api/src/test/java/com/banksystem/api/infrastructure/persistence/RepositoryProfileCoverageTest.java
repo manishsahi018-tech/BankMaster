@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Profiles;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -76,6 +77,71 @@ class RepositoryProfileCoverageTest {
             return true; // unconditional bean — active in every deployment
         }
         return Profiles.of(profile.value()).matches(activeProfiles::contains);
+    }
+
+    /**
+     * A repository selected by a PROPERTY as well as a profile must have
+     * exactly one active implementation whichever way that property is set.
+     *
+     * <p>The test above counts a {@code @ConditionalOnProperty} bean as active
+     * unconditionally, because it only reads {@code @Profile}. That is fine for
+     * "is there at least one?" but blind to the two ways a property switch
+     * breaks: BOTH implementations matching (NoUniqueBeanDefinitionException) or
+     * NEITHER (the startup failure this class exists to prevent), and it cannot
+     * tell either from a correct setup. StatementRepository is the first
+     * repository here selected that way — DB #3 is off by default and its
+     * datasource is not even created then — so the gap is now real.
+     */
+    @Test
+    void propertySwitchedRepositoriesHaveExactlyOneActiveImplementation() throws Exception {
+        List<String> problems = new ArrayList<>();
+        for (Class<?> repository : repositoryInterfaces()) {
+            List<Class<?>> implementations = implementationsOf(repository);
+            // Only repositories that actually use a property switch.
+            Set<String> properties = new java.util.LinkedHashSet<>();
+            for (Class<?> impl : implementations) {
+                ConditionalOnProperty on = impl.getAnnotation(ConditionalOnProperty.class);
+                if (on != null) {
+                    properties.addAll(List.of(on.name()));
+                }
+            }
+            for (String property : properties) {
+                DEPLOYMENTS.forEach((deployment, active) -> {
+                    for (String setting : List.of("true", "false", ABSENT)) {
+                        long matches = implementations.stream()
+                                .filter(c -> isActive(c, active))
+                                .filter(c -> propertyMatches(c, property, setting))
+                                .count();
+                        if (matches != 1) {
+                            problems.add("%s under [%s] with %s=%s has %d active implementations"
+                                    .formatted(repository.getSimpleName(), deployment,
+                                            property, setting, matches));
+                        }
+                    }
+                });
+            }
+        }
+        assertThat(problems)
+                .as("exactly one implementation must win for every value of the switch")
+                .isEmpty();
+    }
+
+    /** Stands for "the property is not set at all", where matchIfMissing decides. */
+    private static final String ABSENT = "<absent>";
+
+    /**
+     * Whether Spring's OnPropertyCondition would match this bean for that
+     * setting. Beans carrying no {@code @ConditionalOnProperty} always match —
+     * they are the unconditional half of the pair.
+     */
+    private static boolean propertyMatches(Class<?> type, String property, String setting) {
+        ConditionalOnProperty on = type.getAnnotation(ConditionalOnProperty.class);
+        if (on == null || !List.of(on.name()).contains(property)) {
+            return true;
+        }
+        // havingValue defaults to "" meaning "any value other than false".
+        String required = on.havingValue().isEmpty() ? "true" : on.havingValue();
+        return ABSENT.equals(setting) ? on.matchIfMissing() : required.equalsIgnoreCase(setting);
     }
 
     private static List<Class<?>> repositoryInterfaces() throws Exception {
