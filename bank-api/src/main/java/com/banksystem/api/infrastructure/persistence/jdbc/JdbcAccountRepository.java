@@ -823,6 +823,16 @@ public class JdbcAccountRepository implements AccountRepository {
         // Unique-key read: 14-char actual accNo + first 8 chars of
         // requestDateTime. Per-user-id overlay rules applied in Java — see
         // the comment at the mapping below (they differ per lifecycle step).
+        //
+        // Keyed in both timestamp forms for the reason spelled out in
+        // JdbcCustomerRepository.profileAsOf: chequeBookRequests normalises
+        // requestDateTime through BmForms.isoToBmTimestamp before the UI ever
+        // sees it, so the grid hands back YYYYMMDD. When the view types the
+        // column as a timestamp the driver renders it YYYY-MM-DD HH:MM:SS and
+        // SUBSTR(...,1,8) yields YYYY-MM- — the 8-char predicate alone cannot
+        // match, and the drill-down 404s on a row that demonstrably exists.
+        // The 10-char ISO arm closes that; both together can only ever match
+        // more rows than the 8-char one, never fewer.
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 SELECT requestUserId, requestDateTime,
                        producedDate, producedTime, producedUserId,
@@ -832,10 +842,12 @@ public class JdbcAccountRepository implements AccountRepository {
                        branchCode
                 FROM   stchqtab
                 WHERE  accNo = :accNo
-                  AND  SUBSTR(requestDateTime, 1, 8) = :reqDate
+                  AND  (SUBSTR(requestDateTime, 1, 8) = :reqDate
+                        OR SUBSTR(requestDateTime, 1, 10) = :reqDateIso)
                 FETCH FIRST 1 ROWS ONLY
                 """,
-                Map.of("accNo", accNo, "reqDate", reqDate));
+                Map.of("accNo", accNo, "reqDate", reqDate,
+                        "reqDateIso", BmForms.bmToIso(reqDate)));
         if (rows.isEmpty()) {
             return Optional.empty();
         }
@@ -848,7 +860,10 @@ public class JdbcAccountRepository implements AccountRepository {
         // the branch (10294-10295) — reproduced verbatim below.
         return Optional.of(new ChequeBookHistory(
                 accNo,
-                str(row, "requestDateTime"),
+                // Normalised like the grid's copy (§4): the screen's
+                // formatTimestamp expects the 14-char BM form, so a timestamp
+                // column's ISO rendering has to be converted here too.
+                BmForms.isoToBmTimestamp(str(row, "requestDateTime")),
                 overlayBranch(str(row, "requestUserId"), branch),
                 BmForms.actualDate(str(row, "producedDate")),
                 str(row, "producedTime"),
