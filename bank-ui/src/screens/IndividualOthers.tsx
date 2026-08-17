@@ -24,6 +24,13 @@ import {
 // Cert-of-Birth or special-status block. The legacy disables every frame in
 // search/history mode, so this renders read-only throughout.
 
+// Enquiry-only build: supervisor-approval actions are hidden rather than
+// shown disabled. A permanently greyed button advertises a capability this
+// build does not have, and invites "why can't I click that?" — the legacy only
+// ever enables it inside the approval workflow (supervisorAction), which is a
+// write path and out of scope. Flip to false to restore it.
+const ENQUIRY_ONLY = true
+
 export default function IndividualOthers({
   profile,
   historyAsOf,
@@ -317,14 +324,16 @@ export default function IndividualOthers({
           <button type="button" onClick={onJointHolders} className={btnKinds.secondary}>
             Joint Holders
           </button>
-          <button
-            type="button"
-            disabled
-            title="Available during supervisor approval only"
-            className={btnKinds.disabled}
-          >
-            Supervisor Comments
-          </button>
+          {!ENQUIRY_ONLY && (
+            <button
+              type="button"
+              disabled
+              title="Available during supervisor approval only"
+              className={btnKinds.disabled}
+            >
+              Supervisor Comments
+            </button>
+          )}
           {/* cmdNext — frmIndividualOthers has one and so does the Saudi form;
               it was the only profile here without its page 2. */}
           <NextPageButton onClick={() => onNextPage?.()} />

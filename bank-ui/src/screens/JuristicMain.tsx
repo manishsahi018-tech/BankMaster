@@ -26,6 +26,13 @@ import {
 // shareholding percentages; and a Date of Establishment in place of Date of
 // Birth. No title, gender, marital status, dependents or personal ID blocks.
 
+// Enquiry-only build: supervisor-approval actions are hidden rather than
+// shown disabled. A permanently greyed button advertises a capability this
+// build does not have, and invites "why can't I click that?" — the legacy only
+// ever enables it inside the approval workflow (supervisorAction), which is a
+// write path and out of scope. Flip to false to restore it.
+const ENQUIRY_ONLY = true
+
 export default function JuristicMain({
   profile,
   historyAsOf,
@@ -298,14 +305,16 @@ export default function JuristicMain({
           <button type="button" onClick={onReferences} className={btnKinds.secondary}>
             References
           </button>
-          <button
-            type="button"
-            disabled
-            title="Available during supervisor approval only"
-            className={btnKinds.disabled}
-          >
-            Supervisor Comments
-          </button>
+          {!ENQUIRY_ONLY && (
+            <button
+              type="button"
+              disabled
+              title="Available during supervisor approval only"
+              className={btnKinds.disabled}
+            >
+              Supervisor Comments
+            </button>
+          )}
           <NextPageButton onClick={onNextPage} />
           <button type="button" onClick={onBack} className={btnKinds.danger}>
             Cancel

@@ -24,6 +24,13 @@ import {
 // Data is the real stcusttab profile (api.customerProfile) — or the stcustlog
 // snapshot in history mode (api.customerProfileAsOf) — passed in as `profile`.
 
+// Enquiry-only build: supervisor-approval actions are hidden rather than
+// shown disabled. A permanently greyed button advertises a capability this
+// build does not have, and invites "why can't I click that?" — the legacy only
+// ever enables it inside the approval workflow (supervisorAction), which is a
+// write path and out of scope. Flip to false to restore it.
+const ENQUIRY_ONLY = true
+
 export default function IndividualSaudi({
   profile,
   historyAsOf,
@@ -316,14 +323,16 @@ export default function IndividualSaudi({
             Joint Holders
           </button>
           {/* stcustlog.supervisorComments is not in the point read — see notes */}
-          <button
-            type="button"
-            disabled
-            title="Available during supervisor approval only"
-            className={btnKinds.disabled}
-          >
-            Supervisor Comments
-          </button>
+          {!ENQUIRY_ONLY && (
+            <button
+              type="button"
+              disabled
+              title="Available during supervisor approval only"
+              className={btnKinds.disabled}
+            >
+              Supervisor Comments
+            </button>
+          )}
           <NextPageButton onClick={() => onNextPage?.()} />
           <button type="button" onClick={onBack} className={btnKinds.danger}>
             Cancel

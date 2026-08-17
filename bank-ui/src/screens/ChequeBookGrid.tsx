@@ -5,6 +5,10 @@ import { stchqtab } from '../schema/index.ts'
 import { column } from '../schema/helpers.ts'
 
 // Mirrors legacy frmChequeBookGrid.frm ("Cheque Book Request Information").
+
+// Enquiry-only build: the create/amend/delete actions are hidden rather than
+// shown disabled. Flip to false to restore them.
+const ENQUIRY_ONLY = true
 // New/Amend/Delete are maintenance actions enabled only for authorised
 // operators in update mode; in enquiry mode they stay disabled.
 // Rows are stchqtab records from the archival dictionary.
@@ -49,9 +53,16 @@ export default function ChequeBookGrid({
       emptyText="No cheque book requests for this account."
       buttonGroups={[
         [
-          { label: 'New Cheque Book Request', disabled: true, title: 'Available in update mode only' },
-          { label: 'Amend Cheque Book Request', disabled: true, title: 'Available in update mode only' },
-          { label: 'Delete Cheque Book Request', disabled: true, title: 'Available in update mode only' },
+          // Hidden for enquiry-only (write actions: create / amend / delete a
+          // cheque book request). Shown disabled they only advertised a
+          // capability this build does not have.
+          ...(ENQUIRY_ONLY
+            ? []
+            : [
+                { label: 'New Cheque Book Request', disabled: true, title: 'Available in update mode only' },
+                { label: 'Amend Cheque Book Request', disabled: true, title: 'Available in update mode only' },
+                { label: 'Delete Cheque Book Request', disabled: true, title: 'Available in update mode only' },
+              ]),
           {
             label: 'History',
             onClick: ({ row, notify }) => {
