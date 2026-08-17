@@ -86,6 +86,12 @@ interface ScreenState {
   snapshot?: Record<string, string>
   /** juristic page 2 data (frmJuristicAccountInfo) */
   juristicInfo?: GridRow
+  /** screen to return to from Essential Documents (both page-2 screens open it) */
+  docsFrom?: string
+  /** screen to exit to from the signatory grid */
+  signatoriesFrom?: string
+  /** signatory grid is scoped to the CUSTOMER rather than one account */
+  byCustomer?: boolean
   /** individual page 2 attributes (frmIndividualSaudiAcctInfo) */
   acctInfo?: Record<string, string>
   /** required document codes for the customer's SAMA sub-category */
@@ -411,6 +417,27 @@ export default function App() {
           profile={screen.profile}
           info={screen.juristicInfo}
           onPrevPage={() => go('juristic')}
+          // cmdSignatory loads frmJuristicSignatory BY CUSTOMER NUMBER, not by
+          // account (frmJuristicAccountInfo.frm:2270) — a juristic customer's
+          // signatories span its accounts.
+          onSignatories={() =>
+            goFetch('signatories', { signatoriesFrom: 'juristic2', byCustomer: true }, async () => {
+              const r = await api.signatoriesByCustomer(customer!.custNo)
+              return { gridRows: r.rows, page: 0, hasMore: r.hasMore }
+            })
+          }
+          onOwners={() =>
+            goFetch('owners', { partyFrom: 'juristic2' }, async () => {
+              const r = await api.owners(customer!.custNo)
+              return { gridRows: r.rows, page: 0, hasMore: r.hasMore }
+            })
+          }
+          onDocuments={() =>
+            goFetch('documents', { docsFrom: 'juristic2' }, async () => ({
+              documents: await api.requiredDocuments(customer!.custNo),
+            }))
+          }
+          onCancel={() => setScreen({ name: 'search' })}
         />
       )}
 
@@ -475,7 +502,9 @@ export default function App() {
           acctInfo={screen.acctInfo}
           onPrevPage={() => go('detail')}
           onDocuments={() =>
-            goFetch('documents', {}, async () => ({
+            // Reset docsFrom rather than relying on its default — the juristic
+            // page 2 sets it, and `go` would carry that value into here.
+            goFetch('documents', { docsFrom: 'detail2' }, async () => ({
               documents: await api.requiredDocuments(customer!.custNo),
             }))
           }
@@ -487,7 +516,9 @@ export default function App() {
         <EssentialDocuments
           customer={customer}
           documents={screen.documents}
-          onReturn={() => go('detail2')}
+          // Both page-2 screens open Documents, so Return has to go back to
+          // whichever one did rather than always to the individual's.
+          onReturn={() => go(screen.docsFrom ?? 'detail2')}
         />
       )}
 
@@ -598,7 +629,11 @@ export default function App() {
           }
           onCancel={() => go('accounts')}
           onSignatories={() =>
-            goFetch('signatories', {}, async () => {
+            // Both flags are reset explicitly, not left to default: `go` merges
+            // into the previous screen state, so a juristic customer-scoped
+            // visit earlier in the session would otherwise leave byCustomer true
+            // here and render an account list against the wrong query.
+            goFetch('signatories', { byCustomer: false, signatoriesFrom: 'accountDetail' }, async () => {
               const _r = await api.signatoriesByAccount(screen.account!.accountNumber)
               return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
             })
@@ -770,16 +805,27 @@ export default function App() {
 
       {screen.name === 'signatories' && (
         <SignatoryGrid
-          account={screen.account!}
+          account={screen.byCustomer ? undefined : screen.account!}
+          customer={customer ?? undefined}
           rows={screen.gridRows ?? []}
           hasMore={screen.hasMore ?? false}
-          onMore={appendPage('gridRows', (p) => api.signatoriesByAccount(screen.account!.accountNumber, p))}
+          onMore={appendPage('gridRows', (p) =>
+            screen.byCustomer
+              ? api.signatoriesByCustomer(customer!.custNo, p)
+              : api.signatoriesByAccount(screen.account!.accountNumber, p),
+          )}
+          // The detail is keyed on (accNo, signatoryNo). A customer-scoped list
+          // spans accounts, so the account has to come from the ROW rather than
+          // from screen.account — which is not even set on that path.
           onDetail={(row) =>
             goFetch('signatoryDetail', {}, async () => ({
-              detail: await api.signatoryDetail(screen.account!.accountNumber, String(row.signatoryNo)),
+              detail: await api.signatoryDetail(
+                screen.byCustomer ? String(row.accNo) : screen.account!.accountNumber,
+                String(row.signatoryNo),
+              ),
             }))
           }
-          onExit={() => go('accountDetail')}
+          onExit={() => go(screen.signatoriesFrom ?? 'accountDetail')}
         />
       )}
 

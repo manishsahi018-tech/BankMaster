@@ -14,10 +14,18 @@ export default function JuristicAccountInfo({
   profile,
   info,
   onPrevPage,
+  onSignatories,
+  onOwners,
+  onDocuments,
+  onCancel,
 }: {
   profile: GridRow
   info: GridRow
   onPrevPage: () => void
+  onSignatories: () => void
+  onOwners: () => void
+  onDocuments: () => void
+  onCancel: () => void
 }) {
   const facilityRow = (prefix: string) => [
     { label: 'Currency', value: info[`${prefix}Currency`] },
@@ -95,7 +103,26 @@ export default function JuristicAccountInfo({
           ],
         },
       ]}
-      buttons={[{ label: 'Previous Page', kind: 'primary', onClick: onPrevPage }]}
+      // The legacy form's enquiry-reachable buttons, in its own left-to-right
+      // order (frmJuristicAccountInfo.frm cmdPrevPage / cmdSignatory / cmdOwner
+      // / cmdDocuments / cmdCancel). Create, Approve and Reject are the
+      // maintenance path and stay out of an enquiry build.
+      //
+      // All three drill-downs take the legacy's SEARCH branch, which is the one
+      // that runs when searchAction / custHistoryAction is set: it skips
+      // validateFrmJuristicAcctInfo and the gDateTime stamp — both create-time
+      // concerns — and simply loads the target form by customer number
+      // (:2179 cmdOwner, :2270 cmdSignatory).
+      buttons={[
+        { label: 'Previous Page', kind: 'primary', onClick: onPrevPage },
+        { label: 'Signatory Details', onClick: onSignatories },
+        { label: 'Owner Details', onClick: onOwners },
+        { label: 'Documents', onClick: onDocuments },
+        // cmdCancel_Click is `Unload Me` (:1974) — it leaves the customer
+        // entirely, unlike Previous Page which only steps back a page. Matches
+        // the individual page 2's Cancel.
+        { label: 'Cancel', kind: 'danger', onClick: onCancel },
+      ]}
     />
   )
 }

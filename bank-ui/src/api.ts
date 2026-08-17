@@ -372,6 +372,15 @@ export const api = {
   signatoriesByAccount: (accNo: string, page = 0) =>
     get<Paged<GridRow>>(`/api/accounts/${accNo}/signatories`, 'load the signatories', { page: String(page) }),
 
+  /**
+   * Every signatory of a CUSTOMER, across all their accounts — the listing the
+   * legacy's juristic page 2 opens (frmJuristicAccountInfo cmdSignatory, which
+   * loads frmJuristicSignatory by customer number, not by account). Rows carry
+   * their own accNo, so a detail can still be opened from one.
+   */
+  signatoriesByCustomer: (custNo: string, page = 0) =>
+    get<Paged<GridRow>>(`/api/customers/${custNo}/signatories`, 'load the signatories', { page: String(page) }),
+
   signatoryDetail: (accNo: string, signatoryNo: string) =>
     get<GridRow>(`/api/accounts/${accNo}/signatories/${signatoryNo}`, 'open this signatory'),
 
