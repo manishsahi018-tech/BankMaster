@@ -130,11 +130,11 @@ export default function AccountMaintenance({
         <SectionCard title="Status & Statements">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Int. Application" htmlFor="intApp">
-              {/* The last editable control on this screen, now read-only like
-                  the rest. Its two literals stay for the moment: stctltab does
-                  carry an 'IA' (Interest Application) record type, so this could
-                  become a served set too — out of scope for the four added here. */}
-              <ReadOnlyInput id="intApp" readOnly value={data.intApplication} />
+              {/* Served from stctltab recType 'IA'. The two hard-coded options
+                  this replaced were both incomplete and wrong: the domain has
+                  four values (gld0data.intApplication), and 1 is "Pay to another
+                  account", not "Transfer". */}
+              <ReadOnlyInput id="intApp" readOnly value={codeLabel('intApplication', data.intApplication)} />
             </Field>
             <div>
               <span className={labelCls}>Dormant</span>

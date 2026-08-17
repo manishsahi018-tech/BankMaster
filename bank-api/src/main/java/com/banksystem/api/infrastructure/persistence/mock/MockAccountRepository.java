@@ -383,7 +383,7 @@ public class MockAccountRepository implements AccountRepository {
                 Map.entry("stmtFrequency",
                         List.of("01", "02", "04", "05").get(DemoData.pick(accNo, 71, 4))),
                 Map.entry("statementDay", "Br.Stmt.Day"),
-                Map.entry("intApplication", "0-Capitalise"),
+                Map.entry("intApplication", "0"),
                 Map.entry("crInterestRate", String.valueOf(DemoData.pick(accNo, 72, 4))),
                 Map.entry("drInterestRate", String.valueOf(18 + DemoData.pick(accNo, 73, 6))),
                 Map.entry("creditLimit", a.creditLimit()),

@@ -109,7 +109,16 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("04", "Monthly"),
                     new CodeEntry("05", "Quarterly"),
                     new CodeEntry("06", "Half yearly"),
-                    new CodeEntry("07", "Yearly"))));
+                    new CodeEntry("07", "Yearly"))),
+            // Interest application — stctltab recType 'IA' under denodo. The
+            // four values come from gld0data.ts's intApplication description.
+            // The screen previously offered two hard-coded options, and called
+            // 1 "Transfer" rather than what the schema says it is.
+            Map.entry("intApplication", List.of(
+                    new CodeEntry("0", "Capitalise"),
+                    new CodeEntry("1", "Pay to another account"),
+                    new CodeEntry("2", "Pay by cheque"),
+                    new CodeEntry("3", "Memorandum interest only"))));
 
     @Override
     public Map<String, List<CodeEntry>> codes() {

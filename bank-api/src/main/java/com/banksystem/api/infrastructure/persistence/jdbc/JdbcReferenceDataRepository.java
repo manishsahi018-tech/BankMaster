@@ -51,6 +51,8 @@ import org.springframework.stereotype.Repository;
  *       master; column detail wins. Access bmledgerinfo maps here.</li>
  *   <li>{@code accStatus} — stctltab, RecordType 'AS'.</li>
  *   <li>{@code stmtFreq} — stctltab, RecordType 'SF'.</li>
+ *   <li>{@code intApplication} — stctltab, RecordType 'IA' (Interest
+ *       Application info).</li>
  *   <li>{@code cardStatus}, {@code cardRequestStatus} — fixed domains from
  *       the stcardtab.ts field descriptions (schema wins over the mock's
  *       abbreviated labels: e.g. requestStatus 1 is 'Approved' and 9 is
@@ -97,7 +99,7 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
     private static final List<String> DB_BACKED = List.of(
             "idType", "country", "businessType",
             "samaMainCategory", "samaSubCategory", "branch",
-            "currency", "ledger", "accStatus", "stmtFreq");
+            "currency", "ledger", "accStatus", "stmtFreq", "intApplication");
 
     @Override
     public Map<String, List<CodeEntry>> codes() {
@@ -214,6 +216,7 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
         // Frequency Code info.
         sets.put("accStatus", ctltabSet("accStatus", "AS"));
         sets.put("stmtFreq", ctltabSet("stmtFreq", "SF"));
+        sets.put("intApplication", ctltabSet("intApplication", "IA"));
         // Fixed value domains documented on stcardtab.ts (cardStatus /
         // requestStatus) — no stctltab recType carries them.
         sets.put("cardStatus", List.of(
