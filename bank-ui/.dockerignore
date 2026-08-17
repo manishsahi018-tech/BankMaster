@@ -1,0 +1,26 @@
+# Excluded from the build context. node_modules is the important one — it is
+# thousands of files, and `npm ci` reinstalls them inside the image anyway from
+# package-lock.json.
+node_modules/
+
+# Built output — the image runs `npm run build` itself. Leaving a stale local
+# dist/ out of the context also prevents it shadowing the fresh build.
+dist/
+dist-ssr/
+
+# Source archive checked into the tree (src.zip) — the build never reads it.
+*.zip
+
+# Docker files themselves.
+Dockerfile
+.dockerignore
+
+# Not needed to build the bundle.
+README.md
+scripts/
+
+# Editor / OS noise.
+.DS_Store
+.idea/
+.vscode/
+*.local
