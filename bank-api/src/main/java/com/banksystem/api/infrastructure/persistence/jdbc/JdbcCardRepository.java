@@ -83,7 +83,8 @@ public class JdbcCardRepository implements CardRepository {
             paramName = "custNo";
             paramValue = custNo.trim();
             // A 7-char BM customer number matches EITHER the direct custNo
-            // column OR the one embedded in the account number.
+            // column OR the one embedded in the account number, and the second
+            // test is a LIKE PATTERN rather than a SUBSTR comparison.
             //
             // stcardtab.custNo is declared size 7 and key k2 in the workbook, so
             // it looks like the obvious key — but it is not reliably populated,
@@ -96,11 +97,18 @@ public class JdbcCardRepository implements CardRepository {
             // The legacy sidesteps the question entirely: SEARCH_BY_CUSTNO keys
             // on coreCustNo via index 10 (cbbranch2.c:6544-6546) and never
             // touches custNo. We cannot use that path because the UI carries the
-            // 7-char archival form, not the 8-char core one — so match both
-            // archival spellings instead. bmAccNo is 14 chars (actual form
-            // despite its name), putting the customer at positions 6..12.
+            // 7-char archival form, not the 8-char core one.
+            //
+            // WHY A LIKE PATTERN AND NOT SUBSTR. Comparing SUBSTR(bmAccNo, 6, 7)
+            // came back one character to the RIGHT of the customer against real
+            // data: account 01000012345600 yielded 1234560 where the customer is
+            // 0123456 — what a 0-based start position produces. LIKE wildcards
+            // carry no such ambiguity. The account is currency(2) + ledger(3) +
+            // custNo(7) + sub(2), so the pattern is five wildcards, the customer,
+            // two more; it is built in Java (accountPattern) so no SQL string
+            // function is involved at all.
             where = paramValue.length() <= 7
-                    ? "(TRIM(s.custNo) = :custNo OR SUBSTR(s.bmAccNo, 6, 7) = :custNo)"
+                    ? "(TRIM(s.custNo) = :custNo OR s.bmAccNo LIKE :accPattern)"
                     : "s.coreCustNo = :custNo";
         } else if (notBlank(accNo)) {
             paramName = "accNo";
@@ -116,24 +124,18 @@ public class JdbcCardRepository implements CardRepository {
         List<CardRow> all = jdbc.query("""
                 SELECT s.cardNo, s.nameOnTheCard, s.firstIssueDate, s.expireDate,
                        s.cardStatus, s.requestStatus, s.pinRequestStatus,
-                       s.coreAccNo,
-                       -- Same fallback as resolveCardCustomer: a blank custNo
-                       -- here left the grid with NO customer header at all on
-                       -- the account and card searches, since the header is
-                       -- resolved from this value.
-                       COALESCE(NULLIF(TRIM(s.custNo), ''),
-                                SUBSTR(s.bmAccNo, 6, 7)) AS custNo
+                       s.coreAccNo, s.custNo, s.bmAccNo
                 FROM   stcardtab s
                 WHERE  %s
                 ORDER  BY s.coreCustNo, s.cardNo
                 """.formatted(where),
-                Map.of(paramName, paramValue),
+                params(paramName, paramValue),
                 (rs, i) -> new CardRow(new CardSummary(
                         s(rs, "cardNo"), s(rs, "nameOnTheCard"),
                         s(rs, "firstIssueDate"), s(rs, "expireDate"),
                         s(rs, "cardStatus"), s(rs, "requestStatus"),
                         s(rs, "pinRequestStatus"), s(rs, "coreAccNo")),
-                        s(rs, "custNo")));
+                        rowCustomer(s(rs, "custNo"), s(rs, "bmAccNo"))));
 
         PagedResult<CardRow> paged = PagedResult.page(all, page);
 
@@ -152,6 +154,47 @@ public class JdbcCardRepository implements CardRepository {
                 header.custBranchCode(), header.custType(), header.customerLang(),
                 paged.rows().stream().map(CardRow::summary).toList(),
                 paged.hasMore());
+    }
+
+    /** The bind set; a 7-char customer search also needs its LIKE pattern. */
+    private static Map<String, Object> params(String name, String value) {
+        return "custNo".equals(name) && value.length() <= 7
+                ? Map.of(name, value, "accPattern", accountPattern(value))
+                : Map.of(name, value);
+    }
+
+    /**
+     * Account-number pattern for one customer: currency(2) + ledger(3) then the
+     * customer then sub(2), as five single-character wildcards, the number, and
+     * two more.
+     */
+    static String accountPattern(String custNo) {
+        return "_____" + custNo + "__";
+    }
+
+    /**
+     * The customer a card row belongs to.
+     *
+     * <p>Taken from the ACCOUNT NUMBER first and the custNo column only as a
+     * fallback, which is the opposite of the obvious order and deliberate.
+     * stcardtab.custNo is not reliably populated — the reason
+     * JdbcCustomerRepository.resolveCardCustomer already coalesces past it —
+     * and where it IS populated it has been seen holding the digits shifted a
+     * place. bmAccNo is the column the account search matches on, so it is the
+     * one demonstrably carrying the right value; positions 6..12, 1-based, are
+     * the customer. Sliced in Java rather than SQL so the offset means exactly
+     * what it says.
+     *
+     * <p>This is what fills the grid's customer header: getting it wrong is not
+     * cosmetic, it leaves the whole header — name, branch, city — blank, because
+     * the value is looked up against stcusttab.
+     */
+    static String rowCustomer(String custNo, String bmAccNo) {
+        String acc = bmAccNo == null ? "" : bmAccNo.trim();
+        if (acc.length() >= 12) {
+            return acc.substring(5, 12);
+        }
+        return custNo == null ? "" : custNo.trim();
     }
 
     /**
