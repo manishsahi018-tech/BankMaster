@@ -353,9 +353,9 @@ public class MockAccountRepository implements AccountRepository {
         // Mock stacclog snapshot: the account looked different back then —
         // dormant with a lower credit limit and the old statement frequency.
         Map<String, String> live = new java.util.HashMap<>(accountDetail(accNo));
-        live.put("accountStatus", "02 - Dormant");
+        live.put("accountStatus", "02");
         live.put("dormant", "Yes");
-        live.put("stmtFrequency", "03 - Quarterly");
+        live.put("stmtFrequency", "05");
         live.put("creditLimit", "5000");
         live.put("memoNote1", "Pre-migration record");
         return Map.copyOf(live);
@@ -372,12 +372,16 @@ public class MockAccountRepository implements AccountRepository {
         return Map.ofEntries(
                 Map.entry("customerNo", c.custNo()),
                 Map.entry("customerName", c.shortName()),
-                Map.entry("accountStatus", a.accountStatus().replace("-", " - ")),
+                // RAW codes: accStatus and stmtFreq are served code sets now, and
+                // the screens resolve them through /api/codes. Pre-formatted
+                // strings here would look right in a demo while hiding that the
+                // Denodo path returns codes — and these particular labels were
+                // wrong anyway (01 is Non-automatic, not "None"; 02 is Daily).
+                Map.entry("accountStatus", a.accountStatus()),
                 Map.entry("samaStatus", dormant ? "03 - Blocked" : "00 - Open"),
                 Map.entry("dormant", dormant ? "Yes" : "No"),
                 Map.entry("stmtFrequency",
-                        List.of("01 - None", "02 - Monthly", "03 - Quarterly", "04 - Annual")
-                                .get(DemoData.pick(accNo, 71, 4))),
+                        List.of("01", "02", "04", "05").get(DemoData.pick(accNo, 71, 4))),
                 Map.entry("statementDay", "Br.Stmt.Day"),
                 Map.entry("intApplication", "0-Capitalise"),
                 Map.entry("crInterestRate", String.valueOf(DemoData.pick(accNo, 72, 4))),

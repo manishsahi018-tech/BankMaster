@@ -1,14 +1,15 @@
 import { useState, type ChangeEvent } from 'react'
-import { Field, TextInput, Select, SectionCard } from '../components/fields.tsx'
+import { Field, TextInput, ReadOnlyInput, SectionCard } from '../components/fields.tsx'
 import HistoryBanner from '../components/HistoryBanner.tsx'
+import { codeLabel } from '../codes.ts'
 import type { Account } from '../types.ts'
 
 // Mirrors legacy frmAccct.frm ("Account Maintenance") — single-account detail.
 
-const INT_APPLICATIONS = ['0-Capitalise', '1-Transfer']
-const STMT_FREQS = ['01 - None', '04 - Monthly', '05 - Quarterly']
-const ACC_STATUSES = ['00 - Open', '03 - Account Stopped', '04 - No Debits', '08 - Enquiry Restricted']
-const BRANCHES = ['0128 - MUTANABI', '0127 - SWAIDI', '0001 - Head Office']
+// Statement frequency, account status and branch used to be hard-coded lists
+// here. All three are served by /api/codes now (stctltab 'SF' / 'AS' and
+// stctltabBD), so the values come from the archive rather than from three
+// literals that disagreed with it.
 
 // Blank field template — defines the screen's field set/shape. Every field
 // defaults to empty so any column the backend leaves blank renders EMPTY rather
@@ -129,14 +130,24 @@ export default function AccountMaintenance({
         <SectionCard title="Status & Statements">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Int. Application" htmlFor="intApp">
-              <Select id="intApp" options={INT_APPLICATIONS} value={data.intApplication} onChange={setInput('intApplication')} />
+              {/* The last editable control on this screen, now read-only like
+                  the rest. Its two literals stay for the moment: stctltab does
+                  carry an 'IA' (Interest Application) record type, so this could
+                  become a served set too — out of scope for the four added here. */}
+              <ReadOnlyInput id="intApp" readOnly value={data.intApplication} />
             </Field>
             <div>
               <span className={labelCls}>Dormant</span>
               <YesNo value={data.dormant} onChange={set('dormant')} />
             </div>
             <Field label="Stmt. Frequency" htmlFor="stmtFreq">
-              <Select id="stmtFreq" options={STMT_FREQS} value={data.stmtFrequency} onChange={setInput('stmtFrequency')} />
+              {/* Read-only, and resolved through /api/codes rather than a
+                  hard-coded option list. It was an editable Select whose
+                  options were three literals — wrong for an enquiry screen on
+                  both counts: it offered an edit that can never be saved, and
+                  its list disagreed with the archival domain (stctltab 'SF'
+                  has seven values, and 01 is Non-automatic, not Monthly). */}
+              <ReadOnlyInput id="stmtFreq" readOnly value={codeLabel('stmtFreq', data.stmtFrequency)} />
             </Field>
             <div>
               <span className={labelCls}>Statement Day</span>
@@ -157,7 +168,7 @@ export default function AccountMaintenance({
               </div>
             </div>
             <Field label="Account Status" htmlFor="accStatus">
-              <Select id="accStatus" options={ACC_STATUSES} value={data.accountStatus} onChange={setInput('accountStatus')} />
+              <ReadOnlyInput id="accStatus" readOnly value={codeLabel('accStatus', data.accountStatus)} />
             </Field>
             <Field label="A/c Status Upd Reason" htmlFor="statusReason">
               <TextInput id="statusReason" value={data.statusUpdReason} onChange={setInput('statusUpdReason')} />
@@ -216,7 +227,9 @@ export default function AccountMaintenance({
               <TextInput id="collateral" value={data.collateral} onChange={setInput('collateral')} />
             </Field>
             <Field label="Branch Code" htmlFor="branchCode">
-              <Select id="branchCode" options={BRANCHES} value={data.branchCode} onChange={setInput('branchCode')} />
+              {/* branch has been a served code set all along; this Select was
+                  offering three hard-coded branches instead. */}
+              <ReadOnlyInput id="branchCode" readOnly value={codeLabel('branch', data.branchCode)} />
             </Field>
             <Field label="Memo Note 1" htmlFor="memo1">
               <TextInput id="memo1" value={data.memoNote1} onChange={setInput('memoNote1')} />

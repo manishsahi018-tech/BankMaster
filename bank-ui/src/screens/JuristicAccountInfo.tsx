@@ -27,11 +27,16 @@ export default function JuristicAccountInfo({
   onDocuments: () => void
   onCancel: () => void
 }) {
+  // These arrive as raw codes from stacclog (acctFacilityRows), so they are
+  // resolved here. They used to render bare — the mock hid it by returning
+  // pre-formatted strings like "01 - Monthly", which the Denodo path never
+  // does. codeLabel falls back to the code, so a value the mock still
+  // pre-formats passes through unchanged.
   const facilityRow = (prefix: string) => [
-    { label: 'Currency', value: info[`${prefix}Currency`] },
-    { label: 'Stmt. Frequency', value: info[`${prefix}StmtFreq`] },
+    { label: 'Currency', value: codeLabel('currency', info[`${prefix}Currency`]) },
+    { label: 'Stmt. Frequency', value: codeLabel('stmtFreq', info[`${prefix}StmtFreq`]) },
     { label: 'Cheque Book', value: yesNo(info[`${prefix}ChequeBook`]) },
-    { label: 'A/c Status', value: info[`${prefix}Status`] },
+    { label: 'A/c Status', value: codeLabel('accStatus', info[`${prefix}Status`]) },
   ]
   return (
     <DetailScreen
@@ -78,7 +83,10 @@ export default function JuristicAccountInfo({
           title: 'Other Account',
           description: info.otherAcLedger ? undefined : 'Not requested.',
           fields: info.otherAcLedger
-            ? [{ label: 'Ledger', value: info.otherAcLedger }, ...facilityRow('otherAc')]
+            ? [
+                { label: 'Ledger', value: codeLabel('ledger', info.otherAcLedger) },
+                ...facilityRow('otherAc'),
+              ]
             : [],
         },
         {

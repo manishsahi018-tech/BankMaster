@@ -1,6 +1,7 @@
 import DetailScreen from '../components/DetailScreen.tsx'
 import type { GridRow } from '../components/GridScreen.tsx'
 import { formatAmount, formatDate } from '../schema/helpers.ts'
+import { codeLabel } from '../codes.ts'
 
 // Mirrors legacy frmSarieTransDetails.frm — rid0data point read
 // (QUERY-SPECS §17).
@@ -24,9 +25,9 @@ export default function TransferDetail({ detail, onReturn }: { detail: GridRow; 
             { label: 'Debit Account', value: detail.drAccNo },
             { label: 'Credit Account', value: detail.crAccNo },
             { label: 'Amount', value: formatAmount(detail.netAmt) },
-            { label: 'Currency', value: detail.transCurrCode },
+            { label: 'Currency', value: codeLabel('currency', detail.transCurrCode) },
             { label: 'Payment Amount', value: formatAmount(detail.payAmt) },
-            { label: 'Payment Currency', value: detail.payCurrCode },
+            { label: 'Payment Currency', value: codeLabel('currency', detail.payCurrCode) },
             { label: 'Exchange Rate', value: detail.exchangeRate },
             { label: 'Purpose', value: detail.transferPurpose },
             { label: 'Branch', value: detail.branchCode },

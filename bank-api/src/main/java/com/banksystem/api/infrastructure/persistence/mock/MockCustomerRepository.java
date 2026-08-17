@@ -354,9 +354,11 @@ public class MockCustomerRepository implements CustomerRepository {
         return Optional.of(new JuristicAccountInfo(custNo,
                 p.address1(), p.address2(), p.poBox(), p.zipCode(), p.cityName(), p.country(),
                 p.telOffNo(), p.telHomeNo(), "6607745", p.mobileNo(), "", p.eMail(),
-                "1", "SAR", "01 - Monthly", "1", "00 - Open",
+                // RAW codes, as acctFacilityRows really returns them from
+                // stacclog — the screen resolves them through /api/codes.
+                "1", "01", "04", "1", "00",
                 "0", "", "", "",
-                "108 - Call Deposit", "SAR", "03 - Quarterly", "0", "00 - Open",
+                "108", "01", "05", "0", "00",
                 "J", "1", "1", "0",
                 p.relationshipManager(), "Trade licence renewed 1994", "", "0"));
     }

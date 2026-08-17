@@ -69,7 +69,47 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
             Map.entry("cardRequestStatus", List.of(
                     new CodeEntry("1", "Requested"),
                     new CodeEntry("3", "Rejected"),
-                    new CodeEntry("9", "Completed"))));
+                    new CodeEntry("9", "Completed"))),
+            // Currencies — codes and names transcribed from stctltabXC.ts's own
+            // currCode description, which enumerates the whole domain. A subset:
+            // the real set is served from stctltabXC under denodo.
+            Map.entry("currency", List.of(
+                    new CodeEntry("01", "Saudi Riyal"),
+                    new CodeEntry("43", "Japanese Yen"),
+                    new CodeEntry("45", "Kuwaiti Dinar"),
+                    new CodeEntry("53", "Qatari Riyal"),
+                    new CodeEntry("54", "Arab Emirates Dirham"),
+                    new CodeEntry("67", "U.S. Dollar"),
+                    new CodeEntry("70", "Bahraini Dinar"),
+                    new CodeEntry("84", "British Pound"),
+                    new CodeEntry("85", "Indian Rupees"))),
+            // Ledgers — the three the account fixtures use, plus the common
+            // deposit ledgers. Served from stctltabMM under denodo.
+            Map.entry("ledger", List.of(
+                    new CodeEntry("008", "Current Account"),
+                    new CodeEntry("009", "Saving Account"),
+                    new CodeEntry("100", "Time Deposit"),
+                    new CodeEntry("108", "Call Deposit"))),
+            // Account status — stctltab recType 'AS' under denodo. These four
+            // match the values the account screens already had hard-coded.
+            Map.entry("accStatus", List.of(
+                    new CodeEntry("00", "Open"),
+                    new CodeEntry("03", "Account Stopped"),
+                    new CodeEntry("04", "No Debits"),
+                    new CodeEntry("08", "Enquiry Restricted"))),
+            // Statement frequency — stctltab recType 'SF' under denodo. The
+            // codes come from stacclog.ts's statementFreq description, which
+            // enumerates them: 01 is NON-AUTOMATIC, not "Monthly". (The
+            // juristic fixture labels 01 "Monthly", which is wrong; it predates
+            // this set existing and never went through codeLabel.)
+            Map.entry("stmtFreq", List.of(
+                    new CodeEntry("01", "Non-automatic"),
+                    new CodeEntry("02", "Daily"),
+                    new CodeEntry("03", "Weekly"),
+                    new CodeEntry("04", "Monthly"),
+                    new CodeEntry("05", "Quarterly"),
+                    new CodeEntry("06", "Half yearly"),
+                    new CodeEntry("07", "Yearly"))));
 
     @Override
     public Map<String, List<CodeEntry>> codes() {

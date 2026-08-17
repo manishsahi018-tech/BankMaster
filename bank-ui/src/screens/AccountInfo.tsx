@@ -3,6 +3,7 @@ import type { GridButtonContext, GridColumn, Notify } from '../components/GridSc
 import StatusBadge, { statusTone } from '../components/StatusBadge.tsx'
 import type { Account, Customer } from '../types.ts'
 import { hasAuthority } from '../session.ts'
+import { codeLabel } from '../codes.ts'
 
 // Mirrors legacy frmAccount.frm ("Account" MDI child) — the account grid a
 // customer's Account button opens, with the two rows of facility buttons.
@@ -18,8 +19,10 @@ const COLUMNS: GridColumn[] = [
   { key: 'blockedBalance', label: 'Blocked Balance', align: 'right' },
   {
     key: 'accountStatus',
+    // codeLabel yields "<code>-<description>", so statusTone still matches on
+    // the leading code and the badge colour is unaffected.
     label: 'Account Status',
-    render: (v) => <StatusBadge value={v} tone={statusTone(v)} />,
+    render: (v) => <StatusBadge value={codeLabel('accStatus', v)} tone={statusTone(v)} />,
   },
   { key: 'creditLimit', label: 'Credit Limit', align: 'right' },
   { key: 'dormantFlag', label: 'Dormant Flag' },

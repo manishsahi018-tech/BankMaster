@@ -44,6 +44,13 @@ import org.springframework.stereotype.Repository;
  *   <li>{@code sex}, {@code maritalStatus}, {@code language} — fixed 1-char
  *       domains with no archival code table (stcusttab.ts documents the
  *       columns but no view enumerates the values) — served as constants.</li>
+ *   <li>{@code currency} — stctltabXC overlay (currCode + names). Access
+ *       currencyinfo maps here.</li>
+ *   <li>{@code ledger} — stctltabMM overlay (ledgerCode + names). The table's
+ *       own description calls it "Memo Code", but its columns are the ledger
+ *       master; column detail wins. Access bmledgerinfo maps here.</li>
+ *   <li>{@code accStatus} — stctltab, RecordType 'AS'.</li>
+ *   <li>{@code stmtFreq} — stctltab, RecordType 'SF'.</li>
  *   <li>{@code cardStatus}, {@code cardRequestStatus} — fixed domains from
  *       the stcardtab.ts field descriptions (schema wins over the mock's
  *       abbreviated labels: e.g. requestStatus 1 is 'Approved' and 9 is
@@ -89,7 +96,8 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
      */
     private static final List<String> DB_BACKED = List.of(
             "idType", "country", "businessType",
-            "samaMainCategory", "samaSubCategory", "branch");
+            "samaMainCategory", "samaSubCategory", "branch",
+            "currency", "ledger", "accStatus", "stmtFreq");
 
     @Override
     public Map<String, List<CodeEntry>> codes() {
@@ -179,6 +187,33 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
                 FROM   stctltabBD
                 ORDER  BY branchCode
                 """, Map.of()));
+        // The four sets the account/statement screens resolve against. All were
+        // referenced by the UI long before anything served them, so every
+        // lookup fell back to the bare code — "01 / 00 / 108" where the operator
+        // expects "Saudi Riyal / Open / Call Deposit".
+        sets.put("currency", querySet("currency", """
+                SELECT currCode AS code,
+                       COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
+                FROM   stctltabXC
+                ORDER  BY currCode
+                """, Map.of()));
+        // stctltabMM is the LEDGER master despite its table-level description
+        // calling it "Memo Code": its columns are ledgerCode + LEDGER NAME IN
+        // ARABIC/ENGLISH plus per-ledger rules (account creation allowed,
+        // cheque book allowed, minimum deposit). Column detail wins over the
+        // sheet's heading, as it does elsewhere in this workbook. This is the
+        // archival counterpart of the legacy client's local Access bmledgerinfo.
+        sets.put("ledger", querySet("ledger", """
+                SELECT ledgerCode AS code,
+                       COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
+                FROM   stctltabMM
+                ORDER  BY ledgerCode
+                """, Map.of()));
+        // Generic stctltab record types, both named in stctltab.ts's own
+        // RecordType list: 'AS' Account status type info, 'SF' Statement
+        // Frequency Code info.
+        sets.put("accStatus", ctltabSet("accStatus", "AS"));
+        sets.put("stmtFreq", ctltabSet("stmtFreq", "SF"));
         // Fixed value domains documented on stcardtab.ts (cardStatus /
         // requestStatus) — no stctltab recType carries them.
         sets.put("cardStatus", List.of(
