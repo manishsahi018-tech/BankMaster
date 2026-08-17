@@ -82,8 +82,26 @@ public class JdbcCardRepository implements CardRepository {
         if (notBlank(custNo)) {
             paramName = "custNo";
             paramValue = custNo.trim();
+            // A 7-char BM customer number matches EITHER the direct custNo
+            // column OR the one embedded in the account number.
+            //
+            // stcardtab.custNo is declared size 7 and key k2 in the workbook, so
+            // it looks like the obvious key — but it is not reliably populated,
+            // and matching on it alone returns nothing for customers whose card
+            // rows leave it blank. That is exactly why
+            // JdbcCustomerRepository.resolveCardCustomer already reads it as
+            // COALESCE(NULLIF(TRIM(custNo), ''), SUBSTR(bmAccNo, 6, 7)); the
+            // search never got the same treatment.
+            //
+            // The legacy sidesteps the question entirely: SEARCH_BY_CUSTNO keys
+            // on coreCustNo via index 10 (cbbranch2.c:6544-6546) and never
+            // touches custNo. We cannot use that path because the UI carries the
+            // 7-char archival form, not the 8-char core one — so match both
+            // archival spellings instead. bmAccNo is 14 chars (actual form
+            // despite its name), putting the customer at positions 6..12.
             where = paramValue.length() <= 7
-                    ? "s.custNo = :custNo" : "s.coreCustNo = :custNo";
+                    ? "(TRIM(s.custNo) = :custNo OR SUBSTR(s.bmAccNo, 6, 7) = :custNo)"
+                    : "s.coreCustNo = :custNo";
         } else if (notBlank(accNo)) {
             paramName = "accNo";
             paramValue = accNo.trim();
@@ -98,7 +116,13 @@ public class JdbcCardRepository implements CardRepository {
         List<CardRow> all = jdbc.query("""
                 SELECT s.cardNo, s.nameOnTheCard, s.firstIssueDate, s.expireDate,
                        s.cardStatus, s.requestStatus, s.pinRequestStatus,
-                       s.coreAccNo, s.custNo
+                       s.coreAccNo,
+                       -- Same fallback as resolveCardCustomer: a blank custNo
+                       -- here left the grid with NO customer header at all on
+                       -- the account and card searches, since the header is
+                       -- resolved from this value.
+                       COALESCE(NULLIF(TRIM(s.custNo), ''),
+                                SUBSTR(s.bmAccNo, 6, 7)) AS custNo
                 FROM   stcardtab s
                 WHERE  %s
                 ORDER  BY s.coreCustNo, s.cardNo
