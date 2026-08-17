@@ -13,17 +13,13 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 /**
- * The three logical databases of the revamp:
+ * The connections of the revamp:
  *
  *   archival-db  (DB #1) — the BM archival schema (stcusttab, gld0data, …)
  *                          served by Denodo views (Hive-backed) over the
  *                          Denodo JDBC driver; replaces the legacy MS
- *                          Access source.
- *   online-db    (DB #2) — replaces the legacy cbcmssrv TCP/IP / Finacle
- *                          gateway source. Engine still undecided (may not
- *                          be Denodo) — configured purely via properties,
- *                          so switching engines needs only a URL/driver
- *                          change. Defaults to the archival connection.
+ *                          Access source. THE connection: every repository
+ *                          is wired to {@code archivalJdbc}.
  *   statement-db (DB #3) — the statement archive behind Historical Statement
  *                          only. NOT Denodo: a separate Oracle instance whose
  *                          STMT_HDR/STMT_TXN (and PDP_ prefixed) tables replace
@@ -32,11 +28,22 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
  *                          (frmHistStmt.frm generateReport/processStmt). Off by
  *                          default — see JdbcStatementRepository.
  *
- * The class keeps its Denodo name because DB #1, the only one that must be
- * Denodo, is defined here; DB #2 and DB #3 are plain JDBC and are grouped with
- * it so all three connections are configured in one place.
+ * <p>There is no DB #2 datasource. The slot existed for the cbcmssrv/Finacle
+ * online gateway replacement, but it was only ever a second Hikari pool onto
+ * the SAME Denodo server — every property defaulted to its archival
+ * counterpart, no repository queried it, and its one consumer was the health
+ * endpoint probing the connection it had just probed. Both sources being
+ * Denodo, the two are merged into DB #1.
  *
- * Driver jars (Denodo's is not on Maven Central, and neither is Oracle's) are
+ * <p>This does not retire DB #2 as a CONCEPT: the online gateway's data still
+ * does not exist here, which is why {@code UnavailableOnlineEnquiryRepository}
+ * answers On-demand Statement and Transaction Inquiry, and why the
+ * {@code TODO(DB #2)} markers in JdbcCardRepository still stand. When that
+ * source turns up on its own engine, add its datasource + template beans back
+ * here and qualify the repositories that need it — the same shape
+ * {@code statementDataSource} already has for DB #3.
+ *
+ * <p>Driver jars (Denodo's is not on Maven Central, and neither is Oracle's) are
  * loaded at runtime from the directory given via -Dloader.path (see README
  * "Deploying against Denodo").
  */
@@ -52,23 +59,10 @@ public class DenodoDataSourceConfig {
     }
 
     @Bean
-    @ConfigurationProperties("bank.online-db")
-    public HikariDataSource onlineDataSource() {
-        return new HikariDataSource();
-    }
-
-    @Bean
     @Primary
     public NamedParameterJdbcTemplate archivalJdbc(
             @Qualifier("archivalDataSource") DataSource dataSource,
             @Value("${bank.archival-db.table-prefix:}") String tablePrefix) {
-        return new NamedParameterJdbcTemplate(prefixed(dataSource, tablePrefix));
-    }
-
-    @Bean
-    public NamedParameterJdbcTemplate onlineJdbc(
-            @Qualifier("onlineDataSource") DataSource dataSource,
-            @Value("${bank.online-db.table-prefix:}") String tablePrefix) {
         return new NamedParameterJdbcTemplate(prefixed(dataSource, tablePrefix));
     }
 

@@ -24,19 +24,22 @@ out"). Raw OpenAPI JSON at `/v3/api-docs`.
 
 ## Deploying against Denodo (target PC)
 
-The real data layer is the `denodo` Spring profile: two JDBC connections —
-`archival-db` (DB #1, Denodo Hive views of the BM archival schema) and
-`online-db` (DB #2, engine still undecided; defaults to the archival
-connection until it exists). All settings come from environment variables
-(see `application.yml`), so nothing is hardcoded or committed.
+The real data layer is the `denodo` Spring profile: one JDBC connection,
+`archival-db` (DB #1, Denodo Hive views of the BM archival schema), which every
+repository queries. The online/Finacle source (DB #2) has no connection of its
+own — it was the same Denodo server, so the two are merged; the screens that
+need gateway data report themselves unavailable instead. Historical Statement
+has its own optional Oracle connection (DB #3, off by default). All settings
+come from environment variables (see `application.yml`), so nothing is
+hardcoded or committed.
 
 1. **Java 21** on the PC (copy the `~/Developer/tools` JDK if none installed).
 2. **Denodo JDBC driver**: copy `denodo-vdp-jdbcdriver.jar` from the Denodo
    installation (or Design Studio download page) into a `drivers/` folder
    next to the app jar. It is not on Maven Central, so it is loaded at
    runtime — the jar is built with the PropertiesLauncher (`ZIP` layout)
-   for exactly this. If DB #2 ends up on a different engine, drop that
-   engine's JDBC driver jar in the same folder.
+   for exactly this. Same folder for any other engine's driver (Oracle's, if
+   Historical Statement is switched on).
 3. **Configure + run**:
 
    ```bash
@@ -45,8 +48,6 @@ connection until it exists). All settings come from environment variables
    export ARCHIVAL_DB_PASSWORD="..."
    # optional: fixed restore snapshot; otherwise MAX(BankingDate) is used
    # export ARCHIVAL_BANKING_DATE=20251231
-   # optional, once DB #2 exists (any JDBC engine):
-   # export ONLINE_DB_URL=... ONLINE_DB_USER=... ONLINE_DB_PASSWORD=... ONLINE_DB_DRIVER=...
 
    java -Dloader.path=drivers -jar bank-api-0.1.0-SNAPSHOT.jar \
         --spring.profiles.active=denodo

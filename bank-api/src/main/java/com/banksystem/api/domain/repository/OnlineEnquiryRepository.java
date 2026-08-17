@@ -15,11 +15,13 @@ import com.banksystem.api.domain.model.OnlineStatementPage;
  * both driven through {@code HandleOnlineTraffic}). Service "07" is the
  * statement, "11" the transaction enquiry.
  *
- * <p>This is what DB #2 ({@code bank.online-db}) is reserved for. Until it
- * exists, {@code UnavailableOnlineEnquiryRepository} answers under the denodo
- * profile and the mock stands in for the gateway under the mock profile — the
- * same arrangement MerchantRepository has, and for the same reason: the data
- * belongs to a system we do not yet talk to.
+ * <p>This is what DB #2 is reserved for. It has no JDBC connection: the old
+ * {@code bank.online-db} was a second pool onto the same Denodo server that
+ * nothing queried, so it was merged into {@code archival-db}. Until the real
+ * gateway source exists, {@code UnavailableOnlineEnquiryRepository} answers
+ * under the denodo profile and the mock stands in for the gateway under the
+ * mock profile — the same arrangement MerchantRepository has, and for the same
+ * reason: the data belongs to a system we do not yet talk to.
  */
 public interface OnlineEnquiryRepository {
 

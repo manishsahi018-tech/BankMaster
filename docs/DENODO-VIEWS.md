@@ -34,11 +34,11 @@ Two lookalikes exist in Denodo and must **not** be substituted:
 The repositories use the bare legacy names (`stcusttab`, `gld0data`, …).
 `SqlTablePrefixer` prepends an environment prefix at runtime, configured by
 `bank.archival-db.table-prefix` (staging default
-`bv_impala_stg_bankmaster_`) and `bank.online-db.table-prefix`. So the view to
-create in staging is `bv_impala_stg_bankmaster_stcusttab`, etc. Only the
-prefix changes between environments — no SQL changes.
+`bv_impala_stg_bankmaster_`). So the view to create in staging is
+`bv_impala_stg_bankmaster_stcusttab`, etc. Only the prefix changes between
+environments — no SQL changes.
 
-All views are **read-only**. Both pools are `read-only: true`.
+All views are **read-only**; the pool is `read-only: true`.
 
 ---
 
@@ -102,17 +102,19 @@ All views are **read-only**. Both pools are `read-only: true`.
 | `stctltabDC` | Document codes (Essential / Required Documents) |
 | `stctltabMM` | Account product / scheme names |
 | `stctltabXC` | Currency codes |
-| `stctltabSC` | Only used by `/api/db-health` as the online-DB reachability probe |
+| `stctltabSC` | Only used by `/api/health/db`, as a second differently-shaped view to prove the prefix resolves |
 
 ---
 
-## DB #2 — online / Finacle source (`onlineJdbc`)
+## DB #2 — online / Finacle source (no connection of its own)
 
-⚠️ These are the tables the legacy `cbcmssrv` TCP/IP server read. The engine
-for DB #2 is still undecided; **today all of these are queried through the
-archival connection** (every repository is wired to `@Qualifier("archivalJdbc")`),
-so for the current build they must exist as Denodo views on the archival
-datasource too.
+⚠️ These are the tables the legacy `cbcmssrv` TCP/IP server read. **All of them
+are queried through the archival connection** — every repository is wired to
+`@Qualifier("archivalJdbc")` — so they must exist as Denodo views on the
+archival datasource. There is no longer a separate `online-db`: it pointed at
+the same Denodo server, nothing queried it, and it has been merged into DB #1.
+The heading stays because these views come from a different SYSTEM in the
+legacy, which is why they are the ones most likely to be missing.
 
 | View | Used by (screen) |
 |---|---|
