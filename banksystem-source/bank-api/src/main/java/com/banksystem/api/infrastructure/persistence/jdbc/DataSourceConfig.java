@@ -29,7 +29,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
  */
 @Configuration
 @Profile("denodo")
-public class DenodoDataSourceConfig {
+public class DataSourceConfig {
 
     @Bean
     @Primary
