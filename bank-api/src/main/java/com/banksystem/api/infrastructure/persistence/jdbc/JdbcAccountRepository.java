@@ -590,11 +590,23 @@ public class JdbcAccountRepository implements AccountRepository {
         // as the 14-char actual form, used here (⚠ confirm with a real-data
         // probe). payAccNo converted defensively for display (13-char BM
         // values expanded, 14-char passed through).
+        //
+        // BankingDate: the live ISAM file held exactly ONE record per
+        // (accNo, sodNo), so the C's forward scan (cbbranch2.c:10381-10405)
+        // emitted one row per standing order and stopped. The archival view
+        // keys on (BankingDate, accNo) instead and holds the same order once
+        // per restore snapshot -- sod0data spans 11/11/1992..11/07/2009 --
+        // so that one-row-per-key guarantee has to be restored explicitly.
+        // Partitioned on the legacy key, NOT on a table-wide MAX: an order
+        // present only in an older snapshot must still be returned.
         return jdbc.query("""
-                SELECT sodNo, paymentType, paymentAmt, payAccNo, orderType, paymentFrequency
-                FROM   sod0data
-                WHERE  accNo = :accNo
-                ORDER  BY sodNo
+                SELECT s.sodNo, s.paymentType, s.paymentAmt, s.payAccNo,
+                       s.orderType, s.paymentFrequency
+                FROM   sod0data s
+                WHERE  s.accNo = :accNo
+                  AND  s.BankingDate = (SELECT MAX(x.BankingDate) FROM sod0data x
+                                         WHERE  x.accNo = s.accNo AND x.sodNo = s.sodNo)
+                ORDER  BY s.sodNo
                 """,
                 Map.of("accNo", actualAccOf(accNo)),
                 (rs, i) -> new StandingOrder(
@@ -697,6 +709,13 @@ public class JdbcAccountRepository implements AccountRepository {
         // (cbbranch2.c:10544, 10623, 10662); the workbook documents these
         // accNo columns as the 14-char actual form, used here (⚠ confirm
         // with a real-data probe).
+        // The sod0data BankingDate predicate matches standingOrders() above:
+        // without it a multi-snapshot order made rows.get(0) an arbitrary
+        // pick, so the screen could show a superseded version of the order.
+        // The gld0data subquery is left alone here -- MAX(branchCode) already
+        // collapses to one value, so it cannot duplicate rows; it gets the
+        // same treatment when gld0data is done (⚠ it may read the branch off
+        // a stale snapshot).
         String actualAccNo = actualAccOf(accNo);
         Map<String, String> params = Map.of(
                 "accNo", actualAccNo,
@@ -721,6 +740,8 @@ public class JdbcAccountRepository implements AccountRepository {
                                  WHERE  l2.accNo = :accNo AND l2.sodNo = :sodNo)) AS lastUpdateUserId
                 FROM   sod0data s
                 WHERE  s.accNo = :accNo AND s.sodNo = :sodNo
+                  AND  s.BankingDate = (SELECT MAX(x.BankingDate) FROM sod0data x
+                                         WHERE  x.accNo = :accNo AND x.sodNo = :sodNo)
                 """, params);
         if (rows.isEmpty()) {
             return Optional.empty();
