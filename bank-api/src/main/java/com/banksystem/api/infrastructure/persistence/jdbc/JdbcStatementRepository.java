@@ -57,10 +57,21 @@ import org.springframework.stereotype.Repository;
  *
  * <p>That is an inference from column shape, not a fact from the source:
  * "PDP" appears nowhere in the VB6, the C, or the archival dictionary, so
- * there is nothing to check it against. Both pairs are queried and every
- * statement is tagged with {@code source} so a wrong guess is visible on
- * screen rather than silent. All four names are configuration — correct them
- * in application.yml, do not edit the SQL.
+ * there is nothing to check it against. Which pair a request reads is the
+ * OPERATOR's choice — the screen's System selector sends BM or PDP and exactly
+ * that pair is queried — and the answer is still tagged with {@code source} so
+ * a printed sheet says which archive produced it. All four names are
+ * configuration — correct them in application.yml, do not edit the SQL.
+ *
+ * <h2>Branch code</h2>
+ * The screen's Branch Code filters the PDP header query and NOTHING ELSE. The
+ * legacy never filtered on it — branch chose which Btrieve file to open
+ * ({@code <STMTPATH><brn3>\s<brn3><bmYY><MM>.idx}), and DB #3 has no such
+ * partition — so for BM it stays what it was here: a validated input and the
+ * staff-branch authorisation key, not a predicate. PDP filters on it by
+ * request, pending confirmation against real PDP data that the same ACCT_NUM
+ * genuinely appears under more than one branch; if it turns out not to, this
+ * is one {@code false} in the Pair below.
  */
 @Repository
 @Profile("denodo")
@@ -72,7 +83,11 @@ public class JdbcStatementRepository implements StatementRepository {
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
     /**
-     * One header/detail pair.
+     * One header/detail pair — one of the two SYSTEMS the screen offers.
+     *
+     * @param source    {@code "BM"} or {@code "PDP"}; this is both the value
+     *                  the screen's selector sends and the tag every statement
+     *                  from the pair carries.
      *
      * @param usesStmtNum whether STMT_NUM is part of the join key AND selected
      *                    from the detail table. False collapses the key to
@@ -80,13 +95,16 @@ public class JdbcStatementRepository implements StatementRepository {
      * @param splitName   header holds TITLE + FIRST_NAME + SECOND_NAME and
      *                    CUST_NUM / PAGE_NUM / BRANCH_DATA (true), or a single
      *                    CUST_NAME plus IBAN / REF_NUM (false).
+     * @param filterByBranch add {@code BRANCH_CODE = :branchCode} to the HEADER
+     *                    query. PDP only, for now — see the class comment.
      */
     private record Pair(String source, String hdrTable, String txnTable,
-                        boolean usesStmtNum, boolean splitName) {
+                        boolean usesStmtNum, boolean splitName, boolean filterByBranch) {
     }
 
     private final NamedParameterJdbcTemplate jdbc;
-    private final List<Pair> pairs;
+    /** Keyed on the system the screen sends: "BM" or "PDP". */
+    private final Map<String, Pair> pairs;
 
     public JdbcStatementRepository(
             @Qualifier("statementJdbc") NamedParameterJdbcTemplate jdbc,
@@ -95,28 +113,37 @@ public class JdbcStatementRepository implements StatementRepository {
             @Value("${bank.statement-db.pdp-hdr-table:}") String pdpHdrTable,
             @Value("${bank.statement-db.pdp-txn-table:}") String pdpTxnTable) {
         this.jdbc = jdbc;
-        List<Pair> configured = new ArrayList<>();
+        Map<String, Pair> configured = new LinkedHashMap<>();
         if (!isBlank(hdrTable) && !isBlank(txnTable)) {
-            configured.add(new Pair("STMT", hdrTable.trim(), txnTable.trim(), true, false));
+            configured.put("BM",
+                    new Pair("BM", hdrTable.trim(), txnTable.trim(), true, false, false));
         }
         if (!isBlank(pdpHdrTable) && !isBlank(pdpTxnTable)) {
-            configured.add(new Pair("PDP", pdpHdrTable.trim(), pdpTxnTable.trim(), false, true));
+            configured.put("PDP",
+                    new Pair("PDP", pdpHdrTable.trim(), pdpTxnTable.trim(), false, true, true));
         }
-        this.pairs = List.copyOf(configured);
+        this.pairs = Map.copyOf(configured);
     }
 
     @Override
     public List<HistoricalStatement> historicalStatements(
-            String acctNum, String fromYearMonth, String toYearMonth) {
-        // The database is on but neither pair was named. Returning an empty list
-        // would reach the operator as "No report found for this account for a
-        // given period" — a data answer to a configuration mistake, and the one
-        // outcome nobody would think to check the config over.
-        if (pairs.isEmpty()) {
+            String acctNum, String branchCode, String fromYearMonth, String toYearMonth,
+            String system) {
+        // The requested system's tables were never named. Returning an empty
+        // list would reach the operator as "No report found for this account for
+        // a given period" — a data answer to a configuration mistake, and the
+        // one outcome nobody would think to check the config over. Which half of
+        // the config is missing is worth saying, because a site may legitimately
+        // run with only one of the two archives loaded.
+        Pair pair = pairs.get(system);
+        if (pair == null) {
+            String properties = "PDP".equals(system)
+                    ? "bank.statement-db.pdp-hdr-table and .pdp-txn-table"
+                    : "bank.statement-db.hdr-table and .txn-table";
             throw new NotAvailableException(
-                    "The statement archive is switched on but no header/detail table pair is "
-                            + "named. Set bank.statement-db.hdr-table/txn-table (and the pdp- "
-                            + "equivalents) to the real table names.");
+                    "The " + system + " statement archive is not configured: " + properties
+                            + " are blank. Name the real tables there, or select the other "
+                            + "system on the screen.");
         }
 
         // Both bounds are inclusive MONTHS, so the upper bound is expressed as
@@ -127,17 +154,14 @@ public class JdbcStatementRepository implements StatementRepository {
 
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("acctNum", acctNum == null ? "" : acctNum.trim())
+                .addValue("branchCode", branchCode == null ? "" : branchCode.trim())
                 .addValue("fromDate", Date.valueOf(from))
                 .addValue("toDate", Date.valueOf(toExclusive));
 
-        List<HistoricalStatement> all = new ArrayList<>();
-        for (Pair pair : pairs) {
-            all.addAll(load(pair, params));
-        }
-        // Oldest first across both pairs, then by pair so a statement present in
-        // both archives shows its two copies adjacently rather than interleaved.
+        // One pair only — the operator chose it. Oldest first, then by statement
+        // number for the months that carry more than one.
+        List<HistoricalStatement> all = new ArrayList<>(load(pair, params));
         all.sort(Comparator.comparing(HistoricalStatement::stmtDate)
-                .thenComparing(HistoricalStatement::source)
                 .thenComparing(HistoricalStatement::stmtNum));
         return all;
     }
@@ -201,6 +225,11 @@ public class JdbcStatementRepository implements StatementRepository {
                 ? "CUST_NUM, TITLE, FIRST_NAME, SECOND_NAME, PAGE_NUM, BRANCH_DATA"
                 : "STMT_NUM, CUST_NAME, IBAN, REF_NUM";
         String order = pair.usesStmtNum() ? "STMT_DATE, STMT_NUM" : "STMT_DATE, PAGE_NUM";
+        // PDP only, for now. Applied to the HEADER alone: the detail query is
+        // keyed on (ACCT_NUM, STMT_DATE) and any line whose header the filter
+        // excluded simply never finds one, which is what the orphan count below
+        // measures — so read that warning with this in mind for PDP.
+        String branchFilter = pair.filterByBranch() ? "AND  BRANCH_CODE = :branchCode" : "";
         String sql = """
                 SELECT ACCT_NUM, STMT_DATE, BRANCH_CODE, BRANCH_NAME, ACCT_TYPE,
                        CUST_ADR1, CUST_ADR2, CUST_ADR3, CUST_ADR4,
@@ -209,8 +238,9 @@ public class JdbcStatementRepository implements StatementRepository {
                 WHERE  ACCT_NUM = :acctNum
                   AND  STMT_DATE >= :fromDate
                   AND  STMT_DATE <  :toDate
+                  %s
                 ORDER  BY %s
-                """.formatted(identity, pair.hdrTable(), order);
+                """.formatted(identity, pair.hdrTable(), branchFilter, order);
 
         // The PDP header carries PAGE_NUM, so it may hold one row per printed
         // page of the same statement. Fold those into one statement keyed on
@@ -263,8 +293,17 @@ public class JdbcStatementRepository implements StatementRepository {
                 .filter(k -> !byStatement.containsKey(k)).count();
         if (orphans > 0) {
             log.warn("{}: {} statement(s) have {} rows but no matching {} header — "
-                            + "not returned. Check the header/detail pairing.",
-                    pair.source(), orphans, pair.txnTable(), pair.hdrTable());
+                            + "not returned. {}",
+                    pair.source(), orphans, pair.txnTable(), pair.hdrTable(),
+                    pair.filterByBranch()
+                            // Expected, not a fault: the detail query is not
+                            // branch-filtered, so an account with statements at
+                            // more than one branch always leaves the other
+                            // branches' lines headerless.
+                            ? "Expected if this account has statements at branches other than "
+                                    + "the one requested; otherwise check the header/detail "
+                                    + "pairing."
+                            : "Check the header/detail pairing.");
         }
         return new ArrayList<>(byStatement.values());
     }

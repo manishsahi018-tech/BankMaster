@@ -370,6 +370,12 @@ export const api = {
       branchCode: string
       fromYearMonth: string
       toYearMonth: string
+      /**
+       * Which of the archive's two systems to read — "BM" or "PDP". No legacy
+       * counterpart: the Btrieve index tree the screen replaced held one
+       * archive. Exactly one is read, so the reply is never a merge of both.
+       */
+      system: StatementSystem
       /** "true" selects the deleted-account route (legacy tag "D", needs ~87). */
       deletedAccount?: string
     },
@@ -521,15 +527,22 @@ export interface HistoricalStatementLine {
 }
 
 /**
+ * The two archives DB #3 holds, each its own header/detail table pair. The
+ * operator picks one on the Historical Statement screen; nothing in the legacy
+ * records what separates them, so neither is a default the other can stand in
+ * for — see JdbcStatementRepository.
+ */
+export type StatementSystem = 'BM' | 'PDP'
+
+/**
  * One archived statement: a header plus its transaction lines.
  *
- * `source` says which of the two archives it came from ("STMT" or "PDP").
- * Nothing in the legacy records what separates them, so both are queried and
- * tagged rather than one being guessed at — see JdbcStatementRepository.
- * Fields only one archive carries arrive empty on the other.
+ * `source` echoes back the system the request asked for. Fields only one
+ * archive carries arrive empty on the other: BM has stmtNum, iban and refNum,
+ * PDP has custNum, pageNum and branchData.
  */
 export interface HistoricalStatement {
-  source: string
+  source: StatementSystem
   acctNum: string
   stmtDate: string
   stmtNum: string

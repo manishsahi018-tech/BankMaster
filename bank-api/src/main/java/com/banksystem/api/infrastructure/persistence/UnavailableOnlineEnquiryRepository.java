@@ -26,11 +26,15 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class UnavailableOnlineEnquiryRepository implements OnlineEnquiryRepository {
 
+    /**
+     * Kept to one line: it is shown on the screen as a banner, and the WHY —
+     * bmrtServer is a separate socket whose data no archival view holds — is
+     * the class comment above, not something an operator needs re-reading every
+     * time they open the screen.
+     */
     private static final String MESSAGE =
-            "This enquiry is served by the online gateway, which is not connected in this "
-                    + "environment. The legacy read it over a separate socket to bmrtServer "
-                    + "(services 07 and 11), and no archival view holds the same data — "
-                    + "live balances and same-day postings only exist on that system.";
+            "The online gateway (bmrtServer, services 07 and 11) is not connected "
+                    + "in this environment.";
 
     @Override
     public OnlineStatementPage onDemandStatement(

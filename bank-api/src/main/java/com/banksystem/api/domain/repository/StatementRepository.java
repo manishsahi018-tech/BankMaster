@@ -29,9 +29,20 @@ public interface StatementRepository {
      * bounds are INCLUSIVE months, so 202401–202403 covers 01 Jan to 31 Mar.
      *
      * @param acctNum       account number as keyed on the screen
+     * @param branchCode    the account's GL branch. Used as a FILTER for PDP
+     *                      only — see {@code JdbcStatementRepository}. For BM it
+     *                      is carried but not applied, exactly as before: the
+     *                      legacy used branch to choose which Btrieve file to
+     *                      open, not to select rows, and no BM data has yet
+     *                      shown that the account number alone is ambiguous.
      * @param fromYearMonth YYYYMM, inclusive
      * @param toYearMonth   YYYYMM, inclusive
+     * @param system        which archive to read, {@code "BM"} or {@code "PDP"}
+     *                      — the two header/detail table pairs DB #3 holds.
+     *                      The operator picks one on the screen; exactly one
+     *                      pair is queried, never both.
      */
     List<HistoricalStatement> historicalStatements(
-            String acctNum, String fromYearMonth, String toYearMonth);
+            String acctNum, String branchCode, String fromYearMonth, String toYearMonth,
+            String system);
 }

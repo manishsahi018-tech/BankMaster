@@ -33,7 +33,8 @@ public class UnavailableStatementRepository implements StatementRepository {
 
     @Override
     public List<HistoricalStatement> historicalStatements(
-            String acctNum, String fromYearMonth, String toYearMonth) {
+            String acctNum, String branchCode, String fromYearMonth, String toYearMonth,
+            String system) {
         throw new NotAvailableException(
                 "Historical statements are not available in this environment: the statement "
                         + "archive is not configured. It is a separate database from the archival "

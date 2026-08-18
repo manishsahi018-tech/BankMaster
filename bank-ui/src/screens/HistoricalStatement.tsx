@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Field, TextInput, ReadOnlyInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
 import type { Account } from '../types.ts'
-import type { HistoricalStatement as Statement } from '../api.ts'
+import type { HistoricalStatement as Statement, StatementSystem } from '../api.ts'
 import { api } from '../api.ts'
 import { hasAuthority } from '../session.ts'
 import { formatDate, formatPlainAmount } from '../schema/helpers.ts'
@@ -27,8 +27,17 @@ import { formatDate, formatPlainAmount } from '../schema/helpers.ts'
 //
 // The month loop and the two BM key encodings (convertAcc2Bm, convertYear2Bm)
 // are deliberately absent — they existed only to build Btrieve keys.
+//
+// THE ONE CONTROL THE LEGACY DID NOT HAVE is the System selector. Btrieve held
+// a single index tree, so there was nothing to choose between; DB #3 holds two
+// header/detail table pairs — BM and PDP — and only the operator knows which
+// one an enquiry is about. Exactly one is read, so a result is never a merge of
+// the two archives.
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
+
+/** The two archives DB #3 holds. Sent verbatim — the API takes these strings. */
+const SYSTEMS: StatementSystem[] = ['BM', 'PDP']
 
 // Legacy message text, transcribed from the inline comments beside each MsgBox
 // in frmHistStmt.frm — the errXxx(UserLang) string table is not in the source
@@ -101,12 +110,13 @@ function StatementCard({ statement }: { statement: Statement }) {
             </p>
           </div>
           <div className="text-right text-xs text-muted-soft">
-            {/* Which of the two archives this came from. Shown because nothing
-                in the legacy says what separates them, so a statement appearing
-                twice must be explainable rather than looking like a duplicate
-                bug. */}
+            {/* Which archive this came from — the System that was selected,
+                echoed back by the server. Redundant on screen while the
+                selector is in view, but it is what makes a saved or printed
+                sheet self-describing, and nothing in the legacy says what
+                separates the two archives. */}
             <span className="rounded-md border border-edge px-2 py-0.5 font-medium text-ink-soft">
-              {s.source === 'PDP' ? 'PDP archive' : 'Statement archive'}
+              {s.source} archive
             </span>
             {s.pageCount > 1 && <p className="mt-1">{s.pageCount} printed pages</p>}
           </div>
@@ -277,6 +287,10 @@ export default function HistoricalStatement({
   const canKeyAccount = deletedAccountRoute && hasAuthority('~87')
   const [accNo, setAccNo] = useState(account?.accountNumber ?? '')
   const [branchCode, setBranchCode] = useState(account?.branchCode ?? '')
+  // Defaults to BM: it is the archive that holds the statements the legacy
+  // screen itself produced, so an operator who never touches the selector gets
+  // what the legacy would have given them.
+  const [system, setSystem] = useState<StatementSystem>('BM')
   const [form, setForm] = useState({
     fromMonth: '',
     fromYear: '',
@@ -317,6 +331,7 @@ export default function HistoricalStatement({
         branchCode: branchCode.trim(),
         fromYearMonth: `${form.fromYear}${form.fromMonth}`,
         toYearMonth: `${form.toYear}${form.toMonth}`,
+        system,
         // The route is a server-side decision, not just a screen mode: it
         // skips the staff-branch rule and adds the still-exists refusal.
         ...(deletedAccountRoute ? { deletedAccount: 'true' } : {}),
@@ -352,13 +367,29 @@ export default function HistoricalStatement({
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
           Historical Statement Printing
         </h1>
-        <p className="mt-1 text-sm text-muted">
-          Legacy frmHistStmt. Served from the statement archive — a separate database from the
-          archival and online sources.
-        </p>
       </div>
 
       <div className="rounded-2xl border border-edge bg-surface p-5 shadow-sm sm:p-6">
+        {/* Above the legacy fields and separated from them, because it does not
+            narrow the enquiry the way they do — it picks WHICH ARCHIVE the
+            enquiry runs against: BM and PDP are separate sets of tables, and a
+            statement in one need not be in the other. Changing it invalidates
+            any report on screen, same as editing a field (legacy
+            disableButtons, :1570). */}
+        <div className="mb-5 border-b border-edge-soft pb-5">
+          <Field label="System" htmlFor="system" className="w-40">
+            <Select
+              id="system"
+              options={SYSTEMS}
+              value={system}
+              onChange={(e) => {
+                setSystem(e.target.value as StatementSystem)
+                setStatements(null)
+              }}
+            />
+          </Field>
+        </div>
+
         <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Branch Code" htmlFor="branchCode">
             <TextInput
@@ -516,8 +547,8 @@ export default function HistoricalStatement({
         <section className="print-sheet print-landscape" aria-hidden="true">
           <h1>Historical Statement — {accNo}</h1>
           <p className="print-meta">
-            Branch {branchCode} · {form.fromMonth}/{form.fromYear} to {form.toMonth}/{form.toYear} ·
-            Printed {new Date().toLocaleString('en-GB')}
+            {system} archive · Branch {branchCode} · {form.fromMonth}/{form.fromYear} to{' '}
+            {form.toMonth}/{form.toYear} · Printed {new Date().toLocaleString('en-GB')}
           </p>
           {statements!.map((s) => (
             <table key={`${s.source}-${s.stmtDate}-${s.stmtNum}`} className="page-break">

@@ -23,9 +23,12 @@ import org.springframework.stereotype.Repository;
  * each Generate looks broken, and the running balance has to be stable for the
  * RUN_BAL column to mean anything.
  *
- * <p>Only the non-PDP shape ({@code source = "STMT"}) is produced. Standing in
- * for both would mean inventing the very distinction that no source in the
- * project records — see {@code JdbcStatementRepository}.
+ * <p>Only the BM shape is produced — a single CUST_NAME plus IBAN, REF_NUM and
+ * STMT_NUM. Selecting PDP returns that same fixture tagged {@code PDP} rather
+ * than a differently shaped one: standing in for both would mean inventing the
+ * very distinction that no source in the project records, and the screen still
+ * has to show that the selector reaches the repository — see
+ * {@code JdbcStatementRepository}.
  */
 @Profile("!denodo")
 @Repository
@@ -45,9 +48,16 @@ public class MockStatementRepository implements StatementRepository {
             {"CHEQUE PAID", "CLEARING"},
     };
 
+    /**
+     * {@code branchCode} is accepted and ignored here: every fixture statement
+     * is branch 0127, so applying the PDP branch filter would turn any other
+     * branch into an empty demo rather than exercising anything. The filter is
+     * real in {@code JdbcStatementRepository}, against real data.
+     */
     @Override
     public List<HistoricalStatement> historicalStatements(
-            String acctNum, String fromYearMonth, String toYearMonth) {
+            String acctNum, String branchCode, String fromYearMonth, String toYearMonth,
+            String system) {
         YearMonth from = YearMonth.of(
                 Integer.parseInt(fromYearMonth.substring(0, 4)),
                 Integer.parseInt(fromYearMonth.substring(4, 6)));
@@ -64,7 +74,7 @@ public class MockStatementRepository implements StatementRepository {
             // Skipping some makes "No report found for this account for a given
             // period" reachable in the mock, which is half the screen's behaviour.
             if (seededFor(account, month).nextInt(10) != 0) {
-                statements.add(statementFor(account, month, stmtNum));
+                statements.add(statementFor(account, month, stmtNum, system));
             }
             stmtNum++;
             month = month.plusMonths(1);
@@ -72,7 +82,8 @@ public class MockStatementRepository implements StatementRepository {
         return statements;
     }
 
-    private HistoricalStatement statementFor(String acctNum, YearMonth month, int stmtNum) {
+    private HistoricalStatement statementFor(
+            String acctNum, YearMonth month, int stmtNum, String system) {
         Random random = seededFor(acctNum, month);
         LocalDate stmtDate = month.atEndOfMonth();
 
@@ -119,7 +130,7 @@ public class MockStatementRepository implements StatementRepository {
         }
 
         return new HistoricalStatement(
-                "STMT",
+                system,
                 acctNum,
                 stmtDate.format(YYYYMMDD),
                 String.valueOf(stmtNum),

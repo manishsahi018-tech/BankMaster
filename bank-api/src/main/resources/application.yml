@@ -146,9 +146,13 @@ bank:
     #
     # What actually distinguishes the two archives is not recorded anywhere:
     # "PDP" appears nowhere in the VB6, the C, or the archival dictionary. So
-    # BOTH pairs are queried and every statement is tagged with the pair it came
-    # from, rather than one being guessed at and the other dropped. Blank out a
-    # pair's header name to stop querying it.
+    # neither is guessed at: the SCREEN carries a System selector (BM / PDP) and
+    # exactly the chosen pair is queried. Blanking a pair's table names leaves
+    # that system unconfigured — selecting it then reports which properties are
+    # missing rather than returning "no report found".
+    #
+    # The non-PDP pair is the BM one — the archive holding the statements the
+    # legacy screen itself produced — and is what the selector defaults to.
     # ---------------------------------------------------------------------
     hdr-table: ${STATEMENT_DB_HDR_TABLE:STMT_HDR}
     txn-table: ${STATEMENT_DB_TXN_TABLE:STMT_TXN}

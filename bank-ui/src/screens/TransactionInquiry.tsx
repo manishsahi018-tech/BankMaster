@@ -205,9 +205,6 @@ export default function TransactionInquiry({
       <div className="mb-6">
         <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">Account</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">Transaction Enquiry</h1>
-        <p className="mt-1 text-sm text-muted">
-          Legacy frmTransaction — online gateway, service 11.
-        </p>
       </div>
 
       {unavailable ? (
@@ -216,18 +213,7 @@ export default function TransactionInquiry({
         </SourceBanner>
       ) : (
         <SourceBanner title="Demo data — the online gateway is not connected">
-          <p>
-            This is the <em>Transaction Inquiry</em> button, which the legacy serves from{' '}
-            <code>bmrtServer</code> over its own socket (service 11) — not from cbcmssrv, so there is
-            no archival view behind it. <code>bank.online-db</code> (DB #2) is reserved for that
-            connection and is not wired up yet, so the rows below come from{' '}
-            <code>MockOnlineEnquiryRepository</code>.
-          </p>
-          <p>
-            For an enquiry that <strong>does</strong> run against real data, use{' '}
-            <em>Transaction Type Enquiry</em> on the account grid — that one is cbcmssrv service 85
-            over thd0data.
-          </p>
+          <p>Rows below are generated. Service 11 (bmrtServer) is not wired up here.</p>
         </SourceBanner>
       )}
 

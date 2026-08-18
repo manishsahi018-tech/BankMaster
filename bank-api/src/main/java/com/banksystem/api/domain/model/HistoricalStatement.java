@@ -3,7 +3,7 @@ package com.banksystem.api.domain.model;
 import java.util.List;
 
 /**
- * One archived statement — a STMT_HDR (or PDP_STMT_HDR) header with its
+ * One archived statement — a STMT_HDR (BM) or PDP_STMT_HDR header with its
  * STMT_TXN / PDP_STMT_TXN lines attached (DB #3).
  *
  * <p>This is the relational replacement for what the legacy Historical
@@ -19,17 +19,18 @@ import java.util.List;
  * <p>The two table pairs differ in which identity fields they carry, so the
  * fields only one of them has are empty on the other:
  * <ul>
- *   <li>non-PDP only — {@code stmtNum}, {@code iban}, {@code refNum}, and a
+ *   <li>BM only — {@code stmtNum}, {@code iban}, {@code refNum}, and a
  *       single CUST_NAME</li>
  *   <li>PDP only — {@code custNum}, {@code pageNum}, {@code branchData}, and a
  *       name split across TITLE / FIRST_NAME / SECOND_NAME (joined into
  *       {@code custName} here)</li>
  * </ul>
  *
- * @param source which pair the row came from: {@code "STMT"} or {@code "PDP"}.
- *               Surfaced rather than hidden because nothing in the legacy
- *               source says what separates the two archives, so an operator
- *               seeing a statement twice needs to be able to tell why. See
+ * @param source which pair the row came from: {@code "BM"} or {@code "PDP"} —
+ *               the system the operator selected on the screen. Echoed back
+ *               rather than assumed by the client because nothing in the legacy
+ *               source says what separates the two archives, so a printed sheet
+ *               has to say which one produced it. See
  *               {@code JdbcStatementRepository} for how the pairing was
  *               derived — it is an inference from the keys, not a documented
  *               fact.
