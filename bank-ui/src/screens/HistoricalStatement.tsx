@@ -352,6 +352,7 @@ export default function HistoricalStatement({
     }
   }
 
+  const showBranchCode = system === 'PDP' || deletedAccountRoute
   const hasReport = statements !== null && statements.length > 0
   const lineCount = (statements ?? []).reduce((n, s) => n + s.lines.length, 0)
 
@@ -391,19 +392,28 @@ export default function HistoricalStatement({
         </div>
 
         <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Branch Code" htmlFor="branchCode">
-            <TextInput
-              id="branchCode"
-              value={branchCode}
-              maxLength={4}
-              inputMode="numeric"
-              onChange={(e) => {
-                setBranchCode(digitsOnly(e.target.value))
-                setStatements(null)
-              }}
-              placeholder="0000"
-            />
-          </Field>
+          {/* Branch Code filters the PDP header query and nothing else, so it is
+              only worth showing for PDP. It is still SENT for BM — the value
+              comes off the grid row and the server still validates it and keys
+              the staff-branch rule on it — it just has nothing to control there.
+              The exception is the deleted-account route: no grid row means no
+              branch to carry, so hiding the box would leave the operator unable
+              to satisfy a 4-character rule they cannot see. */}
+          {showBranchCode && (
+            <Field label="Branch Code" htmlFor="branchCode">
+              <TextInput
+                id="branchCode"
+                value={branchCode}
+                maxLength={4}
+                inputMode="numeric"
+                onChange={(e) => {
+                  setBranchCode(digitsOnly(e.target.value))
+                  setStatements(null)
+                }}
+                placeholder="0000"
+              />
+            </Field>
+          )}
 
           {/* txtAccNo.Enabled = 0 by default — carried from the grid. The
               deleted-account route enables it, and only for ~87
