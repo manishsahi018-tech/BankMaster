@@ -108,9 +108,10 @@ bank:
                           # A SEPARATE Oracle instance, not Denodo and not DB #2:
                           # it replaces the legacy's Btrieve statement index plus
                           # the zipped pre-rendered pages it pointed at
-                          # (frmHistStmt.frm), and holds nothing else. Drop
-                          # ojdbc*.jar next to the Denodo driver in the
-                          # -Dloader.path directory.
+                          # (frmHistStmt.frm), and holds nothing else. Its
+                          # ojdbc driver is a normal pom.xml dependency bundled
+                          # into the jar — nothing to drop into -Dloader.path,
+                          # unlike the Denodo driver.
                           #
                           # OFF by default: with no URL configured the screen
                           # reports itself unavailable rather than failing with a

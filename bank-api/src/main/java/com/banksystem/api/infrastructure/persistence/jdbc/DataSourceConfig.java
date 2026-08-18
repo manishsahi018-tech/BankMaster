@@ -43,13 +43,14 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
  * here and qualify the repositories that need it — the same shape
  * {@code statementDataSource} already has for DB #3.
  *
- * <p>Driver jars (Denodo's is not on Maven Central, and neither is Oracle's) are
- * loaded at runtime from the directory given via -Dloader.path (see README
- * "Deploying against Denodo").
+ * <p>The Denodo driver is licensed and not on Maven Central, so it is loaded at
+ * runtime from the directory given via -Dloader.path (see README "Deploying
+ * against Denodo"). Oracle's IS on Central and is an ordinary pom.xml
+ * dependency bundled into the jar.
  */
 @Configuration
 @Profile("denodo")
-public class DenodoDataSourceConfig {
+public class DataSourceConfig {
 
     @Bean
     @Primary
@@ -71,14 +72,18 @@ public class DenodoDataSourceConfig {
      * that slot is reserved for the Finacle/cbcmssrv replacement (Transaction
      * Inquiry, On-demand Statement), and this one holds statements only.
      *
-     * <p>Created ONLY when {@code bank.statement-db.enabled} is true. It has to
-     * be conditional rather than merely unconfigured, because binding this
-     * datasource loads its driver class eagerly: an Oracle driver is a new
-     * requirement that a site running only DB #1 and DB #2 has no reason to
-     * have deployed, and Hikari's ClassNotFoundException on driver-class-name
-     * fails the whole context — taking every other screen down over a facility
-     * that is switched off. {@code UnavailableStatementRepository} answers in
-     * its place when it is off.
+     * <p>Created ONLY when {@code bank.statement-db.enabled} is true, so a site
+     * that has not been given this database yet gets
+     * {@code UnavailableStatementRepository} on the one screen instead of a pool
+     * pointed at nothing. The flag is also what keeps a half-filled config from
+     * being mistaken for a working one: with it off, the URL, credentials and
+     * the four table names below can sit there wrong or blank harmlessly.
+     *
+     * <p>It used to carry a second job — the driver class is loaded eagerly when
+     * this datasource binds, so before ojdbc was a pom.xml dependency an absent
+     * jar meant a ClassNotFoundException that failed the whole context and took
+     * every other screen down with it. The driver now ships in the jar, so that
+     * particular failure is gone.
      */
     @Bean
     @ConditionalOnProperty(name = "bank.statement-db.enabled", havingValue = "true")
