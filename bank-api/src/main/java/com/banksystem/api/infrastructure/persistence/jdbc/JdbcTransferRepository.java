@@ -149,12 +149,7 @@ public class JdbcTransferRepository implements TransferRepository {
         sql.append("""
                 ORDER  BY issueDate, transRef
                 """);
-        int offset = Math.max(0, page) * PagedResult.PAGE_SIZE;
-        if (offset > 0) {
-            sql.append("OFFSET %d ROWS\n".formatted(offset));
-        }
-        // One row past the page: its presence IS hasMore.
-        sql.append("FETCH FIRST %d ROWS ONLY\n".formatted(PagedResult.PAGE_SIZE + 1));
+        appendWindow(sql, page);
         List<TransferSummary> rows = jdbc.query(sql.toString(), params, (rs, i) -> new TransferSummary(
                 scrub(rs.getString("transRef")),
                 BmForms.isoToBmDate(scrub(rs.getString("issueDate"))),
@@ -165,11 +160,7 @@ public class JdbcTransferRepository implements TransferRepository {
                 scrub(rs.getString("payCurrCode")),
                 scrub(rs.getString("payAmt")),
                 scrub(rs.getString("statusFlag"))));
-        boolean hasMore = rows.size() > PagedResult.PAGE_SIZE;
-        return new PagedResult<>(
-                hasMore ? List.copyOf(rows.subList(0, PagedResult.PAGE_SIZE)) : List.copyOf(rows),
-                hasMore,
-                false);
+        return pageOf(rows);
     }
 
     // ------------------------------------------------------------------
@@ -252,9 +243,27 @@ public class JdbcTransferRepository implements TransferRepository {
     // §18 BM transaction enquiry — thd0data
     // ------------------------------------------------------------------
 
+    /**
+     * One page of the BM transaction enquiry, windowed in the query exactly as
+     * {@link #sarieTransfers} — same OFFSET/FETCH FIRST shape, same n+1 probe
+     * for hasMore, OFFSET emitted only past the first page.
+     *
+     * <p>The caller does NOT stop at one page: the legacy cmdGo_Click loops
+     * until the server clears completionFlag (frmTransEnq.frm), loads every
+     * batch, and only then sums the amounts and enables Print — so the screen
+     * walks the pages to the end and the window is a bound on each READ, not on
+     * what the operator sees. That is the point: the walk used to cost one
+     * full-range scan of thd0data per page and discard all but ten rows.
+     *
+     * <p>Unlike rid0data, the ordering here is a genuine key. thd0data is the
+     * one BM view exempt from the repeated-snapshot problem because its key
+     * already carries postDate + transCounter, so within the single accNo this
+     * query fixes, {@code ORDER BY postDate, transCounter} is a total order and
+     * the window cannot repeat or skip a row at a page boundary.
+     */
     @Override
-    public List<TransactionSummary> bmTransactions(
-            String accNo, String fromDate, String toDate, String transType) {
+    public PagedResult<TransactionSummary> bmTransactions(
+            String accNo, String fromDate, String toDate, String transType, int page) {
         StringBuilder sql = new StringBuilder("""
                 SELECT transRef, postDate, valueDate, userId, transAmt,
                        transCounter, transType
@@ -282,7 +291,8 @@ public class JdbcTransferRepository implements TransferRepository {
         sql.append("""
                 ORDER  BY postDate, transCounter
                 """);
-        return jdbc.query(sql.toString(), params, (rs, i) -> new TransactionSummary(
+        appendWindow(sql, page);
+        List<TransactionSummary> rows = jdbc.query(sql.toString(), params, (rs, i) -> new TransactionSummary(
                 scrub(rs.getString("transRef")),
                 BmForms.isoToBmDate(scrub(rs.getString("postDate"))),
                 BmForms.isoToBmDate(scrub(rs.getString("valueDate"))),
@@ -290,6 +300,7 @@ public class JdbcTransferRepository implements TransferRepository {
                 scrub(rs.getString("transAmt")),
                 scrub(rs.getString("transCounter")),
                 scrub(rs.getString("transType"))));
+        return pageOf(rows);
     }
 
     // ------------------------------------------------------------------
@@ -376,6 +387,29 @@ public class JdbcTransferRepository implements TransferRepository {
                     e.getMostSpecificCause().getMessage(), refNo);
             return false;
         }
+    }
+
+    /**
+     * Appends the paging window to a statement whose ORDER BY is already in
+     * place. One row past the page is requested so its presence answers
+     * hasMore without a second COUNT round trip, and OFFSET is left out
+     * entirely on the first page, where it would be a no-op.
+     */
+    private static void appendWindow(StringBuilder sql, int page) {
+        int offset = Math.max(0, page) * PagedResult.PAGE_SIZE;
+        if (offset > 0) {
+            sql.append("OFFSET %d ROWS\n".formatted(offset));
+        }
+        sql.append("FETCH FIRST %d ROWS ONLY\n".formatted(PagedResult.PAGE_SIZE + 1));
+    }
+
+    /** Trims the probe row {@link #appendWindow} asked for and reports it as hasMore. */
+    private static <T> PagedResult<T> pageOf(List<T> rows) {
+        boolean hasMore = rows.size() > PagedResult.PAGE_SIZE;
+        return new PagedResult<>(
+                hasMore ? List.copyOf(rows.subList(0, PagedResult.PAGE_SIZE)) : List.copyOf(rows),
+                hasMore,
+                false);
     }
 
     /**

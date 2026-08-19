@@ -32,8 +32,8 @@ public class TransferService {
 
     public PagedResult<TransactionSummary> bmTransactions(
             String accNo, String fromDate, String toDate, String transType, int page) {
-        return PagedResult.page(
-                transfers.bmTransactions(accNo, fromDate, toDate, transType), page);
+        // Paged in the query, like sarieTransfers above.
+        return transfers.bmTransactions(accNo, fromDate, toDate, transType, page);
     }
 
     public TransactionDetail bmTransactionDetail(String accNo, String refNo) {

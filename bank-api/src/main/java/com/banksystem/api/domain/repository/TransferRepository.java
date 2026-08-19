@@ -6,7 +6,6 @@ import com.banksystem.api.domain.model.TransactionSummary;
 import com.banksystem.api.domain.model.TransferDetail;
 import com.banksystem.api.domain.model.TransferSummary;
 
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -27,9 +26,15 @@ public interface TransferRepository {
 
     Optional<TransferDetail> transferDetail(String refNo, String transDate);
 
-    /** transType: blank = all, "RR" = reversals only, else exact match. */
-    List<TransactionSummary> bmTransactions(
-            String accNo, String fromDate, String toDate, String transType);
+    /**
+     * One page of BM transactions. Windowed in the query like
+     * {@link #sarieTransfers}; the caller walks the pages to the end because
+     * the screen's Total and printed report cover the whole result.
+     *
+     * @param transType blank = all, "RR" = reversals only, else exact match
+     */
+    PagedResult<TransactionSummary> bmTransactions(
+            String accNo, String fromDate, String toDate, String transType, int page);
 
     Optional<TransactionDetail> bmTransactionDetail(String accNo, String refNo);
 }

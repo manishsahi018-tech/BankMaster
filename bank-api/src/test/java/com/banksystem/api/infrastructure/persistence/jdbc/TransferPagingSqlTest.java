@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.banksystem.api.domain.model.PagedResult;
+import com.banksystem.api.domain.model.TransactionSummary;
 import com.banksystem.api.domain.model.TransferSummary;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,10 +19,11 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 
 /**
- * The transfer enquiry pages IN THE QUERY, so what the window clause looks like
- * and where it sits are the whole contract — and neither can be checked against
- * a live Denodo from a test. This captures the SQL the repository hands the
- * template and asserts the shape instead.
+ * Both enquiries on this repository — SARIE transfers and BM transactions —
+ * page IN THE QUERY, so what the window clause looks like and where it sits are
+ * the whole contract, and neither can be checked against a live Denodo from a
+ * test. This captures the SQL the repository hands the template and asserts the
+ * shape instead.
  *
  * <p>Also pins the n+1 probe: the repository asks for PAGE_SIZE + 1 rows and
  * reports the extra one as {@code hasMore} rather than running a COUNT, so the
@@ -139,6 +141,85 @@ class TransferPagingSqlTest {
         assertThat(none.rows()).isEmpty();
         assertThat(none.hasMore()).isFalse();
         assertThat(none.incomplete()).isFalse();
+    }
+
+    // ------------------------------------------------------------------
+    // BM transactions (thd0data) — same window, walked to the end by the
+    // screen because its Total and printed report cover the whole result.
+    // ------------------------------------------------------------------
+
+    @SuppressWarnings("unchecked")
+    private String transactionSqlFor(int page, int rowCount) {
+        List<TransactionSummary> rows = new ArrayList<>(IntStream.range(0, rowCount)
+                .mapToObj(i -> new TransactionSummary("TR%08d".formatted(i), "20250101", "20250102",
+                        "OPER1", "50.000", String.valueOf(i), "01"))
+                .toList());
+        when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
+                .thenReturn(rows);
+        repo.bmTransactions("01008041574100", "20240101", "20260819", "", page);
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(jdbc, org.mockito.Mockito.atLeastOnce())
+                .query(sql.capture(), any(SqlParameterSource.class), any(RowMapper.class));
+        return sql.getValue();
+    }
+
+    @Test
+    void transactionsWindowTheSameWayTransfersDo() {
+        assertThat(transactionSqlFor(0, 3))
+                .doesNotContain("OFFSET")
+                .contains("FETCH FIRST %d ROWS ONLY".formatted(PagedResult.PAGE_SIZE + 1));
+        assertThat(transactionSqlFor(4, 3)).contains("OFFSET 40 ROWS");
+    }
+
+    @Test
+    void theTransactionWindowFollowsTheKeyOrdering() {
+        String sql = transactionSqlFor(1, 3);
+
+        assertThat(sql.indexOf("ORDER  BY postDate, transCounter"))
+                .as("thd0data's key carries postDate + transCounter, so within one accNo this "
+                        + "is a total order and the window cannot repeat or skip a row")
+                .isGreaterThan(0)
+                .isLessThan(sql.indexOf("OFFSET"));
+        assertThat(sql.indexOf("OFFSET")).isLessThan(sql.indexOf("FETCH FIRST"));
+    }
+
+    @Test
+    void theReversalFilterStaysInsideTheTransactionWhereClause() {
+        when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
+                .thenReturn(List.of());
+        repo.bmTransactions("01008041574100", "20240101", "20260819", "RR", 2);
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(jdbc)
+                .query(sql.capture(), any(SqlParameterSource.class), any(RowMapper.class));
+
+        assertThat(sql.getValue().indexOf("statmentFlag > '1'"))
+                .isGreaterThan(0)
+                .isLessThan(sql.getValue().indexOf("ORDER  BY"));
+    }
+
+    @Test
+    void theTransactionProbeRowIsReportedAsHasMoreAndNotReturned() {
+        transactionSqlFor(0, PagedResult.PAGE_SIZE + 1); // stubs the rows
+        PagedResult<TransactionSummary> full =
+                repo.bmTransactions("01008041574100", "20240101", "20260819", "", 0);
+
+        assertThat(full.rows()).hasSize(PagedResult.PAGE_SIZE);
+        assertThat(full.hasMore()).isTrue();
+        assertThat(full.rows().getLast().transRef())
+                .isEqualTo("TR%08d".formatted(PagedResult.PAGE_SIZE - 1));
+    }
+
+    @Test
+    void anExactlyFullTransactionPageIsTheLastPage() {
+        transactionSqlFor(0, PagedResult.PAGE_SIZE);
+        PagedResult<TransactionSummary> exact =
+                repo.bmTransactions("01008041574100", "20240101", "20260819", "", 0);
+
+        assertThat(exact.rows()).hasSize(PagedResult.PAGE_SIZE);
+        assertThat(exact.hasMore())
+                .as("the screen walks pages until this is false, so a wrong answer here either "
+                        + "truncates the Total or spins an extra empty request")
+                .isFalse();
     }
 
     @Test

@@ -89,15 +89,17 @@ public class MockTransferRepository implements TransferRepository {
     }
 
     @Override
-    public List<TransactionSummary> bmTransactions(String accNo, String fromDate, String toDate,
-                                                   String transType) {
-        return historyFor(accNo).stream()
+    public PagedResult<TransactionSummary> bmTransactions(String accNo, String fromDate,
+                                                          String toDate, String transType,
+                                                          int page) {
+        List<TransactionSummary> all = historyFor(accNo).stream()
                 .filter(t -> DemoData.inRange(t.postDate(), fromDate, toDate))
                 // Legacy three-way filter: blank = all, RR = reversals
                 // (statmentFlag > '1'), else an exact transType match.
                 .filter(t -> transType == null || transType.isBlank()
                         || ("RR".equals(transType) ? isReversal(t) : t.transType().equals(transType)))
                 .toList();
+        return PagedResult.page(all, page);
     }
 
     /** Mock stand-in for statmentFlag > '1': roughly one in twenty. */
