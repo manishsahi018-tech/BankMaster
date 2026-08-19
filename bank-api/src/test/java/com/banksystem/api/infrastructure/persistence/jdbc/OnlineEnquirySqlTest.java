@@ -50,6 +50,12 @@ class OnlineEnquirySqlTest {
     /** Set to make the crd0data lookup blow up the way an absent view would. */
     private boolean crdBroken = false;
 
+    /** What stctltabXC answers for this account's currency. */
+    private String decimalPlace = "3";
+
+    /** The transAmt every stubbed thd0data row carries, as the VIEW holds it. */
+    private String viewAmount = "";
+
     // ------------------------------------------------------------------
     // 07 vs 11 — the one predicate that separates them
     // ------------------------------------------------------------------
@@ -179,6 +185,67 @@ class OnlineEnquirySqlTest {
     }
 
     // ------------------------------------------------------------------
+    // Major units in the view, minor units on the wire
+    // ------------------------------------------------------------------
+
+    /**
+     * The C copied thd0data.transAmt across untouched because the ISAM field
+     * WAS minor units. The archival view is not: its amount columns are
+     * numeric(16,3) holding major units — a balance reads 1552.49, measured
+     * against real data. Emitting that unscaled would have the screen divide by
+     * the denomination a second time and render 1.552.
+     */
+    @Test
+    void aMajorUnitAmountIsScaledUpToTheGatewaysMinorUnits() {
+        decimalPlace = "2";
+        viewAmount = "1552.49";
+        stub();
+
+        assertThat(repo.onDemandStatement(ACC, "20090101", "20090131", "00000")
+                .transactions().get(0).transAmt())
+                .as("1552.49 major at 2 decimals is 155249 minor; the screen divides by 100 "
+                        + "and gets 1552.49 back")
+                .isEqualTo("+00000000155249");
+    }
+
+    @Test
+    void theScaleFollowsTheCurrencysOwnDecimalPlace() {
+        decimalPlace = "3";
+        viewAmount = "1552.49";
+        stub();
+        assertThat(repo.onDemandStatement(ACC, "20090101", "20090131", "00000")
+                .transactions().get(0).transAmt())
+                .isEqualTo("+00000001552490");
+    }
+
+    @Test
+    void aWholeUnitCurrencyIsNotScaledAtAll() {
+        decimalPlace = "0";
+        viewAmount = "36404";
+        stub();
+
+        assertThat(repo.onDemandStatement(ACC, "20090101", "20090131", "00000")
+                .transactions().get(0).transAmt())
+                .as("coinDenomination is 1 for anything but 1/2/3, and real stctltabXC data "
+                        + "carries 0 — scaling there would multiply by nothing and must not "
+                        + "quietly become x10")
+                .isEqualTo("+00000000036404");
+    }
+
+    @Test
+    void theBroughtForwardBalanceIsScaledTheSameWay() {
+        decimalPlace = "2";
+        viewAmount = "0";
+        stub();
+
+        // bookBal 5000.00 stubbed below, movement 0 across four zero rows.
+        assertThat(repo.onDemandStatement(ACC, "20090101", "20090131", "00000").bfBalance())
+                .as("a balance that scaled differently from the rows would make the running "
+                        + "total drift line by line, which reads as a data problem, not a bug")
+                .isEqualTo("+00000000500000");
+    }
+
+    // ------------------------------------------------------------------
     // Hard-fail
     // ------------------------------------------------------------------
 
@@ -231,7 +298,7 @@ class OnlineEnquirySqlTest {
                     }
                     if (sql.contains("gld0data")) {
                         return List.of(mapper.mapRow(row(Map.of(
-                                "bookBal", "00000000500000",
+                                "bookBal", "5000.00",
                                 "branchCode", "0127",
                                 "branchName", "OLAYA MAIN BRANCH")), 0));
                     }
@@ -242,7 +309,8 @@ class OnlineEnquirySqlTest {
                                 "postDate", "2009-01-1" + (i % 10),
                                 "valueDate", "2009-01-1" + (i % 10),
                                 "transType", "01",
-                                "transAmt", "0000000001000" + (i % 10),
+                                "transAmt", viewAmount.isEmpty()
+                                        ? "0000000001000" + (i % 10) : viewAmount,
                                 "narrative1", "NARRATIVE",
                                 "transRef", "REF%07d".formatted(i),
                                 "supervisorId", "SUP",
@@ -257,9 +325,12 @@ class OnlineEnquirySqlTest {
                     String sql = call.getArgument(0);
                     issued.add(sql);
                     if (sql.contains("stctltabXC")) {
-                        return List.of("3");
+                        return List.of(decimalPlace);
                     }
-                    return IntStream.range(0, 4).mapToObj(i -> "0000000001000" + i).toList();
+                    // The balance walk-back's rows, in the view's major units.
+                    return IntStream.range(0, 4)
+                            .mapToObj(i -> viewAmount.isEmpty() ? "0000000001000" + i : "0")
+                            .toList();
                 });
     }
 

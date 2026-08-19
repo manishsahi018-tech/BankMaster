@@ -56,10 +56,13 @@ import org.springframework.stereotype.Repository;
  *   <li>{@code postDate}/{@code valueDate} are real date columns, so predicates
  *       bind through {@link BmForms#bmToIso} and rows read back through
  *       {@link BmForms#isoToBmDate}.</li>
- *   <li>{@code transAmt} and {@code bookBal} are raw BM amount strings with the
- *       trailing overpunch sign, decoded by {@link BmForms#amountOrNull}. They
- *       go back out in the GATEWAY's format (sign character then 14 zero-padded
- *       minor-unit digits), because that is what the screens parse.</li>
+ *   <li>{@code transAmt} and {@code bookBal} are {@code numeric(16,3)} holding
+ *       MAJOR units — the ETL scaled them, so a balance reads 1552.49 and not
+ *       155249 (measured, 2026-08-19). They go back out in the GATEWAY's format
+ *       (sign character then 14 zero-padded MINOR-unit digits), so
+ *       {@link #gatewayAmount} scales them UP by decimalPlace on the way — a
+ *       conversion the C never needed, because the ISAM field was minor units
+ *       to begin with.</li>
  * </ul>
  *
  * <h2>Hard-fail, by instruction</h2>
@@ -172,7 +175,8 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
         }
 
         String decimalPlace = decimalPlace(actualAcc);
-        List<Row> rows = transactions(actualAcc, from, to, pointer, statementOnly);
+        int minorScale = minorScale(decimalPlace);
+        List<Row> rows = transactions(actualAcc, from, to, pointer, statementOnly, minorScale);
 
         boolean complete = rows.size() <= GATEWAY_PAGE;
         List<Row> shown = complete ? rows : rows.subList(0, GATEWAY_PAGE);
@@ -182,8 +186,10 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
         // (cbrt01.c:867-884 / :1244-1261). That asymmetry is deliberate: it is
         // what stops each continuation page re-walking the account.
         String bfBalance = FIRST_POINTER.equals(pointer)
-                ? gatewayAmount(account.bookBal().subtract(movementSince(actualAcc, from, statementOnly)))
-                : gatewayAmount(BigDecimal.ZERO);
+                ? gatewayAmount(
+                        account.bookBal().subtract(movementSince(actualAcc, from, statementOnly)),
+                        minorScale)
+                : gatewayAmount(BigDecimal.ZERO, minorScale);
 
         return new OnlineStatementPage(
                 SUCCESS,
@@ -333,7 +339,7 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
      */
     private List<Row> transactions(
             String actualAcc, String fromDate, String toDate, String pointer,
-            boolean statementOnly) {
+            boolean statementOnly, int minorScale) {
         StringBuilder sql = new StringBuilder("""
                 SELECT userId, postDate, valueDate, transType, transAmt,
                        narrative1, narrative2, narrative3,
@@ -357,7 +363,7 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
                         BmForms.isoToBmDate(trim(rs.getString("postDate"))),
                         BmForms.isoToBmDate(trim(rs.getString("valueDate"))),
                         scrub(rs.getString("transType")),
-                        gatewayAmount(amount(rs.getString("transAmt"))),
+                        gatewayAmount(amount(rs.getString("transAmt")), minorScale),
                         scrub(rs.getString("narrative1")),
                         scrub(rs.getString("narrative2")),
                         scrub(rs.getString("narrative3")),
@@ -443,7 +449,7 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
             String accNo, String fromDate, String toDate, String status, String decimalPlace) {
         return new OnlineStatementPage(
                 status, accNo, "", "", "", "", "0", decimalPlace,
-                gatewayAmount(BigDecimal.ZERO), fromDate, toDate,
+                gatewayAmount(BigDecimal.ZERO, 0), fromDate, toDate,
                 List.of(), FIRST_POINTER, "1");
     }
 
@@ -453,15 +459,60 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
      * ({@code sprintf("%015.0f")} for negatives, {@code sprintf("+%014.0f")}
      * for the rest — cbrt01.c:797-808). The leading character is the Dr/Cr flag
      * the screens test, so it is never dropped, even on zero.
+     *
+     * <p><b>The scaling is the part to be careful about.</b> The C read
+     * {@code thd0data.transAmt} as the raw BM field — minor units already, so
+     * it copied the bytes across untouched. The archival view does not hold
+     * that: its amount columns are {@code numeric(16,3)} carrying MAJOR units
+     * (a balance reads 1552.49, not 155249), because the ETL scaled them on the
+     * way in. The workbook still describes the columns as "decimal places are
+     * currency dependent", which is the pre-ETL field documentation and not a
+     * description of the loaded value — measured against real data, 2026-08-19.
+     *
+     * <p>So the conversion the C never needed has to happen here, or the screen
+     * divides by the denomination a second time and shows 1.552 for 1552.49.
+     * Multiplying is right rather than dropping the division client-side,
+     * because the CONTRACT is the gateway's — {@code decimalPlace} travels with
+     * the page and the screens are shared with the mock.
+     *
+     * @param major      the value as the view holds it, in major units
+     * @param minorScale how many decimal places this currency carries
      */
-    private static String gatewayAmount(BigDecimal value) {
-        BigDecimal amount = value == null ? BigDecimal.ZERO : value.setScale(0, java.math.RoundingMode.DOWN);
+    private static String gatewayAmount(BigDecimal major, int minorScale) {
+        BigDecimal value = major == null ? BigDecimal.ZERO : major;
+        // HALF_UP only ever matters if the view carries MORE decimals than the
+        // currency has, which should not happen; truncating there would shed
+        // value silently, so round rather than drop.
+        BigDecimal amount = value.movePointRight(minorScale)
+                .setScale(0, java.math.RoundingMode.HALF_UP);
         String digits = amount.abs().toPlainString();
         String padded = digits.length() >= 14 ? digits : "0".repeat(14 - digits.length()) + digits;
         return (amount.signum() < 0 ? "-" : "+") + padded;
     }
 
-    /** BM amount string (trailing overpunch sign) → value; blank/unparsable → zero. */
+    /**
+     * decimalPlace &rarr; the power of ten the screens divide by
+     * (coinDenomination, OnlineStmt.frm:748-760): "1"/"2"/"3" scale, and
+     * ANYTHING else — including the "0" real stctltabXC data carries for
+     * whole-unit currencies — means no scaling at all.
+     */
+    private static int minorScale(String decimalPlace) {
+        return switch (decimalPlace == null ? "" : decimalPlace.trim()) {
+            case "1" -> 1;
+            case "2" -> 2;
+            case "3" -> 3;
+            default -> 0;
+        };
+    }
+
+    /**
+     * The view's amount as a number, in MAJOR units.
+     *
+     * <p>Still routed through {@link BmForms#amountOrNull} rather than a plain
+     * parse: the ETL scaled these columns, but the overpunch branch is inert on
+     * a value that does not end in P-Y, so keeping it costs nothing and covers
+     * any column that turns out not to have been converted.
+     */
     private static BigDecimal amount(String raw) {
         BigDecimal value = BmForms.amountOrNull(raw);
         return value == null ? BigDecimal.ZERO : value;

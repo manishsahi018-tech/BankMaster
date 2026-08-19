@@ -698,6 +698,16 @@ Port 07's intent; do not replicate the bug.
    form the other views carry — decided 2026-08-19, see DENODO-VIEWS.md item 2),
    `shortName[30]`, `address1[30]`, `address2[30]`, `language`.
 
+   **Amount columns hold MAJOR units.** Measured 2026-08-19: `gld0data.bookBal`
+   reads 1552.49, not 155249. The archival amount columns are `numeric(16,3)`
+   and the ETL scaled them, so the workbook's "Decimal places are currency
+   dependent" (on ~71 columns across 14 tables) is pre-ETL FIELD documentation,
+   not a description of the loaded value. Two consequences, opposite directions:
+   the UI's `formatAmount` is right to print these as they are, and
+   `JdbcOnlineEnquiryRepository` must scale them UP by `decimalPlace` because
+   the gateway CONTRACT its screens share with the mock is minor units. The C
+   needed neither conversion — the ISAM field was minor units to begin with.
+
    The packing only bites above 1,000,000: below that it is the last six digits,
    at or above it the leading two digits collapse to a letter (1234567 → C34567).
    So a view keyed the other way would agree on low customers and lose only the
