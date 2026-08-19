@@ -28,13 +28,34 @@ import { formatDate, formatPlainAmount } from '../schema/helpers.ts'
 // The month loop and the two BM key encodings (convertAcc2Bm, convertYear2Bm)
 // are deliberately absent — they existed only to build Btrieve keys.
 //
-// THE ONE CONTROL THE LEGACY DID NOT HAVE is the System selector. Btrieve held
-// a single index tree, so there was nothing to choose between; DB #3 holds two
-// header/detail table pairs — BM and PDP — and only the operator knows which
-// one an enquiry is about. Exactly one is read, so a result is never a merge of
-// the two archives.
+// THE SYSTEM SELECTOR is new as a control, but not as an idea. The legacy had
+// TWO sources on this screen and made the operator choose with separate buttons:
+// Generate/View/Print read the BRANCH archive it built from Btrieve, while View
+// HO / Print HO read reqPath\prtall.$s! — a pre-merged statement delivered by
+// Head Office and requested over FTP (cmdFtp -> frmSendFile), whose absence the
+// screen reports as "Please call HO". DB #3 holds two header/detail pairs, BM
+// and PDP, and the selector is that same either/or in one control. Whether the
+// pairs line up with branch-vs-HO is a hypothesis, not a fact — see
+// JdbcStatementRepository. Exactly one pair is read, so a result is never a
+// merge of the two archives.
+//
+// NOT PORTED, descoped deliberately: Analyse. The legacy shelled out to an
+// `analyse` utility over the merged print file (prtall.$s! -> prtall.$a!, and
+// prtall.$h! for the HO variant) and opened the result in Notepad — four
+// buttons in all. It operated on rendered text, which no longer exists here.
+//
+// Not ported either: the FTP request to Head Office. It fetched a FILE onto a
+// mapped drive, which has no meaning against a relational archive.
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
+
+/**
+ * Where the BM archive ends: Finacle went live in July 2009 and nothing was
+ * written here after it (frmHistStmt.frm:1195-1197). Measured data agrees — the
+ * BM archival views span 1992-2009.
+ */
+const LAST_ARCHIVED_YEAR = '2009'
+const LAST_ARCHIVED_MONTH = '07'
 
 /** The two archives DB #3 holds. Sent verbatim — the API takes these strings. */
 const SYSTEMS: StatementSystem[] = ['BM', 'PDP']
@@ -294,8 +315,13 @@ export default function HistoricalStatement({
   const [form, setForm] = useState({
     fromMonth: '',
     fromYear: '',
-    toMonth: String(new Date().getMonth() + 1).padStart(2, '0'),
-    toYear: String(new Date().getFullYear()),
+    // Form_Load (:1195-1197) hardcodes these, having COMMENTED OUT the
+    // Year(Date)/Month(Date) version above them: "since Finacle is implemented
+    // on Jul'2009, historical end date is defaulted to Jul.2009". The BM
+    // archive stops at the Finacle cutover, so today's date would default the
+    // range's upper half to months that cannot hold a statement.
+    toMonth: LAST_ARCHIVED_MONTH,
+    toYear: LAST_ARCHIVED_YEAR,
   })
   const [statements, setStatements] = useState<Statement[] | null>(null)
   const [generating, setGenerating] = useState(false)

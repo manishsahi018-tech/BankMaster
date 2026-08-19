@@ -718,9 +718,30 @@ guard against the view regressing, not an expected state.
 
 ### 21.2 Historical & merchant statements — genuinely not in this codebase
 
-- **Historical statement**: produced by an external batch and delivered to branches
-  **by FTP**; only the authority codes (87, 94) exist in this system. Port = query
-  the archive store directly (thd0data in DB #1 may cover it — confirm).
+- **Historical statement**: no C handler anywhere — verified by sweeping the
+  whole `CSD C Code` tree AND `cbrt01.c` for `histstmt`/`stmtFile`/`zipFileNo`,
+  zero hits. This one really is VB-only (frmHistStmt.frm), and it never queried a
+  database. Served now from **DB #3** (a separate Oracle instance) by
+  `JdbcStatementRepository`.
+
+  The legacy had **two sources on the one screen**, chosen by separate buttons:
+  - **Branch** — `generateReport` (:1252) loops YYYYMM and opens
+    `<stmtPath><brn3>\s<brn3><bmYY><MM>.idx`; each Btrieve row names a zip
+    volume `.0<zipFileNo>` and a member `stmtFile`, which is unzipped,
+    `lanfix`ed for `stmtSpec.lang` and `fmerge`d into `prtall.$s!`. Several rows
+    per account per month are normal — the `Do While … BGETNEXT` merges them in
+    sequence, which is what `HistoricalStatement.pageCount` records.
+  - **Head Office** — `reqPath\prtall.$s!`, a pre-merged file DELIVERED by HO
+    and requested over FTP (`cmdFtp` → `frmSendFile`); missing, the screen says
+    "Please call HO".
+
+  That two-source split is the antecedent of the screen's BM/PDP selector and a
+  hypothesis for the DB #3 pairing (BM ≈ branch, PDP ≈ HO) — see
+  `JdbcStatementRepository`. **Descoped deliberately**: Analyse (an `analyse`
+  utility over the merged print file → `prtall.$a!` / `prtall.$h!`, four
+  buttons) and the FTP request, both of which act on rendered text on a mapped
+  drive. **To-date defaults to 2009/07**, as the legacy hardcodes it — the BM
+  archive stops at the Finacle cutover, and the measured views span 1992-2009.
 - **Merchant statement**: lives in the acquiring/POS system entirely; here it is
   only authority role 81. Port = out of scope until that system's data source is
   identified.

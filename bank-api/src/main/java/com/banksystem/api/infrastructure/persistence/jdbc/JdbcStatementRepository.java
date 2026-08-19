@@ -57,7 +57,26 @@ import org.springframework.stereotype.Repository;
  *
  * <p>That is an inference from column shape, not a fact from the source:
  * "PDP" appears nowhere in the VB6, the C, or the archival dictionary, so
- * there is nothing to check it against. Which pair a request reads is the
+ * there is nothing to check the NAME against.
+ *
+ * <p>There is, however, something to check the SHAPE against. The legacy screen
+ * had two sources and made the operator choose between them with separate
+ * buttons: Generate/View/Print built a statement from the BRANCH's own Btrieve
+ * indexes, while View HO / Print HO read {@code reqPath\prtall.$s!} — a
+ * pre-merged statement delivered by HEAD OFFICE and requested over FTP
+ * (frmHistStmt cmdFtp -> frmSendFile), whose absence the screen reports as
+ * "Please call HO". So "two archives for one account, operator picks" is the
+ * legacy's own arrangement, not something the port invented, and it gives the
+ * pairing a testable hypothesis rather than only a column-shape argument:
+ * <b>BM as the branch archive, PDP as the HO one</b>. Treat that as a lead for
+ * whoever confirms the table names — the split lines up, the naming still does
+ * not.
+ *
+ * <p>Not ported, deliberately: the legacy's Analyse (an {@code analyse} utility
+ * shelled over the merged print file, {@code prtall.$s! -> prtall.$a!}, plus
+ * {@code prtall.$h!} for the HO variant, four buttons in all) and the FTP
+ * request itself. Both operate on RENDERED TEXT on a mapped drive; neither has
+ * a meaning against a relational archive. Descoped, not overlooked. Which pair a request reads is the
  * OPERATOR's choice — the screen's System selector sends BM or PDP and exactly
  * that pair is queried — and the answer is still tagged with {@code source} so
  * a printed sheet says which archive produced it. All four names are
