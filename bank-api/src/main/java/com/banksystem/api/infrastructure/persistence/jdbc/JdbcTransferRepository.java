@@ -71,27 +71,29 @@ public class JdbcTransferRepository implements TransferRepository {
      * moved into both the Arabic and English slots — so there is nothing to pick
      * between and no custType branch, just the one column.
      *
-     * <p>One edge this does not reproduce exactly: the C falls back on the ROW
-     * being absent, while COALESCE falls back on the NAME coming back null. They
-     * differ only for a stcusttab row that exists with a null English name, where
-     * the C returns blank and this returns the crd0data name — which is the same
-     * name anyway, so the divergence has no visible effect. Reproducing it
-     * exactly would cost a second correlated existence probe per row.
+     * <p>This one CANNOT ride along as a correlated subquery beside
+     * {@link #STCUSTTAB_NAME}, because crd0data is keyed the way the legacy keys
+     * it: the 6-char PACKED BM customer that {@code actualToBmCust} produces
+     * ({@link BmForms#bmCust}). Below 1,000,000 that is just the last six digits,
+     * but from there to 6,199,999 the leading two digits collapse into a single
+     * letter — arithmetic no SUBSTR expresses, and the kind of number-form
+     * conversion this port deliberately keeps in Java rather than in SQL text.
+     * So it runs as its own point read, after the main query, only when the
+     * stcusttab name came back empty.
+     *
+     * <p>Which is also CLOSER to the C than the subquery form was: getCustName
+     * falls back on the stcusttab ROW being absent, and an empty name is very
+     * nearly that test — where it differs (a row present with blank names)
+     * crd0data holds the same name anyway.
      */
     private static final String CRD0DATA_NAME = """
-            (SELECT r.shortName
-                     FROM crd0data r
-                     WHERE r.accNo = SUBSTR(%1$s.%2$s, 6, 7))""";
+            SELECT shortName
+            FROM   crd0data
+            WHERE  accNo = :bmCustNo
+            """;
 
-    /**
-     * getCustName in full: stcusttab first, crd0data when the customer is not
-     * there. Unconditional — crd0data is a required view like every other one
-     * these queries name, so a detail screen fails on its absence the same way
-     * it would fail on a missing stcusttab, rather than quietly serving a
-     * half-faithful name.
-     */
-    private static final String CUST_NAME_SUBQUERY =
-            "COALESCE(" + STCUSTTAB_NAME + ",\n             " + CRD0DATA_NAME + ")";
+    /** stcusttab alone; {@link #crdShortName} supplies getCustName's other half. */
+    private static final String CUST_NAME_SUBQUERY = STCUSTTAB_NAME;
 
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -259,6 +261,9 @@ public class JdbcTransferRepository implements TransferRepository {
         // (cbswift.c:2355-2382) keys on transRefNo + the FOUND row's
         // issueDate and treats only bmUpdateStatus '1'/'2' as pending.
         TransferDetail detail = rows.get(0);
+        if (detail.custName().isEmpty()) {
+            detail = detail.withCustName(crdShortName(detail.crAccNo()));
+        }
         if (hasPendingSwiftUpdate(refNo, detail.issueDate())) {
             log.warn("Transfer {} has a pending stswiftlog update — blocking detail enquiry", refNo);
             return Optional.empty();
@@ -383,7 +388,33 @@ public class JdbcTransferRepository implements TransferRepository {
                 scrub(rs.getString("narrative1")),
                 scrub(rs.getString("narrative2")),
                 scrub(rs.getString("narrative3"))));
-        return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        TransactionDetail detail = rows.get(0);
+        return Optional.of(detail.custName().isEmpty()
+                ? detail.withCustName(crdShortName(actualAcc))
+                : detail);
+    }
+
+    /**
+     * getCustName's crd0data branch — the 6-char PACKED BM customer, exactly as
+     * {@code actualToBmCust(&accNo[5])} builds it. See {@link #CRD0DATA_NAME}
+     * for why this is a separate read rather than part of the main query.
+     *
+     * @param actualAcc 14-char actual account; its customer is chars 5..11
+     * @return the crd0data short name, or "" when there is no row either
+     */
+    private String crdShortName(String actualAcc) {
+        String bmCustNo = BmForms.bmCust(BmForms.custFromActualAcc(actualAcc));
+        if (bmCustNo.isBlank()) {
+            // bmCust returns six blanks for a customer it cannot pack — the same
+            // give-up the C's actualToBmCust does. No key, no lookup.
+            return "";
+        }
+        List<String> names = jdbc.queryForList(
+                CRD0DATA_NAME, new MapSqlParameterSource("bmCustNo", bmCustNo), String.class);
+        return names.isEmpty() ? "" : scrub(names.get(0));
     }
 
     // ------------------------------------------------------------------

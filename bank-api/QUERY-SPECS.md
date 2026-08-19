@@ -574,8 +574,11 @@ Legacy: `processBmTransEnq()` cbswift.c:1849 and `processBmTransDetail()` :1941.
   (cbothers.c:8195) — which **falls back to `crd0data.shortName` when the custNo
   is not in stcusttab** (:8210-8231), and swaps in the ORG short names when
   `custType != '0'` (:8234-8239) before the caller picks Arabic-else-English.
-  Both halves are queried unconditionally — crd0data is a required view like
-  any other (§21.1). Non-printables scrubbed.
+  The crd0data half runs as its own point read AFTER the main query, and only
+  when the stcusttab name came back empty — because crd0data is keyed on the
+  6-char PACKED BM customer (`BmForms.bmCust`), arithmetic no SUBSTR expresses,
+  so it cannot ride along as a correlated subquery. That is also closer to the C,
+  which falls back on the stcusttab ROW being absent. Non-printables scrubbed.
 
 ```sql
 SELECT transRef, postDate, valueDate, userId, transAmt, transCounter, transType
@@ -691,9 +694,14 @@ Port 07's intent; do not replicate the bug.
    written; treated as present since 2026-08-19). Both handlers source
    `custName`/`custAddress`/`languageCode` from it, so target it directly — no
    `stcusttab`+`staddrtab` substitute. Columns used: `accNo[6]` (the 6-char BM
-   custNo from `actualToBmCust(&accNo[5])`, NOT the 14-char actual form — see the
-   key-length caveat at DENODO-VIEWS.md:150), `shortName[30]`, `address1[30]`,
-   `address2[30]`, `language`.
+   custNo from `actualToBmCust(&accNo[5])` = `BmForms.bmCust`, NOT the actual
+   form the other views carry — decided 2026-08-19, see DENODO-VIEWS.md item 2),
+   `shortName[30]`, `address1[30]`, `address2[30]`, `language`.
+
+   The packing only bites above 1,000,000: below that it is the last six digits,
+   at or above it the leading two digits collapse to a letter (1234567 → C34567).
+   So a view keyed the other way would agree on low customers and lose only the
+   high ones — pinned by `TransferPagingSqlTest` on exactly that boundary.
 
    **`address1` is 30 chars, not 60** (cbslib/layout.h:751). Both handlers do
    `strncpy(inBuf->custAddress, crdRec.address1, 60)` — copying 60 bytes from a

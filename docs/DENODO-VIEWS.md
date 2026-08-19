@@ -163,12 +163,16 @@ legacy, which is why they are the ones most likely to be missing.
    (`CCMMMNNNNNNNSS`) per the workbook, and the customer scan uses
    `gld0data.custNo`. The legacy C used the 13-char BM form. `bkd0data` keeps
    the 13-char key. Needs one real-data probe to validate.
-   **`crd0data` inherits this question and is the sharpest case of it**: the C
-   keys it on the 6-char PACKED BM customer (`actualToBmCust(&accNo[5])`), while
-   every view delivered so far carries the actual form, so
-   `JdbcOnlineEnquiryRepository` binds the 7-char actual customer. If the view
-   arrives keyed the BM way instead, every account answers "05" and the fix is
-   one call to `BmForms.bmCust`. Settle it when the view is defined.
+   **`crd0data` is the exception, decided 2026-08-19: it is keyed the LEGACY
+   way** — the 6-char PACKED BM customer `actualToBmCust(&accNo[5])` builds
+   (`BmForms.bmCust`), not the actual form the other views carry. The rule is
+   that the legacy read is the specification; inferring a key from a
+   neighbouring view's convention is what produced the earlier BankingDate and
+   accounts-key mistakes. Note the packing is only visible above 1,000,000 —
+   below that it is just the last six digits, so a view keyed either way agrees
+   on low customers and diverges only on high ones. If crd0data turns out to be
+   ETL'd to the actual form after all, the symptom is high-numbered customers
+   losing their name while low ones keep it.
 3. **`aad0data` account column** is `FinoneAlcoAccNo` in the workbook, not the
    spec's `accNo`.
 4. **`crd0data` is now required** (2026-08-19). It was previously left out

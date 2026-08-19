@@ -215,13 +215,16 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
     /**
      * {@code actualToBmCust(&inBuf->accNo[5])} then a 6-char key into crd0data.
      *
-     * <p>Two things to know about this query. First, the KEY FORM is the one
-     * unverified assumption in this class: the C keys crd0data on the 6-char
-     * packed BM customer, but every archival view delivered so far carries the
-     * ACTUAL form (DENODO-VIEWS.md:150), so the 7-char actual customer is what
-     * is bound here. If the view is keyed the BM way instead, this is the one
-     * line to change — wrap it in {@link BmForms#bmCust}. The symptom would be
-     * every account answering "05". One probe against real data settles it.
+     * <p>Two things to know about this query. First, the KEY is the 6-char
+     * PACKED BM customer {@link BmForms#bmCust} produces, because that is what
+     * {@code actualToBmCust(&inBuf->accNo[5])} hands the C. Other archival views
+     * carry the 14-char actual account form (DENODO-VIEWS.md:150) and it was
+     * tempting to assume crd0data followed suit, but guessing a key from a
+     * neighbouring view's convention is how the BankingDate and accounts-key
+     * mistakes happened; the legacy read is the specification. Below 1,000,000
+     * the packing is just the last six digits, so a view keyed either way would
+     * agree there and only diverge on high customers — which is exactly the kind
+     * of bug that surfaces months later, on a subset of accounts.
      *
      * <p>Second, {@code custAddress} is address1 CONCATENATED with address2.
      * The C copies 60 bytes out of {@code crdRec.address1}, which is only 30
@@ -230,14 +233,16 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
      * slide left of where every legacy printout puts it.
      *
      * @return {@code null} when the customer has no row — the legacy's
-     *         NOMAINACC case, NOT the missing-view case
+     *         NOMAINACC case, NOT the missing-view case. {@link BmForms#bmCust}
+     *         returning six blanks for an unpackable customer lands here too,
+     *         which is the same give-up the C makes.
      * @throws NotAvailableException when the view itself cannot be read
      */
     private Customer customer(String actualAcc) {
         List<Customer> rows;
         try {
             rows = jdbc.query(CUSTOMER_SQL,
-                    new MapSqlParameterSource("custNo", customerOf(actualAcc)),
+                    new MapSqlParameterSource("custNo", bmCustomerOf(actualAcc)),
                     (rs, i) -> new Customer(
                             scrub(rs.getString("shortName")),
                             scrub(pad(rs.getString("address1"), 30) + str(rs.getString("address2"))),
@@ -462,9 +467,18 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
         return value == null ? BigDecimal.ZERO : value;
     }
 
-    /** The 7 customer characters embedded in a 14-char actual account. */
+    /**
+     * The 7 customer characters embedded in a 14-char actual account — the form
+     * the {@code > "6199999"} guard compares, since the C compares
+     * {@code accNo+5} directly.
+     */
     private static String customerOf(String actualAcc) {
         return actualAcc.length() >= 12 ? actualAcc.substring(5, 12) : actualAcc;
+    }
+
+    /** The same customer, packed to the 6-char BM form crd0data is keyed on. */
+    private static String bmCustomerOf(String actualAcc) {
+        return BmForms.bmCust(customerOf(actualAcc));
     }
 
     /** The views store the 14-char actual form; convert a 13-char BM argument. */

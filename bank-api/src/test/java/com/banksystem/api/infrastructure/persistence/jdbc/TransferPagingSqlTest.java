@@ -3,11 +3,14 @@ package com.banksystem.api.infrastructure.persistence.jdbc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.banksystem.api.domain.model.PagedResult;
+import com.banksystem.api.domain.model.TransactionDetail;
 import com.banksystem.api.domain.model.TransactionSummary;
+import com.banksystem.api.domain.model.TransferDetail;
 import com.banksystem.api.domain.model.TransferSummary;
 import java.util.ArrayList;
 import java.util.List;
@@ -190,44 +193,103 @@ class TransferPagingSqlTest {
         assertThat(sql.indexOf("OFFSET")).isLessThan(sql.indexOf("FETCH FIRST"));
     }
 
+    /**
+     * A customer of 1,234,567 packs to "C34567" — the leading "12" collapses to a
+     * letter. No SUBSTR produces that, which is the whole reason the crd0data
+     * read is a separate query rather than a correlated subquery.
+     */
+    private static final String HIGH_CUST_ACC = "01008123456700";
+    private static final String PACKED_KEY = "C34567";
+
     @Test
-    void theCustomerNameFallsBackToCrd0dataWhenStcusttabHasNoRow() {
+    void theMainQueryAsksStcusttabOnly() {
         when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
                 .thenReturn(List.of());
-        repo.bmTransactionDetail("01008041574100", "REF0000001");
+        repo.bmTransactionDetail(HIGH_CUST_ACC, "REF0000001");
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         org.mockito.Mockito.verify(jdbc).query(
                 sql.capture(), any(SqlParameterSource.class), any(RowMapper.class));
 
         assertThat(sql.getValue())
-                .as("getCustName reads crd0data for a custNo absent from stcusttab "
-                        + "(cbothers.c:8210-8231) — half the function, so half the name")
-                .contains("COALESCE(")
+                .as("crd0data is keyed on a PACKED customer, so it cannot ride along here")
                 .contains("stcusttab")
-                .contains("crd0data")
-                .contains("r.shortName");
-        assertThat(sql.getValue().chars().filter(c -> c == '(').count())
-                .as("the fallback is assembled by string concatenation, so an unbalanced paren "
-                        + "would only show up as a Denodo syntax error at runtime")
-                .isEqualTo(sql.getValue().chars().filter(c -> c == ')').count());
+                .doesNotContain("crd0data");
     }
 
     @Test
-    void theSarieTransferDetailGetsTheSameNameChain() {
+    void aBlankStcusttabNameFallsBackToCrd0dataOnThePackedKey() {
         when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
-                .thenReturn(List.of());
-        repo.transferDetail("SR00000001", "20250101");
-        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
-        org.mockito.Mockito.verify(jdbc, org.mockito.Mockito.atLeastOnce()).query(
-                sql.capture(), any(SqlParameterSource.class), any(RowMapper.class));
+                .thenReturn(List.of(transactionDetail(HIGH_CUST_ACC, "")));
+        when(jdbc.queryForList(anyString(), any(SqlParameterSource.class), eq(String.class)))
+                .thenReturn(List.of("MR DEMO ACCOUNT HOLDER"));
 
-        assertThat(sql.getAllValues().stream().filter(q -> q.contains("stcusttab")).findFirst())
-                .as("both details resolve the name through the same subquery, so neither can "
-                        + "drift from getCustName without the other")
-                .get(org.assertj.core.api.InstanceOfAssertFactories.STRING)
-                .contains("crd0data");
+        assertThat(repo.bmTransactionDetail(HIGH_CUST_ACC, "REF0000001"))
+                .get()
+                .extracting(TransactionDetail::custName)
+                .as("getCustName reads crd0data when the customer is not in stcusttab "
+                        + "(cbothers.c:8210-8231)")
+                .isEqualTo("MR DEMO ACCOUNT HOLDER");
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<SqlParameterSource> params =
+                ArgumentCaptor.forClass(SqlParameterSource.class);
+        org.mockito.Mockito.verify(jdbc)
+                .queryForList(sql.capture(), params.capture(), eq(String.class));
+
+        assertThat(sql.getValue()).contains("crd0data").contains(":bmCustNo");
+        assertThat(params.getValue().getValue("bmCustNo"))
+                .as("actualToBmCust packs 1234567 to C34567 — SUBSTR(accNo, 6, 7) would have "
+                        + "bound 1234567 and SUBSTR(accNo, 7, 6) would have bound 234567, and "
+                        + "both would miss every customer at or above 1,000,000")
+                .isEqualTo(PACKED_KEY);
     }
 
+    @Test
+    void aNameFoundInStcusttabDoesNotTouchCrd0dataAtAll() {
+        when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
+                .thenReturn(List.of(transactionDetail(HIGH_CUST_ACC, "ALREADY KNOWN")));
+
+        assertThat(repo.bmTransactionDetail(HIGH_CUST_ACC, "REF0000001"))
+                .get()
+                .extracting(TransactionDetail::custName)
+                .isEqualTo("ALREADY KNOWN");
+        org.mockito.Mockito.verify(jdbc, org.mockito.Mockito.never())
+                .queryForList(anyString(), any(SqlParameterSource.class), eq(String.class));
+    }
+
+    @Test
+    void theSarieTransferDetailGetsTheSameFallback() {
+        when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
+                .thenReturn(List.of(transferDetail(HIGH_CUST_ACC, "")));
+        when(jdbc.queryForList(anyString(), any(SqlParameterSource.class), eq(String.class)))
+                .thenReturn(List.of("MR DEMO ACCOUNT HOLDER"));
+
+        assertThat(repo.transferDetail("SR00000001", "20250101"))
+                .get()
+                .extracting(TransferDetail::custName)
+                .as("both details resolve the name through getCustName, so neither can drift "
+                        + "from it without the other")
+                .isEqualTo("MR DEMO ACCOUNT HOLDER");
+
+        ArgumentCaptor<SqlParameterSource> params =
+                ArgumentCaptor.forClass(SqlParameterSource.class);
+        org.mockito.Mockito.verify(jdbc)
+                .queryForList(anyString(), params.capture(), eq(String.class));
+        assertThat(params.getValue().getValue("bmCustNo"))
+                .as("keyed off the row's crAccNo, packed the same way")
+                .isEqualTo(PACKED_KEY);
+    }
+
+    private static TransactionDetail transactionDetail(String accNo, String custName) {
+        return new TransactionDetail(accNo, "REF0000001", custName, "20250101", "20250101",
+                "00000000010000", "01", "ABC", "SUP", " ", "NARRATIVE", "", "");
+    }
+
+    private static TransferDetail transferDetail(String crAccNo, String custName) {
+        return new TransferDetail("SR00000001", "20250101", "20250101", crAccNo, crAccNo,
+                "608", "608", "100.000", "100.000", "APPLICANT", "BENEF", "ADDR1", "ADDR2",
+                "BANK", "1", "S", "0127", custName, "PURPOSE", "1.0", "MSG");
+    }
     @Test
     void theReversalFilterStaysInsideTheTransactionWhereClause() {
         when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
