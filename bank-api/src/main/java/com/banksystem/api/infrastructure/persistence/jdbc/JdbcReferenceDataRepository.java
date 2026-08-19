@@ -76,17 +76,21 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
             SELECT ctlCode AS code,
                    COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
             FROM   stctltab
-            WHERE  RecordType = :recordType
+            WHERE  BankingDate = :bankingDate
+              AND  RecordType = :recordType
             ORDER  BY ctlCode
             """;
 
     private final NamedParameterJdbcTemplate jdbc;
+    private final BankingDateProvider bankingDate;
 
     private volatile Map<String, List<CodeEntry>> cached;
 
     public JdbcReferenceDataRepository(
-            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc) {
+            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
+            BankingDateProvider bankingDate) {
         this.jdbc = jdbc;
+        this.bankingDate = bankingDate;
     }
 
     /**
@@ -173,6 +177,7 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
                 SELECT countryCode AS code,
                        COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
                 FROM   stctltabNA
+                WHERE  BankingDate = :bankingDate
                 ORDER  BY countryCode
                 """, Map.of()));
         sets.put("businessType", ctltabSet("businessType", "BS"));
@@ -181,12 +186,14 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
                 SELECT samaSubCategoryCode AS code,
                        COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
                 FROM   stctltabSS
+                WHERE  BankingDate = :bankingDate
                 ORDER  BY samaSubCategoryCode
                 """, Map.of()));
         sets.put("branch", querySet("branch", """
                 SELECT branchCode AS code,
                        COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
                 FROM   stctltabBD
+                WHERE  BankingDate = :bankingDate
                 ORDER  BY branchCode
                 """, Map.of()));
         // The four sets the account/statement screens resolve against. All were
@@ -197,6 +204,7 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
                 SELECT currCode AS code,
                        COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
                 FROM   stctltabXC
+                WHERE  BankingDate = :bankingDate
                 ORDER  BY currCode
                 """, Map.of()));
         // stctltabMM is the LEDGER master despite its table-level description
@@ -209,6 +217,7 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
                 SELECT ledgerCode AS code,
                        COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
                 FROM   stctltabMM
+                WHERE  BankingDate = :bankingDate
                 ORDER  BY ledgerCode
                 """, Map.of()));
         // Generic stctltab record types, both named in stctltab.ts's own
@@ -249,8 +258,12 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
      * with a warning so a single absent Denodo view never fails codes().
      */
     private List<CodeEntry> querySet(String setName, String sql, Map<String, ?> params) {
+        // Every one of these SQL strings carries the BankingDate predicate, so
+        // the binding is added here once rather than at each call site.
+        Map<String, Object> bound = new LinkedHashMap<>(params);
+        bound.put("bankingDate", bankingDate.bankingDate());
         try {
-            return jdbc.query(sql, params, (rs, i) -> new CodeEntry(
+            return jdbc.query(sql, bound, (rs, i) -> new CodeEntry(
                     trimmed(rs.getString("code")),
                     trimmed(rs.getString("description"))));
         } catch (DataAccessException e) {

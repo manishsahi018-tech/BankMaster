@@ -63,7 +63,8 @@ public class JdbcTransferRepository implements TransferRepository {
                          ELSE COALESCE(NULLIF(TRIM(c.aOrgShortName), ''), c.eOrgShortName)
                     END
              FROM stcusttab c
-             WHERE c.custNo = SUBSTR(%1$s.%2$s, 6, 7))""";
+             WHERE c.BankingDate = :bankingDate
+               AND c.custNo = SUBSTR(%1$s.%2$s, 6, 7))""";
 
     /**
      * The second half of getCustName (cbothers.c:8210-8231): a customer NOT in
@@ -89,17 +90,21 @@ public class JdbcTransferRepository implements TransferRepository {
     private static final String CRD0DATA_NAME = """
             SELECT shortName
             FROM   crd0data
-            WHERE  accNo = :bmCustNo
+            WHERE  BankingDate = :bankingDate
+              AND  accNo = :bmCustNo
             """;
 
     /** stcusttab alone; {@link #crdShortName} supplies getCustName's other half. */
     private static final String CUST_NAME_SUBQUERY = STCUSTTAB_NAME;
 
     private final NamedParameterJdbcTemplate jdbc;
+    private final BankingDateProvider bankingDate;
 
     public JdbcTransferRepository(
-            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc) {
+            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
+            BankingDateProvider bankingDate) {
         this.jdbc = jdbc;
+        this.bankingDate = bankingDate;
     }
 
     // ------------------------------------------------------------------
@@ -128,24 +133,16 @@ public class JdbcTransferRepository implements TransferRepository {
      * literals rather than bound: JDBC drivers commonly reject bind parameters in
      * the fetch clause, and the codebase already interpolates there.
      *
-     * <p>KNOWN GAP, pending the BankingDate work: the window assumes
-     * {@code (issueDate, transRef)} identifies one row, and today it does not.
-     * rid0data is one of the BM views holding the SAME record once per restore
-     * snapshot (it spans 1992..11/07/2009), so a transfer present in several
-     * snapshots is several rows sharing a transRef. That already shows as
-     * duplicate rows in the grid — the sod0data equivalent was fixed by
-     * partitioning on the legacy key, {@code standingOrders()} in
-     * JdbcAccountRepository — and it additionally makes the paging unstable:
-     * duplicates are TIES under the ORDER BY, Hive breaks ties arbitrarily, and
-     * each page is now its own query, so a tie group straddling a page boundary
-     * can repeat a row across pages or drop one. The Java-side slicing this
-     * replaced was immune (one query, one ordering).
-     *
-     * <p>The fix belongs with the snapshot dedupe rather than here — a
-     * correlated {@code AND r.BankingDate = (SELECT MAX(x.BankingDate) FROM
-     * rid0data x WHERE x.transRef = r.transRef)}, per key and never a table-wide
-     * MAX. Once each transRef yields one row the sort is total and the window is
-     * stable, so no third sort key is added in the meantime.
+     * <p>The window assumes {@code (issueDate, transRef)} identifies one row,
+     * which holds only because the BankingDate predicate is there. rid0data is
+     * one of the BM views holding the SAME record once per restore snapshot (it
+     * spans 1992..11/07/2009), so without the predicate a transfer present in
+     * several snapshots was several rows sharing a transRef: duplicates in the
+     * grid, and TIES under the ORDER BY that Hive breaks arbitrarily — and since
+     * each page is its own query, a tie group straddling a page boundary could
+     * repeat a row across pages or drop one. Pinning the enquiry to one snapshot
+     * (bank.archival-db.banking-date) removes the duplicates, so the sort is
+     * total and the window is stable; no third sort key is needed.
      */
     @Override
     public PagedResult<TransferSummary> sarieTransfers(
@@ -154,10 +151,12 @@ public class JdbcTransferRepository implements TransferRepository {
                 SELECT transRef, issueDate, valueDate, drAccNo, transCurrCode,
                        netAmt, payCurrCode, payAmt, statusFlag
                 FROM   rid0data
-                WHERE  crAccNo = :accNo
+                WHERE  BankingDate = :bankingDate
+                  AND  crAccNo = :accNo
                   AND  issueDate BETWEEN :fromDate AND :toDate
                 """);
         MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("bankingDate", bankingDate.bankingDate())
                 .addValue("accNo", actualAccForm(accNo))
                 // issueDate is a Date column in the view; the UI sends the BM
                 // YYYYMMDD the legacy compares against (cbswift.c:492-494 does
@@ -209,9 +208,11 @@ public class JdbcTransferRepository implements TransferRepository {
                 + CUST_NAME_SUBQUERY.formatted("r", "crAccNo") + " AS custName\n"
                 + """
                 FROM   rid0data r
-                WHERE  r.transRef = :refNo
+                WHERE  r.BankingDate = :bankingDate
+                  AND  r.transRef = :refNo
                 """);
         MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("bankingDate", bankingDate.bankingDate())
                 .addValue("refNo", refNo);
         if (!isBlank(transDate)) {
             sql.append("  AND  r.issueDate = :transDate\n");
@@ -309,10 +310,12 @@ public class JdbcTransferRepository implements TransferRepository {
                 SELECT transRef, postDate, valueDate, userId, transAmt,
                        transCounter, transType
                 FROM   thd0data
-                WHERE  accNo = :accNo
+                WHERE  BankingDate = :bankingDate
+                  AND  accNo = :accNo
                   AND  postDate BETWEEN :fromDate AND :toDate
                 """);
         MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("bankingDate", bankingDate.bankingDate())
                 .addValue("accNo", actualAccForm(accNo))
                 // postDate is a Date column in the view; the legacy compares the
                 // ACTUAL YYYYMMDD (bmDateToActual(thdRec.postDate) vs from/to,
@@ -352,6 +355,7 @@ public class JdbcTransferRepository implements TransferRepository {
     public Optional<TransactionDetail> bmTransactionDetail(String accNo, String refNo) {
         String actualAcc = actualAccForm(accNo);
         MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("bankingDate", bankingDate.bankingDate())
                 .addValue("accNo", actualAcc)
                 .addValue("refNo", refNo);
         // Legacy index 2 (accNo + transRef), recType '0' header. The C reads
@@ -370,7 +374,8 @@ public class JdbcTransferRepository implements TransferRepository {
                 + CUST_NAME_SUBQUERY.formatted("t", "accNo") + " AS custName\n"
                 + """
                 FROM   thd0data t
-                WHERE  t.accNo = :accNo
+                WHERE  t.BankingDate = :bankingDate
+                  AND  t.accNo = :accNo
                   AND  t.transRef = :refNo
                 ORDER  BY t.postDate, t.transCounter
                 FETCH FIRST 1 ROWS ONLY
@@ -413,7 +418,10 @@ public class JdbcTransferRepository implements TransferRepository {
             return "";
         }
         List<String> names = jdbc.queryForList(
-                CRD0DATA_NAME, new MapSqlParameterSource("bmCustNo", bmCustNo), String.class);
+                CRD0DATA_NAME,
+                new MapSqlParameterSource("bmCustNo", bmCustNo)
+                        .addValue("bankingDate", bankingDate.bankingDate()),
+                String.class);
         return names.isEmpty() ? "" : scrub(names.get(0));
     }
 
@@ -440,11 +448,13 @@ public class JdbcTransferRepository implements TransferRepository {
             Integer count = jdbc.queryForObject("""
                     SELECT COUNT(*)
                     FROM   stswiftlog
-                    WHERE  transRefNo = :refNo
+                    WHERE  BankingDate = :bankingDate
+                      AND  transRefNo = :refNo
                       AND  issueDate = :issueDate
                       AND  bmUpdateStatus IN ('1', '2')
                     """,
                     new MapSqlParameterSource()
+                            .addValue("bankingDate", bankingDate.bankingDate())
                             .addValue("refNo", refNo)
                             .addValue("issueDate", BmForms.bmToIso(issueDate)),
                     Integer.class);

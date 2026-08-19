@@ -89,8 +89,26 @@ bank:
     # query is rewritten automatically; blank means "views named like the
     # legacy tables". Change this (not the SQL) when moving staging -> prod.
     table-prefix: ${ARCHIVAL_DB_TABLE_PREFIX:bv_impala_stg_bankmaster_}
-    # Optional fixed restore snapshot (YYYYMMDD). Leave empty to use
-    # MAX(BankingDate) from stcusttab, resolved once at first query.
+    # THE BANKING DATE. Every archival view carries a BankingDate column (the
+    # ETL's "Data Restored date", key part 1 on 98 of the 106 views), and every
+    # query this app issues against a Denodo view now filters on it:
+    #
+    #     WHERE ... AND <alias>.BankingDate = :bankingDate
+    #
+    # so one property pins the whole application to a single restore snapshot.
+    # Set it to the snapshot you want the screens to read.
+    #
+    # FORMAT: bound as a plain string and compared with =, so write it EXACTLY
+    # as the views store it (e.g. 20090711 if the column is a YYYYMMDD string,
+    # 2009-07-11 if it is a DATE). A format mismatch is not an error — it is
+    # every screen returning no rows.
+    #
+    # Leaving this BLANK falls back to MAX(BankingDate) FROM stcusttab, resolved
+    # once at first query and logged as a warning. That fallback is a dev
+    # convenience only: stcusttab's snapshot is not necessarily the right one
+    # for the BM views (gld0data/pyd0data/sod0data/rid0data/thd0data span
+    # 1992-2009, and stcardtab runs on to 2012), so set the date explicitly in
+    # any real environment.
     banking-date: ${ARCHIVAL_BANKING_DATE:}
     # Customer-search clock, the legacy's SEARCHTIME (cbcmssrv.cfg = 30;
     # cbrouter.c:92 default). A search is bounded by TIME, not row count: when

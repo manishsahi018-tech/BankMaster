@@ -108,22 +108,29 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
     private static final String CUSTOMER_SQL = """
             SELECT shortName, address1, address2, language
             FROM   crd0data
-            WHERE  accNo = :custNo
+            WHERE  BankingDate = :bankingDate
+              AND  accNo = :custNo
             """;
 
     private static final String ACCOUNT_SQL = """
             SELECT g.bookBal, g.branchCode,
                    (SELECT COALESCE(NULLIF(TRIM(b.englishName), ''), b.arabicName)
                     FROM   stctltabBD b
-                    WHERE  b.branchCode = g.branchCode) AS branchName
+                    WHERE  b.BankingDate = :bankingDate
+                      AND  b.branchCode = g.branchCode) AS branchName
             FROM   gld0data g
-            WHERE  g.accNo = :accNo
+            WHERE  g.BankingDate = :bankingDate
+              AND  g.accNo = :accNo
             """;
 
     private final NamedParameterJdbcTemplate jdbc;
+    private final BankingDateProvider bankingDate;
 
-    public JdbcOnlineEnquiryRepository(@Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc) {
+    public JdbcOnlineEnquiryRepository(
+            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
+            BankingDateProvider bankingDate) {
         this.jdbc = jdbc;
+        this.bankingDate = bankingDate;
     }
 
     @Override
@@ -248,7 +255,8 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
         List<Customer> rows;
         try {
             rows = jdbc.query(CUSTOMER_SQL,
-                    new MapSqlParameterSource("custNo", bmCustomerOf(actualAcc)),
+                    new MapSqlParameterSource("custNo", bmCustomerOf(actualAcc))
+                            .addValue("bankingDate", bankingDate.bankingDate()),
                     (rs, i) -> new Customer(
                             scrub(rs.getString("shortName")),
                             scrub(pad(rs.getString("address1"), 30) + str(rs.getString("address2"))),
@@ -266,7 +274,8 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
     /** gld0data supplies the balance the B/F walks back from, plus the branch. */
     private Account account(String actualAcc) {
         List<Account> rows = jdbc.query(ACCOUNT_SQL,
-                new MapSqlParameterSource("accNo", actualAcc),
+                new MapSqlParameterSource("accNo", actualAcc)
+                        .addValue("bankingDate", bankingDate.bankingDate()),
                 (rs, i) -> new Account(
                         amount(rs.getString("bookBal")),
                         scrub(rs.getString("branchCode")),
@@ -294,9 +303,11 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
             List<String> rows = jdbc.queryForList("""
                     SELECT decimalPlace
                     FROM   stctltabXC
-                    WHERE  currCode = :currCode
+                    WHERE  BankingDate = :bankingDate
+                      AND  currCode = :currCode
                     """,
-                    new MapSqlParameterSource("currCode", currCode),
+                    new MapSqlParameterSource("currCode", currCode)
+                            .addValue("bankingDate", bankingDate.bankingDate()),
                     String.class);
             String value = rows.isEmpty() ? "" : trim(rows.get(0));
             if (value.isEmpty()) {
@@ -345,10 +356,12 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
                        narrative1, narrative2, narrative3,
                        transRef, supervisorId, transCounter, statmentFlag
                 FROM   thd0data
-                WHERE  accNo = :accNo
+                WHERE  BankingDate = :bankingDate
+                  AND  accNo = :accNo
                   AND  transCounter > :pointer
                 """);
         MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("bankingDate", bankingDate.bankingDate())
                 .addValue("accNo", actualAcc)
                 .addValue("pointer", pointer);
         appendDateRange(sql, params, fromDate, toDate);
@@ -389,9 +402,11 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
         StringBuilder sql = new StringBuilder("""
                 SELECT transAmt
                 FROM   thd0data
-                WHERE  accNo = :accNo
+                WHERE  BankingDate = :bankingDate
+                  AND  accNo = :accNo
                 """);
-        MapSqlParameterSource params = new MapSqlParameterSource("accNo", actualAcc);
+        MapSqlParameterSource params = new MapSqlParameterSource("accNo", actualAcc)
+                .addValue("bankingDate", bankingDate.bankingDate());
         appendDateRange(sql, params, fromDate, "");
         appendStatementFilter(sql, statementOnly);
 

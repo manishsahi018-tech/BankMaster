@@ -36,7 +36,10 @@ import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 class TransferPagingSqlTest {
 
     private final NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
-    private final JdbcTransferRepository repo = new JdbcTransferRepository(jdbc);
+    /** Fixed by bank.archival-db.banking-date in a real run; stubbed here so the
+     *  BankingDate predicate every query carries has a value to bind. */
+    private final BankingDateProvider bankingDate = mock(BankingDateProvider.class);
+    private final JdbcTransferRepository repo = new JdbcTransferRepository(jdbc, bankingDate);
 
     /** Runs a query returning {@code rowCount} rows and returns the SQL that was issued. */
     private String sqlFor(int page, int rowCount) {

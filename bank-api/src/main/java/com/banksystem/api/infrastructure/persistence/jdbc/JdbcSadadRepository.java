@@ -33,10 +33,13 @@ public class JdbcSadadRepository implements SadadRepository {
 
 
     private final NamedParameterJdbcTemplate jdbc;
+    private final BankingDateProvider bankingDate;
 
     public JdbcSadadRepository(
-            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc) {
+            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
+            BankingDateProvider bankingDate) {
         this.jdbc = jdbc;
+        this.bankingDate = bankingDate;
     }
 
     @Override
@@ -61,8 +64,10 @@ public class JdbcSadadRepository implements SadadRepository {
                 -- followed the table name with a bare AND and the statement
                 -- could not parse at all.
                 WHERE  1 = 1
+                  AND  BankingDate = :bankingDate
                 """);
         MapSqlParameterSource params = new MapSqlParameterSource();
+        params.addValue("bankingDate", bankingDate.bankingDate());
         if (!isBlank(companyId)) {
             sql.append("  AND  companyId = :companyId\n");
             params.addValue("companyId", companyId.trim());

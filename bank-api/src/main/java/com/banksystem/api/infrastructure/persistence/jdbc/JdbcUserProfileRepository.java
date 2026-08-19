@@ -27,10 +27,13 @@ import org.springframework.stereotype.Repository;
 public class JdbcUserProfileRepository implements UserProfileRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
+    private final BankingDateProvider bankingDate;
 
     public JdbcUserProfileRepository(
-            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc) {
+            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
+            BankingDateProvider bankingDate) {
         this.jdbc = jdbc;
+        this.bankingDate = bankingDate;
     }
 
     @Override
@@ -50,9 +53,10 @@ public class JdbcUserProfileRepository implements UserProfileRepository {
                        u.branchCode, u.authorityLevel, u.authorityLevel2, u.langPreferred,
                        u.liveStatus
                 FROM   stuser u
-                WHERE  u.userId = :userId
+                WHERE  u.BankingDate = :bankingDate
+                  AND  u.userId = :userId
                 """,
-                Map.of("userId", userId),
+                Map.of("bankingDate", bankingDate.bankingDate(), "userId", userId),
                 (rs, i) -> new UserProfile(
                         s(rs, "userId"),
                         userName(rs),
@@ -93,9 +97,10 @@ public class JdbcUserProfileRepository implements UserProfileRepository {
         List<String> rows = jdbc.query("""
                 SELECT b.nameSearchAllowed
                 FROM   stctltabBD b
-                WHERE  b.branchCode = :branchCode
+                WHERE  b.BankingDate = :bankingDate
+                  AND  b.branchCode = :branchCode
                 """,
-                Map.of("branchCode", homeBranch),
+                Map.of("bankingDate", bankingDate.bankingDate(), "branchCode", homeBranch),
                 (rs, i) -> s(rs, "nameSearchAllowed"));
         return rows.stream()
                 .filter(v -> !v.isEmpty())

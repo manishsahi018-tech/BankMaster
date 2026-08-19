@@ -25,13 +25,17 @@ public class JdbcSignatoryRepository implements SignatoryRepository {
             SELECT s.accNo, s.signatoryNo, s.idType, s.idNo, s.branchCode,
                    COALESCE(NULLIF(TRIM(s.aShortName), ''), s.eShortName) AS signatoryShortName
             FROM   stsigntab s
+            WHERE  s.BankingDate = :bankingDate
             """;
 
     private final NamedParameterJdbcTemplate jdbc;
+    private final BankingDateProvider bankingDate;
 
     public JdbcSignatoryRepository(
-            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc) {
+            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
+            BankingDateProvider bankingDate) {
         this.jdbc = jdbc;
+        this.bankingDate = bankingDate;
     }
 
     @Override
@@ -44,10 +48,10 @@ public class JdbcSignatoryRepository implements SignatoryRepository {
             padded = "0".repeat(7 - padded.length()) + padded;
         }
         return jdbc.query(LIST_COLUMNS + """
-                WHERE  SUBSTR(s.accNo, 6, 7) = :custNo
+                  AND  SUBSTR(s.accNo, 6, 7) = :custNo
                 ORDER  BY s.accNo, s.signatoryNo
                 """,
-                Map.of("custNo", padded),
+                Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padded),
                 (rs, i) -> new SignatorySummary(
                         rs.getString("accNo"), rs.getString("signatoryNo"),
                         rs.getString("idType"), rs.getString("idNo"),
@@ -57,10 +61,10 @@ public class JdbcSignatoryRepository implements SignatoryRepository {
     @Override
     public List<SignatorySummary> byAccount(String accNo) {
         return jdbc.query(LIST_COLUMNS + """
-                WHERE  s.accNo = :accNo
+                  AND  s.accNo = :accNo
                 ORDER  BY s.accNo, s.signatoryNo
                 """,
-                Map.of("accNo", accNo),
+                Map.of("bankingDate", bankingDate.bankingDate(), "accNo", accNo),
                 (rs, i) -> new SignatorySummary(
                         rs.getString("accNo"), rs.getString("signatoryNo"),
                         rs.getString("idType"), rs.getString("idNo"),
@@ -84,14 +88,17 @@ public class JdbcSignatoryRepository implements SignatoryRepository {
                 -- zero (record-not-found) returns FAILURE / NOT_FOUND with no
                 -- detail row, rather than a signatory row with blank ID fields.
                 JOIN stidtab i
-                       ON  i.custNo = SUBSTR(s.accNo, 6, 7)
+                       ON  i.BankingDate = :bankingDate
+                       AND i.custNo = SUBSTR(s.accNo, 6, 7)
                        AND i.idType = s.idType
                        AND i.idNo = s.idNo
                        AND i.idCategory = 'S'
-                WHERE  s.accNo = :accNo
+                WHERE  s.BankingDate = :bankingDate
+                  AND  s.accNo = :accNo
                   AND  s.signatoryNo = :signatoryNo
                 """,
-                Map.of("accNo", accNo, "signatoryNo", signatoryNo),
+                Map.of("bankingDate", bankingDate.bankingDate(),
+                        "accNo", accNo, "signatoryNo", signatoryNo),
                 (rs, i) -> new SignatoryDetail(
                         rs.getString("accNo"), rs.getString("signatoryNo"),
                         rs.getString("custBranchCode"), rs.getString("idType"),

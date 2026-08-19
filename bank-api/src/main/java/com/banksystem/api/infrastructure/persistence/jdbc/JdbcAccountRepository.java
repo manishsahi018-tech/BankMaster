@@ -107,10 +107,13 @@ public class JdbcAccountRepository implements AccountRepository {
     static final int MAX_BLOCKED_ITEMS = 31;
 
     private final NamedParameterJdbcTemplate jdbc;
+    private final BankingDateProvider bankingDate;
 
     public JdbcAccountRepository(
-            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc) {
+            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
+            BankingDateProvider bankingDate) {
         this.jdbc = jdbc;
+        this.bankingDate = bankingDate;
     }
 
     // ------------------------------------------------------------------
@@ -152,10 +155,12 @@ public class JdbcAccountRepository implements AccountRepository {
                        CONCAT('0', accStatus) AS accStatusCode,
                        accLimit, anbDormantFlag, branchCode
                 FROM   gld0data
-                WHERE  SUBSTR(accNo, 6, 7) = :custNo
+                WHERE  BankingDate = :bankingDate
+                  AND  SUBSTR(accNo, 6, 7) = :custNo
                 ORDER  BY accNo
                 """,
-                Map.of("custNo", actualCust7(custNo)),
+                Map.of("bankingDate", bankingDate.bankingDate(),
+                        "custNo", actualCust7(custNo)),
                 ACCOUNT_SUMMARY_MAPPER);
     }
 
@@ -173,9 +178,11 @@ public class JdbcAccountRepository implements AccountRepository {
                        CONCAT('0', accStatus) AS accStatusCode,
                        accLimit, anbDormantFlag, branchCode
                 FROM   gld0data
-                WHERE  accNo = :accNo
+                WHERE  BankingDate = :bankingDate
+                  AND  accNo = :accNo
                 """,
-                Map.of("accNo", actualAccOf(accNo)),
+                Map.of("bankingDate", bankingDate.bankingDate(),
+                        "accNo", actualAccOf(accNo)),
                 ACCOUNT_SUMMARY_MAPPER).stream().findFirst();
     }
 
@@ -186,9 +193,11 @@ public class JdbcAccountRepository implements AccountRepository {
             return jdbc.query("""
                     SELECT balEnqRestrictedFlag
                     FROM   stctltabBD
-                    WHERE  branchCode = :branchCode
+                    WHERE  BankingDate = :bankingDate
+                      AND  branchCode = :branchCode
                     """,
-                    Map.of("branchCode", trim(branchCode)),
+                    Map.of("bankingDate", bankingDate.bankingDate(),
+                            "branchCode", trim(branchCode)),
                     (rs, i) -> trim(rs.getString("balEnqRestrictedFlag")))
                     .stream().findFirst().orElse("");
         } catch (DataAccessException e) {
@@ -217,9 +226,11 @@ public class JdbcAccountRepository implements AccountRepository {
                     SELECT noOfBranchesDefined,
                            Branchcode1, Branchcode2, Branchcode3, Branchcode4, Branchcode5
                     FROM   stusrbrn
-                    WHERE  userId = :userId
+                    WHERE  BankingDate = :bankingDate
+                      AND  userId = :userId
                     """,
-                    Map.of("userId", trim(userId)),
+                    Map.of("bankingDate", bankingDate.bankingDate(),
+                            "userId", trim(userId)),
                     (rs, i) -> {
                         List<String> branches = new ArrayList<>();
                         for (int n = 1; n <= 5; n++) {
@@ -259,10 +270,11 @@ public class JdbcAccountRepository implements AccountRepository {
                 SELECT branchCode, userId, datetime_bigdata AS dateTime, bmUpdateStatus,
                        supervisorId, lastUpdateDateTime
                 FROM   stacclog
-                WHERE  accNo = :accNo
+                WHERE  BankingDate = :bankingDate
+                  AND  accNo = :accNo
                 ORDER  BY datetime_bigdata
                 """,
-                Map.of("accNo", accNo),
+                Map.of("bankingDate", bankingDate.bankingDate(), "accNo", accNo),
                 (rs, i) -> {
                     String userId = trim(rs.getString("userId"));
                     String supervisorId = trim(rs.getString("supervisorId"));
@@ -311,11 +323,12 @@ public class JdbcAccountRepository implements AccountRepository {
                 SELECT datetime_bigdata AS dateTime, userId, supervisorId, lastUpdateDateTime,
                        branchCode, %s AS fromStatus, %s AS toStatus%s
                 FROM   stacclog
-                WHERE  accNo = :accNo
+                WHERE  BankingDate = :bankingDate
+                  AND  accNo = :accNo
                   AND  %s = '1' AND bmUpdateStatus = '9'
                 ORDER  BY datetime_bigdata
                 """.formatted(fromCol, toCol, reasonSelect, changedFlagCol, HISTORY_MAX_ROWS),
-                Map.of("accNo", accNo),
+                Map.of("bankingDate", bankingDate.bankingDate(), "accNo", accNo),
                 (rs, i) -> {
                     // bmUpdateStatus='9' rows only, so the pending-blank rule
                     // never triggers here; the numeric-id branch overlay does.
@@ -361,19 +374,24 @@ public class JdbcAccountRepository implements AccountRepository {
                        SUBSTR(s.accNo, 13, 2) AS subAccount,
                        (SELECT COALESCE(NULLIF(TRIM(c.eShortName), ''), c.aShortName)
                         FROM stcusttab c
-                        WHERE  c.custNo = SUBSTR(s.accNo, 6, 7)) AS customerName,
+                        WHERE  c.BankingDate = :bankingDate
+                          AND  c.custNo = SUBSTR(s.accNo, 6, 7)) AS customerName,
                        (SELECT COALESCE(NULLIF(TRIM(x.arabicName), ''), x.englishName)
                         FROM stctltabXC x
-                        WHERE  x.currCode = SUBSTR(s.accNo, 1, 2)) AS currencyName,
+                        WHERE  x.BankingDate = :bankingDate
+                          AND  x.currCode = SUBSTR(s.accNo, 1, 2)) AS currencyName,
                        (SELECT COALESCE(NULLIF(TRIM(m.arabicName), ''), m.englishName)
                         FROM stctltabMM m
-                        WHERE  m.ledgerCode = SUBSTR(s.accNo, 3, 3)) AS ledgerName
+                        WHERE  m.BankingDate = :bankingDate
+                          AND  m.ledgerCode = SUBSTR(s.accNo, 3, 3)) AS ledgerName
                 FROM   stacclog s
-                WHERE  s.accNo = :accNo
+                WHERE  s.BankingDate = :bankingDate
+                  AND  s.accNo = :accNo
                   AND  (s.datetime_bigdata = :dateTime OR s.datetime_bigdata = :dateTimeIso)
                 FETCH FIRST 1 ROWS ONLY
                 """,
-                Map.of("accNo", accNo, "dateTime", dateTime,
+                Map.of("bankingDate", bankingDate.bankingDate(),
+                        "accNo", accNo, "dateTime", dateTime,
                         "dateTimeIso", BmForms.bmToIso(dateTime)));
         if (rows.isEmpty()) {
             return Map.of();
@@ -449,7 +467,8 @@ public class JdbcAccountRepository implements AccountRepository {
                        COALESCE(NULLIF(TRIM(c.eShortName), ''), c.aShortName) AS customerName,
                        (SELECT COALESCE(NULLIF(TRIM(m.arabicName), ''), m.englishName)
                         FROM stctltabMM m
-                        WHERE m.ledgerCode = g.ledgerCode) AS ledgerName,
+                        WHERE m.BankingDate = :bankingDate
+                          AND m.ledgerCode = g.ledgerCode) AS ledgerName,
                        -- Currency is encoded in the first 2 chars of the account
                        -- number (legacy: currency+ledger+custNo+00,
                        -- cbtdopen.c:1229 / cbothers.c:8563); resolved to a name
@@ -465,17 +484,21 @@ public class JdbcAccountRepository implements AccountRepository {
                        SUBSTR(g.accNo, 13, 2) AS subAccount,
                        (SELECT COALESCE(NULLIF(TRIM(x.arabicName), ''), x.englishName)
                         FROM stctltabXC x
-                        WHERE x.currCode = SUBSTR(g.accNo, 1, 2)) AS currencyName
+                        WHERE x.BankingDate = :bankingDate
+                          AND x.currCode = SUBSTR(g.accNo, 1, 2)) AS currencyName
                 FROM   gld0data g
                 LEFT JOIN stcusttab c
-                       ON  c.custNo = g.custNo
-                WHERE  g.accNo = :accNo
+                       ON  c.BankingDate = :bankingDate
+                       AND c.custNo = g.custNo
+                WHERE  g.BankingDate = :bankingDate
+                  AND  g.accNo = :accNo
                 FETCH FIRST 1 ROWS ONLY
                 """,
                 // gld0data is keyed by the 14-char actual account (same as the
                 // blocked-amount header); actualAccOf converts a 13-char BM input
                 // defensively and passes a 14-char actual through.
-                Map.of("accNo", actualAccOf(accNo)));
+                Map.of("bankingDate", bankingDate.bankingDate(),
+                        "accNo", actualAccOf(accNo)));
         if (rows.isEmpty()) {
             return Map.of();
         }
@@ -523,11 +546,13 @@ public class JdbcAccountRepository implements AccountRepository {
         List<Map<String, Object>> logRows = jdbc.queryForList("""
                 SELECT userId, supervisorId, datetime_bigdata AS dateTime, lastUpdateDateTime, accStatusChangeReason
                 FROM   stacclog
-                WHERE  accNo = :accNo AND bmUpdateStatus <> '9'
+                WHERE  BankingDate = :bankingDate
+                  AND  accNo = :accNo AND bmUpdateStatus <> '9'
                 ORDER  BY lastUpdateDateTime DESC
                 FETCH FIRST 1 ROWS ONLY
                 """,
-                Map.of("accNo", actualAccOf(accNo)));
+                Map.of("bankingDate", bankingDate.bankingDate(),
+                        "accNo", actualAccOf(accNo)));
         if (!logRows.isEmpty()) {
             Map<String, Object> lr = logRows.get(0);
             put(d, "lastAmendUser", str(lr, "userId"));
@@ -553,10 +578,11 @@ public class JdbcAccountRepository implements AccountRepository {
                        chequeType, booksRequested, requestDateTime, requestStatus,
                        chequeNoFrom, chequeNoTo
                 FROM   stchqtab
-                WHERE  accNo = :accNo
+                WHERE  BankingDate = :bankingDate
+                  AND  accNo = :accNo
                 ORDER  BY requestDateTime
                 """,
-                Map.of("accNo", accNo),
+                Map.of("bankingDate", bankingDate.bankingDate(), "accNo", accNo),
                 (rs, i) -> {
                     String delivery = trim(rs.getString("deliveryBranchCode"));
                     if (delivery.isEmpty() || "0000".equals(delivery)) {
@@ -597,18 +623,21 @@ public class JdbcAccountRepository implements AccountRepository {
         // keys on (BankingDate, accNo) instead and holds the same order once
         // per restore snapshot -- sod0data spans 11/11/1992..11/07/2009 --
         // so that one-row-per-key guarantee has to be restored explicitly.
-        // Partitioned on the legacy key, NOT on a table-wide MAX: an order
-        // present only in an older snapshot must still be returned.
+        // The configured banking date does it: pinning the whole application
+        // to one snapshot leaves one row per (accNo, sodNo) again. This
+        // REPLACED a correlated MAX(BankingDate) per key -- the two must not
+        // both be applied, since a key whose latest snapshot is not the
+        // configured one would then match neither.
         return jdbc.query("""
                 SELECT s.sodNo, s.paymentType, s.paymentAmt, s.payAccNo,
                        s.orderType, s.paymentFrequency
                 FROM   sod0data s
-                WHERE  s.accNo = :accNo
-                  AND  s.BankingDate = (SELECT MAX(x.BankingDate) FROM sod0data x
-                                         WHERE  x.accNo = s.accNo AND x.sodNo = s.sodNo)
+                WHERE  s.BankingDate = :bankingDate
+                  AND  s.accNo = :accNo
                 ORDER  BY s.sodNo
                 """,
-                Map.of("accNo", actualAccOf(accNo)),
+                Map.of("bankingDate", bankingDate.bankingDate(),
+                        "accNo", actualAccOf(accNo)),
                 (rs, i) -> new StandingOrder(
                         trim(rs.getString("sodNo")),
                         trim(rs.getString("paymentType")),
@@ -634,10 +663,12 @@ public class JdbcAccountRepository implements AccountRepository {
         return jdbc.query("""
                 SELECT chequeNo, amount, dateStop, payeeName, chequeFrom
                 FROM   pyd0data
-                WHERE  recType = 'CH' AND accNo = :accNo
+                WHERE  BankingDate = :bankingDate
+                  AND  recType = 'CH' AND accNo = :accNo
                 ORDER  BY chequeNo
                 """,
-                Map.of("accNo", actualAccOf(accNo)),
+                Map.of("bankingDate", bankingDate.bankingDate(),
+                        "accNo", actualAccOf(accNo)),
                 (rs, i) -> new StopCheque(
                         trim(rs.getString("chequeNo")),
                         trim(rs.getString("amount")),
@@ -664,21 +695,25 @@ public class JdbcAccountRepository implements AccountRepository {
         String cheque = trim(chequeNo);
         String cheque8 = cheque.length() > 8 ? cheque.substring(0, 8) : cheque;
         Map<String, String> params = new HashMap<>();
+        params.put("bankingDate", bankingDate.bankingDate());
         params.put("accNo", actualAccNo);
         params.put("chequeNo", cheque);
         params.put("chequeNo8", cheque8);
         List<StopChequeDetail> rows = jdbc.query("""
                 SELECT p.chequeNo, p.amount, p.dateStop, p.payeeName, p.chequeFrom,
                        (SELECT MAX(l.userId) FROM ststchqlog l
-                         WHERE  l.recType = 'CH'
+                         WHERE  l.BankingDate = :bankingDate
+                           AND l.recType = 'CH'
                            AND l.accNo = :accNo AND SUBSTR(l.chequeNo, 1, 8) = :chequeNo8
                            AND l.lastUpdateBmDate =
                                (SELECT MAX(l2.lastUpdateBmDate) FROM ststchqlog l2
-                                 WHERE  l2.recType = 'CH'
+                                 WHERE  l2.BankingDate = :bankingDate
+                                   AND l2.recType = 'CH'
                                    AND l2.accNo = :accNo
                                    AND SUBSTR(l2.chequeNo, 1, 8) = :chequeNo8)) AS stopChqUserId
                 FROM   pyd0data p
-                WHERE  p.recType = 'CH'
+                WHERE  p.BankingDate = :bankingDate
+                  AND  p.recType = 'CH'
                   AND  p.accNo = :accNo AND p.chequeNo = :chequeNo
                 """,
                 params,
@@ -712,12 +747,11 @@ public class JdbcAccountRepository implements AccountRepository {
         // The sod0data BankingDate predicate matches standingOrders() above:
         // without it a multi-snapshot order made rows.get(0) an arbitrary
         // pick, so the screen could show a superseded version of the order.
-        // The gld0data subquery is left alone here -- MAX(branchCode) already
-        // collapses to one value, so it cannot duplicate rows; it gets the
-        // same treatment when gld0data is done (⚠ it may read the branch off
-        // a stale snapshot).
+        // The gld0data / stsodlog subqueries carry it too, so the branch and
+        // the last-update stamp come off the SAME snapshot as the order.
         String actualAccNo = actualAccOf(accNo);
         Map<String, String> params = Map.of(
+                "bankingDate", bankingDate.bankingDate(),
                 "accNo", actualAccNo,
                 "sodNo", sodNo);
         List<Map<String, Object>> rows = jdbc.queryForList("""
@@ -730,18 +764,21 @@ public class JdbcAccountRepository implements AccountRepository {
                        s.drNarrative1, s.drNarrative2, s.crNarrative1, s.crNarrative2,
                        s.transactionDateFlag, s.branchCode, s.remarks,
                        (SELECT MAX(g.branchCode) FROM gld0data g
-                         WHERE  g.accNo = :accNo) AS custBranchCode,
+                         WHERE  g.BankingDate = :bankingDate
+                           AND g.accNo = :accNo) AS custBranchCode,
                        (SELECT MAX(l.lastUpdateDateTime) FROM stsodlog l
-                         WHERE  l.accNo = :accNo AND l.sodNo = :sodNo) AS lastUpdateDate,
+                         WHERE  l.BankingDate = :bankingDate
+                           AND l.accNo = :accNo AND l.sodNo = :sodNo) AS lastUpdateDate,
                        (SELECT MAX(l.userId) FROM stsodlog l
-                         WHERE  l.accNo = :accNo AND l.sodNo = :sodNo
+                         WHERE  l.BankingDate = :bankingDate
+                           AND l.accNo = :accNo AND l.sodNo = :sodNo
                            AND l.lastUpdateDateTime =
                                (SELECT MAX(l2.lastUpdateDateTime) FROM stsodlog l2
-                                 WHERE  l2.accNo = :accNo AND l2.sodNo = :sodNo)) AS lastUpdateUserId
+                                 WHERE  l2.BankingDate = :bankingDate
+                                   AND l2.accNo = :accNo AND l2.sodNo = :sodNo)) AS lastUpdateUserId
                 FROM   sod0data s
-                WHERE  s.accNo = :accNo AND s.sodNo = :sodNo
-                  AND  s.BankingDate = (SELECT MAX(x.BankingDate) FROM sod0data x
-                                         WHERE  x.accNo = :accNo AND x.sodNo = :sodNo)
+                WHERE  s.BankingDate = :bankingDate
+                  AND  s.accNo = :accNo AND s.sodNo = :sodNo
                 """, params);
         if (rows.isEmpty()) {
             return Optional.empty();
@@ -811,10 +848,12 @@ public class JdbcAccountRepository implements AccountRepository {
                                 ELSE COALESCE(NULLIF(TRIM(aShortName), ''), eShortName)
                            END AS payeeCustName
                     FROM   stcusttab
-                    WHERE  custNo = :custNo
+                    WHERE  BankingDate = :bankingDate
+                      AND  custNo = :custNo
                     FETCH FIRST 1 ROWS ONLY
                     """,
-                    Map.of("custNo", BmForms.custFromActualAcc(payAccActual)),
+                    Map.of("bankingDate", bankingDate.bankingDate(),
+                            "custNo", BmForms.custFromActualAcc(payAccActual)),
                     (rs, i) -> trim(rs.getString("payeeCustName")));
             return names.isEmpty() || names.get(0).isEmpty() ? "Invalid Customer" : names.get(0);
         } catch (DataAccessException e) {
@@ -829,11 +868,13 @@ public class JdbcAccountRepository implements AccountRepository {
         return !jdbc.queryForList("""
                 SELECT 1
                 FROM   stsodlog
-                WHERE  accNo = :accNo AND sodNo = :sodNo
+                WHERE  BankingDate = :bankingDate
+                  AND  accNo = :accNo AND sodNo = :sodNo
                   AND  bmUpdateStatus IN ('1', '2')
                 FETCH FIRST 1 ROWS ONLY
                 """,
-                Map.of("accNo", actualAccNo, "sodNo", sodNo))
+                Map.of("bankingDate", bankingDate.bankingDate(),
+                        "accNo", actualAccNo, "sodNo", sodNo))
                 .isEmpty();
     }
 
@@ -864,12 +905,14 @@ public class JdbcAccountRepository implements AccountRepository {
                        rejectedDate, rejectedTime, rejectedUserId, rejectedReason,
                        branchCode
                 FROM   stchqtab
-                WHERE  accNo = :accNo
+                WHERE  BankingDate = :bankingDate
+                  AND  accNo = :accNo
                   AND  (SUBSTR(requestDateTime, 1, 8) = :reqDate
                         OR SUBSTR(requestDateTime, 1, 10) = :reqDateIso)
                 FETCH FIRST 1 ROWS ONLY
                 """,
-                Map.of("accNo", accNo, "reqDate", reqDate,
+                Map.of("bankingDate", bankingDate.bankingDate(),
+                        "accNo", accNo, "reqDate", reqDate,
                         "reqDateIso", BmForms.bmToIso(reqDate)));
         if (rows.isEmpty()) {
             return Optional.empty();
@@ -930,10 +973,11 @@ public class JdbcAccountRepository implements AccountRepository {
             List<String> totals = jdbc.query("""
                     SELECT blockedAmt
                     FROM   gld0data
-                    WHERE  accNo = :accNo
+                    WHERE  BankingDate = :bankingDate
+                      AND  accNo = :accNo
                     FETCH FIRST 1 ROWS ONLY
                     """,
-                    Map.of("accNo", actualAccNo),
+                    Map.of("bankingDate", bankingDate.bankingDate(), "accNo", actualAccNo),
                     // Decode the overpunch-signed header total (sign preserved,
                     // NOT ABS'd) to match cbblock.c:293-295, consistent with the
                     // decoded detail rows.
@@ -966,7 +1010,8 @@ public class JdbcAccountRepository implements AccountRepository {
         blockedSource(items, unavailable, "gld0data", """
                 SELECT accNo AS productNo, matchingLoan, blockedArrear2 AS blockedAmt
                 FROM   gld0data
-                WHERE  SUBSTR(accNo, 6, 7) = SUBSTR(:accNo, 6, 7)
+                WHERE  BankingDate = :bankingDate
+                  AND  SUBSTR(accNo, 6, 7) = SUBSTR(:accNo, 6, 7)
                   AND  settlementAccNo = :accNo AND blockedArrear2 <> 0
                 ORDER  BY accNo
                 """,
@@ -987,7 +1032,8 @@ public class JdbcAccountRepository implements AccountRepository {
         blockedSource(items, unavailable, "aad0data", """
                 SELECT FinoneAlcoAccNo AS productNo, loanBlockBal AS blockedAmt
                 FROM   aad0data
-                WHERE  settlementAccNo = :accNo
+                WHERE  BankingDate = :bankingDate
+                  AND  settlementAccNo = :accNo
                   AND  loanBlockBal <> 0
                 """,
                 Map.of("accNo", actualAccNo),
@@ -1009,7 +1055,8 @@ public class JdbcAccountRepository implements AccountRepository {
         blockedSource(items, unavailable, "bkd0data", """
                 SELECT refNo AS productNo, blockedAmt, userId
                 FROM   bkd0data
-                WHERE  accNo = :bmAccNo
+                WHERE  BankingDate = :bankingDate
+                  AND  accNo = :bmAccNo
                   AND  recType = '1'
                 """,
                 Map.of("bmAccNo", bmAccNo),
@@ -1036,9 +1083,11 @@ public class JdbcAccountRepository implements AccountRepository {
                         SELECT cardNo AS productNo, blockedAmt, autoManualFlag,
                                lastBlockedUserId, requestBranch
                         FROM   ccarrblk
-                        WHERE  bmAccNo = :displayAccNo
+                        WHERE  BankingDate = :bankingDate
+                          AND  bmAccNo = :displayAccNo
                         """,
-                        Map.of("displayAccNo", actualAccNo))) {
+                        Map.of("bankingDate", bankingDate.bankingDate(),
+                                "displayAccNo", actualAccNo))) {
                     if (items.size() >= MAX_BLOCKED_ITEMS) {
                         break;
                     }
@@ -1072,7 +1121,8 @@ public class JdbcAccountRepository implements AccountRepository {
         blockedSource(items, unavailable, "staccblk", """
                 SELECT bmAccNo AS productNo, blockedAmt, lastBlockedUserId, requestBranch
                 FROM   staccblk
-                WHERE  bmAccNo = :displayAccNo
+                WHERE  BankingDate = :bankingDate
+                  AND  bmAccNo = :displayAccNo
                 """,
                 Map.of("displayAccNo", actualAccNo),
                 row -> new BlockedAmountItem("A", str(row, "productNo"),
@@ -1103,8 +1153,12 @@ public class JdbcAccountRepository implements AccountRepository {
         if (items.size() >= MAX_BLOCKED_ITEMS) {
             return;
         }
+        // Each of these SQL strings carries the BankingDate predicate, so the
+        // binding is added here once rather than at each of the four call sites.
+        Map<String, Object> bound = new LinkedHashMap<>(params);
+        bound.put("bankingDate", bankingDate.bankingDate());
         try {
-            for (Map<String, Object> row : jdbc.queryForList(sql, params)) {
+            for (Map<String, Object> row : jdbc.queryForList(sql, bound)) {
                 if (items.size() >= MAX_BLOCKED_ITEMS) {
                     return;
                 }

@@ -39,7 +39,10 @@ class OnlineEnquirySqlTest {
     private static final String ACC = "01008041574100";
 
     private final NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
-    private final JdbcOnlineEnquiryRepository repo = new JdbcOnlineEnquiryRepository(jdbc);
+    /** Fixed by bank.archival-db.banking-date in a real run; stubbed here so the
+     *  BankingDate predicate every query carries has a value to bind. */
+    private final BankingDateProvider bankingDate = mock(BankingDateProvider.class);
+    private final JdbcOnlineEnquiryRepository repo = new JdbcOnlineEnquiryRepository(jdbc, bankingDate);
 
     /** Every statement the repository issued, in order. */
     private final List<String> issued = new ArrayList<>();

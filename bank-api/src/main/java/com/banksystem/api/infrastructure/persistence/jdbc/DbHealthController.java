@@ -43,16 +43,16 @@ public class DbHealthController {
             ok.put("ok", true);
             ok.put("bankingDate", bankingDate.bankingDate());
             ok.put("customers", archivalJdbc.queryForObject(
-                    "SELECT COUNT(*) FROM stcusttab WHERE BankingDate = :bd",
-                    Map.of("bd", bankingDate.bankingDate()), Long.class));
+                    "SELECT COUNT(*) FROM stcusttab WHERE BankingDate = :bankingDate",
+                    Map.of("bankingDate", bankingDate.bankingDate()), Long.class));
             // A second view of a different shape: the control table is split
             // per record type, so the server-config row is the standalone
             // stctltabSC view (no RecordType column — the type is in the view
             // name, like stctltabBD). Proves the prefix resolves for more than
             // the one table above.
             ok.put("controlTable", archivalJdbc.queryForObject(
-                    "SELECT COUNT(*) FROM stctltabSC",
-                    Map.of(), Long.class) != null);
+                    "SELECT COUNT(*) FROM stctltabSC WHERE BankingDate = :bankingDate",
+                    Map.of("bankingDate", bankingDate.bankingDate()), Long.class) != null);
             return ok;
         }));
         return result;

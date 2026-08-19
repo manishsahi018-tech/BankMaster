@@ -49,6 +49,39 @@ environments — no SQL changes.
 
 All views are **read-only**; the pool is `read-only: true`.
 
+## Banking date
+
+Every view here carries the ETL's `BankingDate` column ("Data Restored date",
+key part 1 on 98 of the 106 archival views), and **every query the app issues
+filters on it**:
+
+```sql
+WHERE ... AND <alias>.BankingDate = :bankingDate
+```
+
+The value is one property, `bank.archival-db.banking-date`, bound from
+`BankingDateProvider`; a blank property falls back to `MAX(BankingDate) FROM
+stcusttab` with a warning. It is a plain string compared with `=`, so it must be
+written exactly as the views store it — a format mismatch is not an error, it is
+every screen returning no rows.
+
+Why it is mandatory rather than optional: several views hold the SAME record
+once per restore snapshot (a real account in `sod0data` was measured with four
+rows for one `sodNo`, four different BankingDates), so without the predicate a
+grid shows duplicates and a detail point read picks an arbitrary snapshot.
+Pinning the application to one snapshot restores the legacy's one-row-per-key
+guarantee.
+
+Two consequences to keep in mind when choosing the value. The 29 CSD `st*` views
+were measured single-valued at 11/07/2009; the five BM views
+(`gld0data`, `pyd0data`, `sod0data`, `rid0data`, `thd0data`) span 1992/1995 →
+11/07/2009; and `stcardtab` extends to 08/12/2012. So one global date cannot be
+the latest snapshot of every view: a key present only in an older snapshot, and
+any `stcardtab` row written after the chosen date, will not be returned.
+
+`BankingDateFilterTest` scans the repository sources and fails the build if a
+statement reading one of these views loses the predicate.
+
 ---
 
 ## DB #1 — BM archival schema (`archivalJdbc`)
