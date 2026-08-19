@@ -12,6 +12,7 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -52,25 +53,62 @@ public class JdbcTransferRepository implements TransferRepository {
 
 
     /** Correlated scalar subquery (Denodo has no LATERAL) for the customer short
-     *  name, faithful to getCustName + caller (cbothers.c:8237-8240, cbswift.c:
+     *  name, faithful to getCustName + caller (cbothers.c:8234-8239, cbswift.c:
      *  1464/2001): getCustName overwrites the short name with the ORG short name
      *  when custType != '0' (juristic), THEN the caller picks Arabic-else-English.
      *  Net: individuals use the consumer short names, juristic use the org short
-     *  names — custType decides, they are NOT a flat fallback chain.
-     *  (Not modelled: the crd0data fallback for a custNo absent from stcusttab.) */
-    private static final String CUST_NAME_SUBQUERY = """
+     *  names — custType decides, they are NOT a flat fallback chain. */
+    private static final String STCUSTTAB_NAME = """
             (SELECT CASE WHEN c.custType = '0'
                          THEN COALESCE(NULLIF(TRIM(c.aShortName), ''), c.eShortName)
                          ELSE COALESCE(NULLIF(TRIM(c.aOrgShortName), ''), c.eOrgShortName)
                     END
              FROM stcusttab c
-             WHERE c.custNo = SUBSTR(%s.%s, 6, 7))""";
+             WHERE c.custNo = SUBSTR(%1$s.%2$s, 6, 7))""";
+
+    /**
+     * The second half of getCustName (cbothers.c:8210-8231): a customer NOT in
+     * stcusttab is read from crd0data instead, whose single {@code shortName} is
+     * moved into both the Arabic and English slots — so there is nothing to pick
+     * between and no custType branch, just the one column.
+     *
+     * <p>Wrapped around {@link #STCUSTTAB_NAME} rather than replacing it, and
+     * only when crd0data exists — see the constructor.
+     *
+     * <p>One edge this does not reproduce exactly: the C falls back on the ROW
+     * being absent, while COALESCE falls back on the NAME coming back null. They
+     * differ only for a stcusttab row that exists with a null English name, where
+     * the C returns blank and this returns the crd0data name — which is the same
+     * name anyway, so the divergence has no visible effect. Reproducing it
+     * exactly would cost a second correlated existence probe per row.
+     */
+    private static final String CRD0DATA_NAME = """
+            (SELECT r.shortName
+                     FROM crd0data r
+                     WHERE r.accNo = SUBSTR(%1$s.%2$s, 6, 7))""";
 
     private final NamedParameterJdbcTemplate jdbc;
 
+    /** {@link #STCUSTTAB_NAME}, wrapped in the crd0data fallback when available. */
+    private final String custNameSubquery;
+
+    /**
+     * @param crd0dataAvailable whether the crd0data view exists yet. It is being
+     *        created on the Denodo side, and until it lands a query naming it
+     *        fails outright — which would take Transfer Detail and Transaction
+     *        Detail, both working today, down with it. So the fallback is off by
+     *        default and this flag turns it on; flip
+     *        {@code bank.archival-db.crd0data-enabled} the day the view exists.
+     *        (JdbcOnlineEnquiryRepository needs no such flag: its two screens
+     *        cannot work at all without crd0data, so they fail loudly instead.)
+     */
     public JdbcTransferRepository(
-            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc) {
+            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
+            @Value("${bank.archival-db.crd0data-enabled:false}") boolean crd0dataAvailable) {
         this.jdbc = jdbc;
+        this.custNameSubquery = crd0dataAvailable
+                ? "COALESCE(" + STCUSTTAB_NAME + ",\n             " + CRD0DATA_NAME + ")"
+                : STCUSTTAB_NAME;
     }
 
     // ------------------------------------------------------------------
@@ -177,7 +215,7 @@ public class JdbcTransferRepository implements TransferRepository {
                        r.paymentStatus, r.statusFlag, r.branchCode,
                        r.transferPurpose, r.exchangeRate, r.message1,
                        """
-                + CUST_NAME_SUBQUERY.formatted("r", "crAccNo") + " AS custName\n"
+                + custNameSubquery.formatted("r", "crAccNo") + " AS custName\n"
                 + """
                 FROM   rid0data r
                 WHERE  r.transRef = :refNo
@@ -255,11 +293,20 @@ public class JdbcTransferRepository implements TransferRepository {
      * what the operator sees. That is the point: the walk used to cost one
      * full-range scan of thd0data per page and discard all but ten rows.
      *
-     * <p>Unlike rid0data, the ordering here is a genuine key. thd0data is the
-     * one BM view exempt from the repeated-snapshot problem because its key
-     * already carries postDate + transCounter, so within the single accNo this
-     * query fixes, {@code ORDER BY postDate, transCounter} is a total order and
-     * the window cannot repeat or skip a row at a page boundary.
+     * <p>Unlike rid0data, the ordering here is a genuine key — but NOT the one
+     * an earlier note here claimed. thd0data's index 1 is 26 bytes,
+     * {@code accNo[13] + filler1[7] + transCounter[5] + recType}
+     * (cbslib/layout.h:1575-1578); postDate sits at offset 27 and is not in the
+     * key at all. The C seeks that index with keylen 13 and walks ISNEXT
+     * (cbswift.c:1871-1872), so it returns rows in POSTING-SEQUENCE order, and
+     * {@code ORDER BY transCounter} is what reproduces it.
+     *
+     * <p>Ordering by postDate first, as this did, was a total order too —
+     * transCounter is unique within an account, so the window still could not
+     * repeat or skip — but it is a DIFFERENT order, and the two disagree exactly
+     * where a transaction was back-valued or posted late. The row set and the
+     * screen's total are unaffected either way, since the caller drains every
+     * page before summing; what changes is the sequence the operator reads.
      */
     @Override
     public PagedResult<TransactionSummary> bmTransactions(
@@ -289,7 +336,7 @@ public class JdbcTransferRepository implements TransferRepository {
             }
         }
         sql.append("""
-                ORDER  BY postDate, transCounter
+                ORDER  BY transCounter
                 """);
         appendWindow(sql, page);
         List<TransactionSummary> rows = jdbc.query(sql.toString(), params, (rs, i) -> new TransactionSummary(
@@ -326,7 +373,7 @@ public class JdbcTransferRepository implements TransferRepository {
                        t.transType, t.userId, t.supervisorId, t.statmentFlag,
                        t.narrative1, t.narrative2, t.narrative3,
                        """
-                + CUST_NAME_SUBQUERY.formatted("t", "accNo") + " AS custName\n"
+                + custNameSubquery.formatted("t", "accNo") + " AS custName\n"
                 + """
                 FROM   thd0data t
                 WHERE  t.accNo = :accNo

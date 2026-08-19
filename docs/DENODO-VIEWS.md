@@ -15,7 +15,7 @@ Every table below is referenced by a `FROM`/`JOIN` in `bank-api` under the
 | `bkd0data` | Blocked Amount Breakup loses source 3 (`O` — other BM blocking) | degrades |
 | `ccarrblk` | Blocked Amount Breakup loses source 4 (`M`/`C` — credit-card arrear blocks) | degrades |
 | `stswiftlog` | Transfer Detail's pending-SWIFT-amendment guard never fires | degrades |
-| `crd0data` | On-demand Statement and Transaction Inquiry refuse to run at all | **blocks** |
+| `crd0data` | On-demand Statement and Transaction Inquiry refuse to run at all; Transfer Detail and Transaction Detail lose only the stcusttab-miss name fallback | **blocks** / degrades |
 
 The first three do not break a screen. All are read inside their own try/catch
 and fail to a warn log — see `JdbcAccountRepository.blockedSource` and
@@ -135,7 +135,7 @@ legacy, which is why they are the ones most likely to be missing.
 | `sod0data` | Standing Order grid + detail |
 | `pyd0data` | Stop Cheque grid + detail |
 | `thd0data` | Transaction Type Enquiry + Transaction Detail, On-demand Statement + Transaction Inquiry |
-| `crd0data` | On-demand Statement + Transaction Inquiry (customer header) — **being created**, see Availability |
+| `crd0data` | On-demand Statement + Transaction Inquiry (customer header, REQUIRED); Transfer Detail + Transaction Detail (`getCustName` fallback for a custNo absent from stcusttab, OPTIONAL — gated on `bank.archival-db.crd0data-enabled`) — **being created**, see Availability |
 | `rid0data` | SARIE Transfer Enquiry + Transfer Detail |
 | `aad0data` | Blocked Amount Breakup (source 2) |
 | `bkd0data` | Blocked Amount Breakup (source 3) |

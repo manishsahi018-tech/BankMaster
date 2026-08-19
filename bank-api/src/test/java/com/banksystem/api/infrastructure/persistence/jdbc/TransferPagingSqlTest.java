@@ -33,7 +33,8 @@ import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 class TransferPagingSqlTest {
 
     private final NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
-    private final JdbcTransferRepository repo = new JdbcTransferRepository(jdbc);
+    /** crd0data off, as in every environment until the view is created. */
+    private final JdbcTransferRepository repo = new JdbcTransferRepository(jdbc, false);
 
     /** Runs a query returning {@code rowCount} rows and returns the SQL that was issued. */
     private String sqlFor(int page, int rowCount) {
@@ -175,12 +176,54 @@ class TransferPagingSqlTest {
     void theTransactionWindowFollowsTheKeyOrdering() {
         String sql = transactionSqlFor(1, 3);
 
-        assertThat(sql.indexOf("ORDER  BY postDate, transCounter"))
-                .as("thd0data's key carries postDate + transCounter, so within one accNo this "
-                        + "is a total order and the window cannot repeat or skip a row")
+        assertThat(sql.indexOf("ORDER  BY transCounter"))
+                .as("thd0data index 1 is accNo + filler1 + transCounter + recType — postDate is "
+                        + "at offset 27 and NOT in the key, so the C's keylen-13 seek plus ISNEXT "
+                        + "(cbswift.c:1871-1872) returns posting-sequence order. transCounter is "
+                        + "unique within one accNo, so this is a total order too and the window "
+                        + "still cannot repeat or skip a row")
                 .isGreaterThan(0)
                 .isLessThan(sql.indexOf("OFFSET"));
+        assertThat(sql)
+                .as("ordering by postDate first was also stable, but it is a DIFFERENT order — "
+                        + "they disagree wherever a transaction was back-valued or posted late")
+                .doesNotContain("ORDER  BY postDate");
         assertThat(sql.indexOf("OFFSET")).isLessThan(sql.indexOf("FETCH FIRST"));
+    }
+
+    @Test
+    void theCustomerNameFallsBackToCrd0dataOnlyWhenTheViewExists() {
+        when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
+                .thenReturn(List.of());
+        new JdbcTransferRepository(jdbc, false).bmTransactionDetail("01008041574100", "REF0000001");
+        ArgumentCaptor<String> off = ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(jdbc).query(
+                off.capture(), any(SqlParameterSource.class), any(RowMapper.class));
+
+        assertThat(off.getValue())
+                .as("naming a view that does not exist yet fails the whole query, and this "
+                        + "screen works today — so the fallback stays out until it is switched on")
+                .doesNotContain("crd0data")
+                .contains("stcusttab");
+
+        org.mockito.Mockito.reset(jdbc);
+        when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
+                .thenReturn(List.of());
+        new JdbcTransferRepository(jdbc, true).bmTransactionDetail("01008041574100", "REF0000001");
+        ArgumentCaptor<String> on = ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(jdbc).query(
+                on.capture(), any(SqlParameterSource.class), any(RowMapper.class));
+
+        assertThat(on.getValue())
+                .as("getCustName reads crd0data for a custNo absent from stcusttab "
+                        + "(cbothers.c:8210-8231)")
+                .contains("COALESCE(")
+                .contains("crd0data")
+                .contains("r.shortName");
+        assertThat(on.getValue().chars().filter(c -> c == '(').count())
+                .as("the fallback is assembled by string concatenation, so an unbalanced paren "
+                        + "would only show up as a Denodo syntax error at runtime")
+                .isEqualTo(on.getValue().chars().filter(c -> c == ')').count());
     }
 
     @Test

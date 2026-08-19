@@ -552,15 +552,30 @@ workbook).
 
 Legacy: `processBmTransEnq()` cbswift.c:1849 and `processBmTransDetail()` :1941.
 **Fully local — reads thd0data** (transaction history, in the workbook).
-- Enquiry: index 1 on BM accNo (13); filters: postDate BETWEEN from/to; transType
-  blank=all, 'RR'=reversals only (`statmentFlag>'1'`), else exact; 20/page.
+- Enquiry: index 1 on BM accNo, **seeked with keylen 13 then walked ISNEXT**
+  (cbswift.c:1871-1872). Index 1 is 26 bytes — `accNo[13] + filler1[7] +
+  transCounter[5] + recType` (layout.h:1575-1578) — so **postDate is NOT in the
+  key** and the rows come back in POSTING-SEQUENCE order. Order by
+  `transCounter`, not by postDate: both are total orders within one account
+  (transCounter is unique there) so paging is stable either way, but they
+  disagree wherever a transaction was back-valued or posted late.
+  Filters: postDate BETWEEN from/to; transType blank=all, 'RR'=reversals only
+  (`statmentFlag>'1'`), else exact. 20/page on the wire — the revamp uses 10 and
+  the screen drains every page before summing, so the chunk size is invisible.
+  No recType filter at all here (the detail has one); harmless, since a recType
+  '1' row's "postDate" bytes are narrative text and never fall in a date range.
   Rows: transRef, postDate, valueDate, userId, transAmt, transCounter, transType.
 - Detail: index 2 (accNo+transRef), `recType='0'` header record; in the LEGACY
   files narratives 2/3 came from the recType='1' continuation record correlated
   on accNo+**transCounter** (struct thd1data — no transRef) — but the archival
   workbook folded those narratives into the **thd0data header row** itself;
   the archival `thd0data1` view is the recType-2/3 rate-change family and must
-  NOT be used for narratives. custName from stcusttab; non-printables scrubbed.
+  NOT be used for narratives. custName from stcusttab via `getCustName`
+  (cbothers.c:8195) — which **falls back to `crd0data.shortName` when the custNo
+  is not in stcusttab** (:8210-8231), and swaps in the ORG short names when
+  `custType != '0'` (:8234-8239) before the caller picks Arabic-else-English.
+  The crd0data half is gated on `bank.archival-db.crd0data-enabled` until that
+  view exists — see §21.1. Non-printables scrubbed.
 
 ```sql
 SELECT transRef, postDate, valueDate, userId, transAmt, transCounter, transType
@@ -569,7 +584,7 @@ WHERE  BankingDate=:bankingDate AND accNo=:bmAccNo
   AND  postDate BETWEEN :fromDate AND :toDate
   AND  (:transType='' OR (:transType='RR' AND statmentFlag>'1')
         OR (:transType<>'RR' AND transType=:transType))   -- exact branch must exclude the RR case
-ORDER  BY accNo OFFSET :lastRecCount ROWS FETCH NEXT 20 ROWS ONLY;
+ORDER  BY transCounter OFFSET :lastRecCount ROWS FETCH NEXT 20 ROWS ONLY;
 ```
 
 ## 19. Utility bills / SADAD (frmBillEnquiry, frmSadadEnq, frmSadadTransEnq)
