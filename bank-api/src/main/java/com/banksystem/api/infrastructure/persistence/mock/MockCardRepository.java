@@ -5,6 +5,7 @@ import com.banksystem.api.domain.model.CardHistoryEntry;
 import com.banksystem.api.domain.model.CardSearchResult;
 import com.banksystem.api.domain.model.CardSummary;
 import com.banksystem.api.domain.model.CardUpdateHistoryEntry;
+import com.banksystem.api.domain.model.PagedResult;
 import com.banksystem.api.domain.repository.CardRepository;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
@@ -94,11 +95,19 @@ public class MockCardRepository implements CardRepository {
                             plusYears(DemoData.dateBack(900), 4), "1", "9", "9", c.accNo(0) + "01"))
                     : exact;
         }
+        // Page the rows, exactly as JdbcCardRepository does. It used to return
+        // the whole list with hasMore hardcoded false, ignoring the page
+        // argument entirely: page 5 of a 3-card customer answered with the same
+        // 3 cards rather than nothing. Harmless with the 1-3 cards generated
+        // here, but it meant the card grid's More button could never be
+        // exercised against the mocks -- the same blind spot that hid the
+        // transfer enquiry's missing pager.
+        PagedResult<CardSummary> paged = PagedResult.page(rows, page);
         // Customer header fields come from DB #2 in the real implementation.
         return new CardSearchResult(c.custNo(), c.shortName(),
                 c.city(), c.poBox(), c.city(), c.zipCode(), c.branchCode(),
                 c.juristic() ? "C" : "0", "0",
-                rows, false);
+                paged.rows(), paged.hasMore());
     }
 
     @Override
