@@ -272,6 +272,10 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
      * screens apply to every amount, so guessing it wrong renders each figure
      * off by a factor of ten with nothing on screen to say so. That is worse
      * than not showing the enquiry, so it fails the same way crd0data does.
+     *
+     * <p>The column was confirmed present on the Denodo view (2026-08-19), so
+     * that throw is a regression guard now rather than a state anyone expects
+     * to hit — but the reasoning for it is unchanged, so it stays.
      */
     private String decimalPlace(String actualAcc) {
         String currCode = actualAcc.length() >= 2 ? actualAcc.substring(0, 2) : "";

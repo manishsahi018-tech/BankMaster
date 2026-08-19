@@ -186,11 +186,17 @@ legacy, which is why they are the ones most likely to be missing.
    `alternativeBranchCode` (1864), `packageAcc` (1922), `vipFlag` (1921) and
    `nonResident` (148) all have callers in the C, and one creation unblocks the
    cheque-book field too.
-5. **`stctltabXC.decimalPlace`** (offset 92 of `struct cnd0dataXC`,
-   `cbslib/layout.h:1054`). The view exists and `JdbcReferenceDataRepository`
-   already reads its `currCode`/names, but nothing has yet needed
-   `decimalPlace` — the divisor every amount on the two cbrt01 enquiries is
-   scaled by. `JdbcOnlineEnquiryRepository` refuses the enquiry if the column is
-   not there, rather than guessing: the legacy's own fallback is 2 decimals, the
-   mock assumes 3, and picking wrong renders every figure off by a factor of ten
-   with nothing on screen to say so. Confirm the column is exposed.
+5. ~~**`stctltabXC.decimalPlace`** — is the column exposed?~~ **Confirmed
+   present, 2026-08-19.** (Offset 92 of `struct cnd0dataXC`,
+   `cbslib/layout.h:1054`; it is the divisor every amount on the two cbrt01
+   enquiries is scaled by.) `JdbcOnlineEnquiryRepository` still refuses the
+   enquiry if the column cannot be read — that branch is now a regression guard
+   rather than an expected state, and the reasoning behind it is unchanged:
+   defaulting silently would render every figure off by a factor of ten with
+   nothing on screen to say so.
+
+   **Still worth one probe: what VALUES it holds.** The legacy's read-failure
+   fallback is `'2'` and the mock assumes `'3'` for SAR, so the two disagree
+   about the local currency. Whichever the column says now wins for real, but a
+   glance at `SELECT currCode, decimalPlace FROM stctltabXC` would confirm the
+   SAR row and settle which of the two guesses was right.
