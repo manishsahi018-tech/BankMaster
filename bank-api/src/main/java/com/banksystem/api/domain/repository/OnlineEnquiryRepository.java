@@ -27,9 +27,9 @@ import com.banksystem.api.domain.model.OnlineStatementPage;
  * portable to JDBC. See QUERY-SPECS.md §21.1.
  *
  * <p>{@code JdbcOnlineEnquiryRepository} implements both under the denodo
- * profile; the mock stands in under the mock profile. crd0data is still being
- * created on the Denodo side, so the JDBC implementation refuses the enquiry
- * outright while it is absent rather than showing an unnamed customer.
+ * profile; the mock stands in under the mock profile. crd0data supplies the
+ * customer header, and the JDBC implementation refuses the enquiry outright if
+ * it cannot be read rather than showing an unnamed customer.
  */
 public interface OnlineEnquiryRepository {
 

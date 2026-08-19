@@ -12,7 +12,6 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -72,9 +71,6 @@ public class JdbcTransferRepository implements TransferRepository {
      * moved into both the Arabic and English slots — so there is nothing to pick
      * between and no custType branch, just the one column.
      *
-     * <p>Wrapped around {@link #STCUSTTAB_NAME} rather than replacing it, and
-     * only when crd0data exists — see the constructor.
-     *
      * <p>One edge this does not reproduce exactly: the C falls back on the ROW
      * being absent, while COALESCE falls back on the NAME coming back null. They
      * differ only for a stcusttab row that exists with a null English name, where
@@ -87,28 +83,21 @@ public class JdbcTransferRepository implements TransferRepository {
                      FROM crd0data r
                      WHERE r.accNo = SUBSTR(%1$s.%2$s, 6, 7))""";
 
+    /**
+     * getCustName in full: stcusttab first, crd0data when the customer is not
+     * there. Unconditional — crd0data is a required view like every other one
+     * these queries name, so a detail screen fails on its absence the same way
+     * it would fail on a missing stcusttab, rather than quietly serving a
+     * half-faithful name.
+     */
+    private static final String CUST_NAME_SUBQUERY =
+            "COALESCE(" + STCUSTTAB_NAME + ",\n             " + CRD0DATA_NAME + ")";
+
     private final NamedParameterJdbcTemplate jdbc;
 
-    /** {@link #STCUSTTAB_NAME}, wrapped in the crd0data fallback when available. */
-    private final String custNameSubquery;
-
-    /**
-     * @param crd0dataAvailable whether the crd0data view exists yet. It is being
-     *        created on the Denodo side, and until it lands a query naming it
-     *        fails outright — which would take Transfer Detail and Transaction
-     *        Detail, both working today, down with it. So the fallback is off by
-     *        default and this flag turns it on; flip
-     *        {@code bank.archival-db.crd0data-enabled} the day the view exists.
-     *        (JdbcOnlineEnquiryRepository needs no such flag: its two screens
-     *        cannot work at all without crd0data, so they fail loudly instead.)
-     */
     public JdbcTransferRepository(
-            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
-            @Value("${bank.archival-db.crd0data-enabled:false}") boolean crd0dataAvailable) {
+            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc) {
         this.jdbc = jdbc;
-        this.custNameSubquery = crd0dataAvailable
-                ? "COALESCE(" + STCUSTTAB_NAME + ",\n             " + CRD0DATA_NAME + ")"
-                : STCUSTTAB_NAME;
     }
 
     // ------------------------------------------------------------------
@@ -215,7 +204,7 @@ public class JdbcTransferRepository implements TransferRepository {
                        r.paymentStatus, r.statusFlag, r.branchCode,
                        r.transferPurpose, r.exchangeRate, r.message1,
                        """
-                + custNameSubquery.formatted("r", "crAccNo") + " AS custName\n"
+                + CUST_NAME_SUBQUERY.formatted("r", "crAccNo") + " AS custName\n"
                 + """
                 FROM   rid0data r
                 WHERE  r.transRef = :refNo
@@ -373,7 +362,7 @@ public class JdbcTransferRepository implements TransferRepository {
                        t.transType, t.userId, t.supervisorId, t.statmentFlag,
                        t.narrative1, t.narrative2, t.narrative3,
                        """
-                + custNameSubquery.formatted("t", "accNo") + " AS custName\n"
+                + CUST_NAME_SUBQUERY.formatted("t", "accNo") + " AS custName\n"
                 + """
                 FROM   thd0data t
                 WHERE  t.accNo = :accNo

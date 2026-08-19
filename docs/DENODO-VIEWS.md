@@ -8,16 +8,15 @@ Every table below is referenced by a `FROM`/`JOIN` in `bank-api` under the
 
 ## Availability (confirmed against Cloudera/Denodo, 2026-07-28; `crd0data` added 2026-08-19)
 
-**35 of the 39 exist. Four do not:**
+**36 of the 39 exist. Three do not:**
 
 | Missing view | Screen impact | Severity |
 |---|---|---|
 | `bkd0data` | Blocked Amount Breakup loses source 3 (`O` — other BM blocking) | degrades |
 | `ccarrblk` | Blocked Amount Breakup loses source 4 (`M`/`C` — credit-card arrear blocks) | degrades |
 | `stswiftlog` | Transfer Detail's pending-SWIFT-amendment guard never fires | degrades |
-| `crd0data` | On-demand Statement and Transaction Inquiry refuse to run at all; Transfer Detail and Transaction Detail lose only the stcusttab-miss name fallback | **blocks** / degrades |
 
-The first three do not break a screen. All are read inside their own try/catch
+None of the three breaks a screen. All are read inside their own try/catch
 and fail to a warn log — see `JdbcAccountRepository.blockedSource` and
 `JdbcTransferRepository.hasPendingSwiftUpdate`. The one user-visible symptom is
 on Blocked Amount Breakup: the "Total Blocked Balance" tile comes from the
@@ -25,15 +24,14 @@ on Blocked Amount Breakup: the "Total Blocked Balance" tile comes from the
 carrying an `O` or credit-card block the total will exceed the sum of the rows
 shown, with nothing on screen explaining the difference.
 
-**`crd0data` is deliberately not in that pattern.** It supplies the customer
-name, address and language on the two cbrt01 enquiries, and
-`JdbcOnlineEnquiryRepository` queries it FIRST and throws
-`NotAvailableException` (HTTP 501) when it cannot be read — before a single
-transaction is fetched. That is a decision, not an oversight: on a banking
-enquiry a nameless customer header is worse than no screen. It is being created
-on the Denodo side; both screens start working the day it lands, no code change.
-A missing crd0data ROW is a different case and stays the legacy's answer for it
-(status "05", NOMAINACC).
+**`crd0data` is required, not optional** (added to this list 2026-08-19). It
+supplies the customer name, address and language on the two cbrt01 enquiries,
+and the stcusttab-miss name fallback on Transfer Detail and Transaction Detail.
+Nothing degrades around it: `JdbcOnlineEnquiryRepository` queries it FIRST and
+throws `NotAvailableException` (HTTP 501) if it cannot be read, before a single
+transaction is fetched, because on a banking enquiry a nameless customer header
+is worse than no screen. A missing crd0data ROW is a different case and stays
+the legacy's answer for it (status "05", NOMAINACC).
 
 Two lookalikes exist in Denodo and must **not** be substituted:
 `stsodlog` is the standing-order audit log, not `sod0data` (the order master);
@@ -135,7 +133,7 @@ legacy, which is why they are the ones most likely to be missing.
 | `sod0data` | Standing Order grid + detail |
 | `pyd0data` | Stop Cheque grid + detail |
 | `thd0data` | Transaction Type Enquiry + Transaction Detail, On-demand Statement + Transaction Inquiry |
-| `crd0data` | On-demand Statement + Transaction Inquiry (customer header, REQUIRED); Transfer Detail + Transaction Detail (`getCustName` fallback for a custNo absent from stcusttab, OPTIONAL — gated on `bank.archival-db.crd0data-enabled`) — **being created**, see Availability |
+| `crd0data` | On-demand Statement + Transaction Inquiry (customer header); Transfer Detail + Transaction Detail (`getCustName` fallback for a custNo absent from stcusttab) |
 | `rid0data` | SARIE Transfer Enquiry + Transfer Detail |
 | `aad0data` | Blocked Amount Breakup (source 2) |
 | `bkd0data` | Blocked Amount Breakup (source 3) |
@@ -173,9 +171,9 @@ legacy, which is why they are the ones most likely to be missing.
    one call to `BmForms.bmCust`. Settle it when the view is defined.
 3. **`aad0data` account column** is `FinoneAlcoAccNo` in the workbook, not the
    spec's `accNo`.
-4. **`crd0data` is now required**, and confirmed as being created (2026-08-19).
-   It was previously left out because its only consumer was the cheque-book
-   search's `alternativeBranchCode`; the two cbrt01 enquiries changed that.
+4. **`crd0data` is now required** (2026-08-19). It was previously left out
+   because its only consumer was the cheque-book search's
+   `alternativeBranchCode`; the two cbrt01 enquiries changed that.
    Columns needed now: `accNo` (6, the key — see item 2), `shortName` (30),
    `address1` (30), `address2` (30), `language` (1).
    **Ask for `address1` AND `address2`.** `cbrt01.c` copies 60 bytes starting at

@@ -574,8 +574,8 @@ Legacy: `processBmTransEnq()` cbswift.c:1849 and `processBmTransDetail()` :1941.
   (cbothers.c:8195) — which **falls back to `crd0data.shortName` when the custNo
   is not in stcusttab** (:8210-8231), and swaps in the ORG short names when
   `custType != '0'` (:8234-8239) before the caller picks Arabic-else-English.
-  The crd0data half is gated on `bank.archival-db.crd0data-enabled` until that
-  view exists — see §21.1. Non-printables scrubbed.
+  Both halves are queried unconditionally — crd0data is a required view like
+  any other (§21.1). Non-printables scrubbed.
 
 ```sql
 SELECT transRef, postDate, valueDate, userId, transAmt, transCounter, transType
@@ -687,10 +687,10 @@ Port 07's intent; do not replicate the bug.
 
 #### Open before the JDBC port
 
-1. **`crd0data` is being created in Denodo** (absent when DENODO-VIEWS.md:156 was
-   written, confirmed 2026-08-19 as coming). Both handlers source
+1. **`crd0data` is a required view** (it was absent when DENODO-VIEWS.md:156 was
+   written; treated as present since 2026-08-19). Both handlers source
    `custName`/`custAddress`/`languageCode` from it, so target it directly — no
-   `stcusttab`+`staddrtab` substitute. Columns needed: `accNo[6]` (the 6-char BM
+   `stcusttab`+`staddrtab` substitute. Columns used: `accNo[6]` (the 6-char BM
    custNo from `actualToBmCust(&accNo[5])`, NOT the 14-char actual form — see the
    key-length caveat at DENODO-VIEWS.md:150), `shortName[30]`, `address1[30]`,
    `address2[30]`, `language`.
@@ -703,9 +703,10 @@ Port 07's intent; do not replicate the bug.
    only meaningful against a single-valued `BankingDate` snapshot. Confirm `gld0data`
    is one of those views first.
 
-Served by `JdbcOnlineEnquiryRepository` under the `denodo` profile. While
-crd0data is absent it throws `NotAvailableException` (HTTP 501) BEFORE fetching
-any transactions, so the screen shows nothing rather than an unnamed customer.
+Served by `JdbcOnlineEnquiryRepository` under the `denodo` profile. If crd0data
+cannot be read it throws `NotAvailableException` (HTTP 501) BEFORE fetching any
+transactions, so the screen shows nothing rather than an unnamed customer — a
+guard against the view regressing, not an expected state.
 
 ### 21.2 Historical & merchant statements — genuinely not in this codebase
 

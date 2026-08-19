@@ -33,8 +33,7 @@ import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 class TransferPagingSqlTest {
 
     private final NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
-    /** crd0data off, as in every environment until the view is created. */
-    private final JdbcTransferRepository repo = new JdbcTransferRepository(jdbc, false);
+    private final JdbcTransferRepository repo = new JdbcTransferRepository(jdbc);
 
     /** Runs a query returning {@code rowCount} rows and returns the SQL that was issued. */
     private String sqlFor(int page, int rowCount) {
@@ -192,38 +191,41 @@ class TransferPagingSqlTest {
     }
 
     @Test
-    void theCustomerNameFallsBackToCrd0dataOnlyWhenTheViewExists() {
+    void theCustomerNameFallsBackToCrd0dataWhenStcusttabHasNoRow() {
         when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
                 .thenReturn(List.of());
-        new JdbcTransferRepository(jdbc, false).bmTransactionDetail("01008041574100", "REF0000001");
-        ArgumentCaptor<String> off = ArgumentCaptor.forClass(String.class);
+        repo.bmTransactionDetail("01008041574100", "REF0000001");
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         org.mockito.Mockito.verify(jdbc).query(
-                off.capture(), any(SqlParameterSource.class), any(RowMapper.class));
+                sql.capture(), any(SqlParameterSource.class), any(RowMapper.class));
 
-        assertThat(off.getValue())
-                .as("naming a view that does not exist yet fails the whole query, and this "
-                        + "screen works today — so the fallback stays out until it is switched on")
-                .doesNotContain("crd0data")
-                .contains("stcusttab");
-
-        org.mockito.Mockito.reset(jdbc);
-        when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
-                .thenReturn(List.of());
-        new JdbcTransferRepository(jdbc, true).bmTransactionDetail("01008041574100", "REF0000001");
-        ArgumentCaptor<String> on = ArgumentCaptor.forClass(String.class);
-        org.mockito.Mockito.verify(jdbc).query(
-                on.capture(), any(SqlParameterSource.class), any(RowMapper.class));
-
-        assertThat(on.getValue())
+        assertThat(sql.getValue())
                 .as("getCustName reads crd0data for a custNo absent from stcusttab "
-                        + "(cbothers.c:8210-8231)")
+                        + "(cbothers.c:8210-8231) — half the function, so half the name")
                 .contains("COALESCE(")
+                .contains("stcusttab")
                 .contains("crd0data")
                 .contains("r.shortName");
-        assertThat(on.getValue().chars().filter(c -> c == '(').count())
+        assertThat(sql.getValue().chars().filter(c -> c == '(').count())
                 .as("the fallback is assembled by string concatenation, so an unbalanced paren "
                         + "would only show up as a Denodo syntax error at runtime")
-                .isEqualTo(on.getValue().chars().filter(c -> c == ')').count());
+                .isEqualTo(sql.getValue().chars().filter(c -> c == ')').count());
+    }
+
+    @Test
+    void theSarieTransferDetailGetsTheSameNameChain() {
+        when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
+                .thenReturn(List.of());
+        repo.transferDetail("SR00000001", "20250101");
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(jdbc, org.mockito.Mockito.atLeastOnce()).query(
+                sql.capture(), any(SqlParameterSource.class), any(RowMapper.class));
+
+        assertThat(sql.getAllValues().stream().filter(q -> q.contains("stcusttab")).findFirst())
+                .as("both details resolve the name through the same subquery, so neither can "
+                        + "drift from getCustName without the other")
+                .get(org.assertj.core.api.InstanceOfAssertFactories.STRING)
+                .contains("crd0data");
     }
 
     @Test

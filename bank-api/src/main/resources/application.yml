@@ -92,15 +92,6 @@ bank:
     # Optional fixed restore snapshot (YYYYMMDD). Leave empty to use
     # MAX(BankingDate) from stcusttab, resolved once at first query.
     banking-date: ${ARCHIVAL_BANKING_DATE:}
-    # crd0data — the BM customer register — is being created on the Denodo side.
-    # It is a HARD requirement for On-demand Statement and Transaction Inquiry,
-    # which refuse to run without it, and an OPTIONAL one for Transfer Detail and
-    # Transaction Detail, whose customer name falls back to it when a custNo is
-    # absent from stcusttab (getCustName, cbothers.c:8210-8231). Those two work
-    # today and a query naming a view that does not exist fails outright, so the
-    # fallback stays off until the view lands. Flip this to true then — no code
-    # change, and no separate switch for the two enquiries.
-    crd0data-enabled: ${ARCHIVAL_CRD0DATA_ENABLED:false}
     # Customer-search clock, the legacy's SEARCHTIME (cbcmssrv.cfg = 30;
     # cbrouter.c:92 default). A search is bounded by TIME, not row count: when
     # it expires the rows already read are returned with an "incomplete" flag,

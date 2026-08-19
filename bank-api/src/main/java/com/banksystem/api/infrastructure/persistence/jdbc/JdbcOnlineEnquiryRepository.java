@@ -64,11 +64,11 @@ import org.springframework.stereotype.Repository;
  *
  * <h2>Hard-fail, by instruction</h2>
  * crd0data — the customer register the header name/address/language come from —
- * is being created on the Denodo side and may not be there yet. When the query
- * for it fails, this throws {@link NotAvailableException} BEFORE fetching a
- * single transaction: the enquiry is not shown at all rather than shown with a
- * blank customer. A missing crd0data ROW is a different thing and stays the
- * legacy's answer for it ({@code NOMAINACC}, status "05").
+ * is a required view like every other one named here. If the query for it fails
+ * anyway, this throws {@link NotAvailableException} BEFORE fetching a single
+ * transaction: the enquiry is not shown at all rather than shown with a blank
+ * customer. A missing crd0data ROW is a different thing and stays the legacy's
+ * answer for it ({@code NOMAINACC}, status "05").
  */
 @Repository
 @Profile("denodo")
@@ -219,9 +219,9 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
      * unverified assumption in this class: the C keys crd0data on the 6-char
      * packed BM customer, but every archival view delivered so far carries the
      * ACTUAL form (DENODO-VIEWS.md:150), so the 7-char actual customer is what
-     * is bound here. If the view lands keyed the BM way instead, this is the
-     * one line to change — wrap it in {@link BmForms#bmCust}. The symptom would
-     * be every account answering "05".
+     * is bound here. If the view is keyed the BM way instead, this is the one
+     * line to change — wrap it in {@link BmForms#bmCust}. The symptom would be
+     * every account answering "05". One probe against real data settles it.
      *
      * <p>Second, {@code custAddress} is address1 CONCATENATED with address2.
      * The C copies 60 bytes out of {@code crdRec.address1}, which is only 30
