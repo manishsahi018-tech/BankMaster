@@ -20,8 +20,9 @@ public class TransferService {
 
     public PagedResult<TransferSummary> sarieTransfers(
             String accNo, String fromDate, String toDate, String refNo, String status, int page) {
-        return PagedResult.page(
-                transfers.sarieTransfers(accNo, fromDate, toDate, refNo, status), page);
+        // Paged in the query (see JdbcTransferRepository) — the repository returns
+        // the requested page already windowed, so nothing is sliced here.
+        return transfers.sarieTransfers(accNo, fromDate, toDate, refNo, status, page);
     }
 
     public TransferDetail transferDetail(String refNo, String transDate) {
@@ -31,8 +32,8 @@ public class TransferService {
 
     public PagedResult<TransactionSummary> bmTransactions(
             String accNo, String fromDate, String toDate, String transType, int page) {
-        return PagedResult.page(
-                transfers.bmTransactions(accNo, fromDate, toDate, transType), page);
+        // Paged in the query, like sarieTransfers above.
+        return transfers.bmTransactions(accNo, fromDate, toDate, transType, page);
     }
 
     public TransactionDetail bmTransactionDetail(String accNo, String refNo) {

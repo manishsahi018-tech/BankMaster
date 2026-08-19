@@ -1,0 +1,46 @@
+# BankSystem enquiry app — container deployment.
+#
+#   cp .env.example .env      # fill in Denodo / LDAP / JWT settings
+#   docker compose up --build
+#
+# Then open http://localhost:8080 — nginx serves the UI there and proxies
+# /api/ to bank-api over the private compose network, so the browser sees a
+# single origin (see bank-ui/nginx.conf).
+#
+# Everything the app is configured with already comes from environment
+# variables (see bank-api/src/main/resources/application.yml), so .env is the
+# whole configuration surface — nothing is baked into the images.
+
+services:
+  bank-api:
+    build: ./bank-api
+    image: bank-api:0.1.0
+    # Only nginx needs to reach the API, and it does so over the compose
+    # network — this mapping exists purely so you can curl the API and open
+    # Swagger directly while setting things up. Delete it in production and the
+    # API becomes unreachable from outside the container network.
+    ports:
+      - "8085:8085"
+    env_file:
+      - .env
+    volumes:
+      # JDBC drivers, read-only. The Denodo driver is licensed and gitignored,
+      # so it is mounted rather than built into the image; -Dloader.path in the
+      # Dockerfile picks up whatever jars land here.
+      - ./deploy/drivers:/app/drivers:ro
+    restart: unless-stopped
+
+  bank-ui:
+    build: ./bank-ui
+    image: bank-ui:0.1.0
+    # Host port 8080 -> nginx port 80. This is the only address an operator
+    # needs; change the left-hand number to move it (e.g. "80:80" to serve the
+    # PC's default HTTP port).
+    ports:
+      - "8080:80"
+    # Start order only — Docker does not wait for the API to be ready. The
+    # nginx config resolves the upstream at request time precisely so a slow
+    # backend boot cannot take the frontend down with it.
+    depends_on:
+      - bank-api
+    restart: unless-stopped

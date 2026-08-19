@@ -552,15 +552,33 @@ workbook).
 
 Legacy: `processBmTransEnq()` cbswift.c:1849 and `processBmTransDetail()` :1941.
 **Fully local — reads thd0data** (transaction history, in the workbook).
-- Enquiry: index 1 on BM accNo (13); filters: postDate BETWEEN from/to; transType
-  blank=all, 'RR'=reversals only (`statmentFlag>'1'`), else exact; 20/page.
+- Enquiry: index 1 on BM accNo, **seeked with keylen 13 then walked ISNEXT**
+  (cbswift.c:1871-1872). Index 1 is 26 bytes — `accNo[13] + filler1[7] +
+  transCounter[5] + recType` (layout.h:1575-1578) — so **postDate is NOT in the
+  key** and the rows come back in POSTING-SEQUENCE order. Order by
+  `transCounter`, not by postDate: both are total orders within one account
+  (transCounter is unique there) so paging is stable either way, but they
+  disagree wherever a transaction was back-valued or posted late.
+  Filters: postDate BETWEEN from/to; transType blank=all, 'RR'=reversals only
+  (`statmentFlag>'1'`), else exact. 20/page on the wire — the revamp uses 10 and
+  the screen drains every page before summing, so the chunk size is invisible.
+  No recType filter at all here (the detail has one); harmless, since a recType
+  '1' row's "postDate" bytes are narrative text and never fall in a date range.
   Rows: transRef, postDate, valueDate, userId, transAmt, transCounter, transType.
 - Detail: index 2 (accNo+transRef), `recType='0'` header record; in the LEGACY
   files narratives 2/3 came from the recType='1' continuation record correlated
   on accNo+**transCounter** (struct thd1data — no transRef) — but the archival
   workbook folded those narratives into the **thd0data header row** itself;
   the archival `thd0data1` view is the recType-2/3 rate-change family and must
-  NOT be used for narratives. custName from stcusttab; non-printables scrubbed.
+  NOT be used for narratives. custName from stcusttab via `getCustName`
+  (cbothers.c:8195) — which **falls back to `crd0data.shortName` when the custNo
+  is not in stcusttab** (:8210-8231), and swaps in the ORG short names when
+  `custType != '0'` (:8234-8239) before the caller picks Arabic-else-English.
+  The crd0data half runs as its own point read AFTER the main query, and only
+  when the stcusttab name came back empty — because crd0data is keyed on the
+  6-char PACKED BM customer (`BmForms.bmCust`), arithmetic no SUBSTR expresses,
+  so it cannot ride along as a correlated subquery. That is also closer to the C,
+  which falls back on the stcusttab ROW being absent. Non-printables scrubbed.
 
 ```sql
 SELECT transRef, postDate, valueDate, userId, transAmt, transCounter, transType
@@ -569,7 +587,7 @@ WHERE  BankingDate=:bankingDate AND accNo=:bmAccNo
   AND  postDate BETWEEN :fromDate AND :toDate
   AND  (:transType='' OR (:transType='RR' AND statmentFlag>'1')
         OR (:transType<>'RR' AND transType=:transType))   -- exact branch must exclude the RR case
-ORDER  BY accNo OFFSET :lastRecCount ROWS FETCH NEXT 20 ROWS ONLY;
+ORDER  BY transCounter OFFSET :lastRecCount ROWS FETCH NEXT 20 ROWS ONLY;
 ```
 
 ## 19. Utility bills / SADAD (frmBillEnquiry, frmSadadEnq, frmSadadTransEnq)
@@ -610,19 +628,150 @@ ORDER  BY s.accNo, s.signatoryNo
 OFFSET :lastRecCount ROWS FETCH NEXT 20 ROWS ONLY;
 ```
 
-## 21. Statements & merchant — not in this codebase
+## 21. Statements — where each one actually lives
 
-Verified by sweep: the C server has **no handler** for on-demand statements,
-historical statements, or merchant statements.
-- **On-demand statement**: served by the core banking host via the Tuxedo gateways
-  (`ONLNGWENQ`/`FINONLNGWENQ` relay account enquiries; no statement service exists
-  here). Port = query the core/DB #2 transaction store.
-- **Historical statement**: produced by an external batch and delivered to branches
-  **by FTP**; only the authority codes (87, 94) exist in this system. Port = query
-  the archive store directly (thd0data in DB #1 may cover it — confirm).
-- **Merchant statement**: lives in the acquiring/POS system entirely; here it is
-  only authority role 81. Port = out of scope until that system's data source is
-  identified.
+### 21.1 On-demand statement + transaction inquiry (services 07/11) — cbrt01, fully local
+
+**Corrected.** An earlier sweep concluded these had no C handler; that sweep covered
+`cbcmssrv` only. They live in a SECOND server binary — `bmrtServer`, the "Real Time
+Update process" (`docs/cbrt.h`, `docs/cbrt01.c`) — which the VB6 client reaches on its
+own socket (`onlineHostName:OnlinePort`, default 2006). Neither handler touches
+Tuxedo, Finacle or the core host: `dealWithFingw()` sits in the same file but serves
+only the card services (00/31/33/61/62).
+
+Both read the same three local ISAM files:
+- **gld0data** — 13-char BM accNo (`actualToBmAcc`); supplies `bookBal`, `branchCode`
+- **crd0data** — 6-char BM custNo (`actualToBmCust(&accNo[5])`); supplies `shortName`,
+  `address1`, `language`
+- **thd0data** — recType `'0'` rows, plus a second handle on the recType `'1'`
+  continuation for narratives 2/3
+
+So these are **DB #1 enquiries over the same thd0data as §18**, not DB #2.
+
+#### The two handlers, diffed
+
+`getOndemandStmt()` (cbrt01.c:545) and `getTransEnquiry()` (:915) are near-identical
+copies. Every real difference:
+
+| | **07** on-demand statement | **11** transaction inquiry |
+|---|---|---|
+| row filter (:790 / :1162) | `recType != '0' \|\| statmentFlag >= '1'` → skip | `recType != '0'` → skip |
+| blank `toDate` | not substituted; `validate()` fails → `INCORRECTMSG` "03" | substituted with the SERVER's system date (:971-976) |
+| per-txn extras | — | `refNo`←`transRef`, `transCounter`, `supervisorId`, `statementFlag` |
+| detail record | 111 bytes (`ondemandStmtTrans`) | 130 bytes (`transEnquiryDetails`, "added for version 3.7") |
+| B/F balance | reverses out statement-eligible rows only | reverses out every row |
+
+The B/F difference is a definition, not a discrepancy: `bfBal = bookBal + |debits| -
+credits` accumulated over exactly the rows that survived the filter, so the two screens
+legitimately report DIFFERENT opening balances for the same account and range.
+
+`thd0data.statmentFlag` is documented `/* 1 - do not print */` (cbslib/layout.h:1583).
+Note §18's reversal filter uses `statmentFlag > '1'` while 07 excludes `>= '1'` — so
+flag value exactly `'1'` is suppressed from statements but is NOT an RR reversal.
+Probe real data before relying on either threshold.
+
+#### Shared mechanics
+
+`accNo[5..] > "6199999"` → `NOMAINACC`; overpunch decode at byte 13 (`>= 'P'` →
+negative); non-printable scrub (`>= 0 && < 27` → space) on name, address and all three
+narratives; 50 rows per page; continuation pages `break` out early rather than
+rescanning the whole history.
+
+Paging rides **index 1 = 26 bytes: `accNo[13] + filler1[7] + transCounter[5] +
+recType`** (layout.h:1575-1578). The seek is `isstart(..., 26, ISGREAT)` with
+`transCounter = lastTransPtr` and `recType='0'`, so ordering is `accNo, transCounter`
+and resume is `transCounter > :lastTransPtr`. That also settles §18's note: narratives
+2/3 correlate on **transCounter** — `thd1data` carries no `transRef`.
+
+`getTransEnquiry` at :953 has `strncmp(inBuf->lastTransPtr, "00000")` **missing its
+length argument** (07 has it at :583), so 11's "skip from-date validation on
+continuation pages" branch is decided by whatever the third argument happens to hold.
+Port 07's intent; do not replicate the bug.
+
+#### Open before the JDBC port
+
+1. **`crd0data` is a required view** (it was absent when DENODO-VIEWS.md:156 was
+   written; treated as present since 2026-08-19). Both handlers source
+   `custName`/`custAddress`/`languageCode` from it, so target it directly — no
+   `stcusttab`+`staddrtab` substitute. Columns used: `accNo[6]` (the 6-char BM
+   custNo from `actualToBmCust(&accNo[5])` = `BmForms.bmCust`, NOT the actual
+   form the other views carry — decided 2026-08-19, see DENODO-VIEWS.md item 2),
+   `shortName[30]`, `address1[30]`, `address2[30]`, `language`.
+
+   **Amount columns hold MAJOR units.** Measured 2026-08-19: `gld0data.bookBal`
+   reads 1552.49, not 155249. The archival amount columns are `numeric(16,3)`
+   and the ETL scaled them, so the workbook's "Decimal places are currency
+   dependent" (on ~71 columns across 14 tables) is pre-ETL FIELD documentation,
+   not a description of the loaded value. Two consequences, opposite directions:
+   the UI's `formatAmount` is right to print these as they are, and
+   `JdbcOnlineEnquiryRepository` must scale them UP by `decimalPlace` because
+   the gateway CONTRACT its screens share with the mock is minor units. The C
+   needed neither conversion — the ISAM field was minor units to begin with.
+
+   The packing only bites above 1,000,000: below that it is the last six digits,
+   at or above it the leading two digits collapse to a letter (1234567 → C34567).
+   So a view keyed the other way would agree on low customers and lose only the
+   high ones — pinned by `TransferPagingSqlTest` on exactly that boundary.
+
+   **`address1` is 30 chars, not 60** (cbslib/layout.h:751). Both handlers do
+   `strncpy(inBuf->custAddress, crdRec.address1, 60)` — copying 60 bytes from a
+   30-char field, so `custAddress[60]` is `address1 ‖ address2` CONCATENATED.
+   Requesting `address1` alone yields half the address.
+2. **`bookBal` snapshot.** The B/F walk-back starts from `gld0data.bookBal`, so it is
+   only meaningful against a single-valued `BankingDate` snapshot. Confirm `gld0data`
+   is one of those views first.
+
+Served by `JdbcOnlineEnquiryRepository` under the `denodo` profile. If crd0data
+cannot be read it throws `NotAvailableException` (HTTP 501) BEFORE fetching any
+transactions, so the screen shows nothing rather than an unnamed customer — a
+guard against the view regressing, not an expected state.
+
+### 21.2 Historical & merchant statements — genuinely not in this codebase
+
+- **Historical statement**: no C handler anywhere — verified by sweeping the
+  whole `CSD C Code` tree AND `cbrt01.c` for `histstmt`/`stmtFile`/`zipFileNo`,
+  zero hits. This one really is VB-only (frmHistStmt.frm), and it never queried a
+  database. Served now from **DB #3** (a separate Oracle instance) by
+  `JdbcStatementRepository`.
+
+  The legacy had **two sources on the one screen**, chosen by separate buttons:
+  - **Branch** — `generateReport` (:1252) loops YYYYMM and opens
+    `<stmtPath><brn3>\s<brn3><bmYY><MM>.idx`; each Btrieve row names a zip
+    volume `.0<zipFileNo>` and a member `stmtFile`, which is unzipped,
+    `lanfix`ed for `stmtSpec.lang` and `fmerge`d into `prtall.$s!`. Several rows
+    per account per month are normal — the `Do While … BGETNEXT` merges them in
+    sequence, which is what `HistoricalStatement.pageCount` records.
+  - **Head Office** — `reqPath\prtall.$s!`, a pre-merged file DELIVERED by HO
+    and requested over FTP (`cmdFtp` → `frmSendFile`); missing, the screen says
+    "Please call HO".
+
+  That two-source split is the antecedent of the screen's BM/PDP selector and a
+  hypothesis for the DB #3 pairing (BM ≈ branch, PDP ≈ HO) — see
+  `JdbcStatementRepository`. **Descoped deliberately**: Analyse (an `analyse`
+  utility over the merged print file → `prtall.$a!` / `prtall.$h!`, four
+  buttons) and the FTP request, both of which act on rendered text on a mapped
+  drive. **To-date defaults to 2009/07**, as the legacy hardcodes it — the BM
+  archive stops at the Finacle cutover, and the measured views span 1992-2009.
+- **Merchant statement**: no C handler either — same sweep, same zero hits. It
+  lives in the acquiring/POS system entirely, reached over a THIRD socket whose
+  host/port come from `mrchdata.ini` (not `statdata.ini`). Here it is only
+  authority role 81, and the port stops at `MerchantRepository`: the mock stands
+  in for that system, `UnavailableMerchantRepository` answers under denodo.
+
+  Two details a real client must not lose. **Both dates are shifted forward one
+  month** before they go on the wire — `incMonth` on the from-date plus `"01"`,
+  `incMonth` on the to-date plus its last day (:875, :884) — so a request for
+  Jan-Mar reaches the server as Feb 1 - Apr 30. And **the rows are opaque
+  150-char print lines**; the acquiring system formats, paginates and totals,
+  and the client spools. Neither is optional: dropping the shift returns the
+  wrong months, parsing the lines invents structure that is not there.
+
+  Error text works the OPPOSITE way round from the online gateway. There a
+  numeric code arrives and the client owns the wording; here `status != "000"`
+  comes with the server's own sentence in `aRemarks`/`eRemarks` and the client
+  only picks by language (:421-428). `MerchantService.checkStatus` surfaces that
+  sentence rather than a message of ours — inventing one would discard the only
+  explanation the acquiring system gives.
 
 ## 22. Related parties — heirs/proxy, joint holders, references, owners (tier-2)
 
@@ -677,11 +826,14 @@ owners W/'03'+'04' (local + home addresses). These also apply to signatories
    worth a query timeout + partial-result convention in the API.
 7. **Archival schema gaps (raise with the DB team):** `bkd0data` and `ccarrblk` are
    read by the blocked-amount breakup but are absent from the workbook's 106 tables.
-8. **Two integrations survive the DB consolidation:** live SADAD bill enquiry
-   (Tuxedo `UTBLENQ`/`SADBILLENQ`) and the core-host statement services — neither is
-   servable from DB #1/DB #2 as currently defined.
+8. **One integration survives the DB consolidation:** live SADAD bill enquiry
+   (Tuxedo `UTBLENQ`/`SADBILLENQ`), which neither DB #1 nor DB #2 can serve. The
+   on-demand statement was previously listed here as a second one; that was wrong —
+   `cbrt01.c` serves services 07 and 11 from local gld0data/crd0data/thd0data, so both
+   are DB #1 work. See §21.1.
 9. **Tier-1 is otherwise DB #1 territory:** SARIE transfers (rid0data), BM
-   transactions (thd0data + type-1 continuation rows), cards (stcardtab/stcardlog —
+   transactions AND the two cbrt01 enquiries — on-demand statement and transaction
+   inquiry — (thd0data + type-1 continuation rows), cards (stcardtab/stcardlog —
    the workbook already carries the CBS-era coreCustNo/coreAccNo columns),
    signatories (stsigntab⋈stidtab), SADAD history (stsadadlog), stop-cheque /
    standing-order / cheque-book details. Only the card screens' customer header

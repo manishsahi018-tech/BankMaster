@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
  * Denodo exposes them under an environment-specific prefix
  * (e.g. {@code bv_impala_stg_bankmaster_stcusttab}). The prefix differs per
  * environment (note the "stg" in staging), which is why it is configuration, not
- * code — set {@code bank.archival-db.table-prefix} / {@code bank.online-db.table-prefix}.
+ * code — set {@code bank.archival-db.table-prefix}.
  *
  * <p>Rewrite rule: the identifier immediately after FROM/JOIN gets the prefix.
  * This is safe for this codebase because every SQL statement puts a table name

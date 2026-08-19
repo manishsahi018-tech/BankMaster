@@ -69,6 +69,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                    aShortName, eShortName, aOrgShortName, eOrgShortName,
                    custType, preferredLang, branchCode, samaMainCategory, samaSubCategory
             FROM   stcusttab
+            WHERE  BankingDate = :bankingDate
             """;
 
     /** stcusttab point read — column list matches CustomerProfile. */
@@ -94,7 +95,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                    govtShareHoldingPerc, saudiShareHoldingPerc, foreignShareHoldingPerc,
                    crIssueDateType, licenseNo, approvalRefNo
             FROM   stcusttab
-            WHERE  custNo = :custNo
+            WHERE  BankingDate = :bankingDate
+              AND  custNo = :custNo
             """;
 
     /**
@@ -107,7 +109,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                    idIssueDateH, idIssueDateG, idExpiryDateH, idExpiryDateG,
                    idRefName
             FROM   stidtab
-            WHERE  custNo = :custNo AND idCategory = 'C'
+            WHERE  BankingDate = :bankingDate
+              AND  custNo = :custNo AND idCategory = 'C'
             ORDER  BY idType
             """;
 
@@ -132,7 +135,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
     private static final String OPEN_UPDATE_SQL = """
             SELECT branchCode, userId, lastUpdateUser
             FROM   stcustlog
-            WHERE  custNo = :custNo
+            WHERE  BankingDate = :bankingDate
+              AND  custNo = :custNo
             ORDER  BY lastUpdateDateTime %s
             FETCH  FIRST 1 ROWS ONLY
             """;
@@ -168,7 +172,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                    govtShareHoldingPerc, saudiShareHoldingPerc, foreignShareHoldingPerc,
                    crIssueDateType, licenseNo, approvalRefNo
             FROM   stcustlog
-            WHERE  custNo = :custNo
+            WHERE  BankingDate = :bankingDate
+              AND  custNo = :custNo
               AND  (datetime_bigdata = :dateTime OR datetime_bigdata = :dateTimeIso)
             """;
 
@@ -271,11 +276,14 @@ public class JdbcCustomerRepository implements CustomerRepository {
             rs.getString("idRefName"));
 
     private final NamedParameterJdbcTemplate jdbc;
+    private final BankingDateProvider bankingDate;
 
     public JdbcCustomerRepository(
             @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
+            BankingDateProvider bankingDate,
             @Value("${bank.archival-db.search-timeout-seconds:30}") long searchTimeoutSeconds) {
         this.jdbc = jdbc;
+        this.bankingDate = bankingDate;
         // SEARCHTIME=30 in the production cbcmssrv.cfg (cbrouter.c:92 default,
         // :1715 reads the override).
         this.searchTimeout = Duration.ofSeconds(searchTimeoutSeconds);
@@ -344,7 +352,9 @@ public class JdbcCustomerRepository implements CustomerRepository {
     private SearchScan<CustomerSummary> scan(String sql, Map<String, ?> params, RowMapper<CustomerSummary> mapper) {
         long deadline = System.nanoTime() + searchTimeout.toNanos();
         boolean[] cutShort = {false};
-        List<CustomerSummary> rows = jdbc.query(sql, new MapSqlParameterSource(params),
+        List<CustomerSummary> rows = jdbc.query(sql,
+                new MapSqlParameterSource(params)
+                        .addValue("bankingDate", bankingDate.bankingDate()),
                 (ResultSetExtractor<List<CustomerSummary>>) rs -> {
                     List<CustomerSummary> out = new ArrayList<>();
                     while (rs.next()) {
@@ -367,7 +377,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
     private SearchScan<CustomerSummary> searchEquals(String column, String value, boolean arabicSearch) {
         String order = "custNo".equals(column) ? "custNo" : column + ", custNo";
         return scan(SEARCH_COLUMNS + """
-                WHERE  %s = :value
+                  AND  %s = :value
                 ORDER  BY %s
                 """.formatted(column, order),
                 Map.of("value", value),
@@ -384,9 +394,10 @@ public class JdbcCustomerRepository implements CustomerRepository {
         return jdbc.query("""
                 SELECT COALESCE(NULLIF(TRIM(custNo), ''), SUBSTR(bmAccNo, 6, 7)) AS custNo
                 FROM   stcardtab
-                WHERE  cardNo = :cardNo
+                WHERE  BankingDate = :bankingDate
+                  AND  cardNo = :cardNo
                 """,
-                Map.of("cardNo", cardNo),
+                Map.of("bankingDate", bankingDate.bankingDate(), "cardNo", cardNo),
                 (rs, i) -> rs.getString("custNo"))
                 .stream().filter(JdbcCustomerRepository::hasText).findFirst();
     }
@@ -400,7 +411,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
      */
     private SearchScan<CustomerSummary> searchByTel(CustomerSearchCriteria c) {
         StringBuilder sql = new StringBuilder(SEARCH_COLUMNS)
-                .append("WHERE  telHomeNo = :telNo\n");
+                .append("  AND  telHomeNo = :telNo\n");
         Map<String, Object> params = new HashMap<>();
         params.put("telNo", c.telNo().trim());
         if (hasText(c.telExt())) {
@@ -416,7 +427,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
         boolean arabic = isArabic(first);
         String fCol = arabic ? "aFirstName" : "eFirstName";
         StringBuilder sql = new StringBuilder(SEARCH_COLUMNS)
-                .append("WHERE  ").append(fCol).append(" LIKE CONCAT(:firstName, '%')\n");
+                .append("  AND  ").append(fCol).append(" LIKE CONCAT(:firstName, '%')\n");
         Map<String, Object> params = new HashMap<>();
         params.put("firstName", first);
         // Legacy continue-filters: second/last name prefixes, same language
@@ -440,7 +451,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
         boolean arabic = isArabic(second);
         String sCol = arabic ? "a2ndName" : "e2ndName";
         StringBuilder sql = new StringBuilder(SEARCH_COLUMNS)
-                .append("WHERE  ").append(sCol).append(" LIKE CONCAT(:secondName, '%')\n");
+                .append("  AND  ").append(sCol).append(" LIKE CONCAT(:secondName, '%')\n");
         Map<String, Object> params = new HashMap<>();
         params.put("secondName", second);
         if (hasText(c.lastName())) {
@@ -457,7 +468,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
         boolean arabic = isArabic(last);
         String lCol = arabic ? "aLastName" : "eLastName";
         return scan(SEARCH_COLUMNS + """
-                WHERE  %s LIKE CONCAT(:lastName, '%%')
+                  AND  %s LIKE CONCAT(:lastName, '%%')
                 ORDER  BY %s, custNo
                 """.formatted(lCol, lCol),
                 Map.of("lastName", last),
@@ -473,7 +484,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
         // a blank input part only matches rows whose stored part is
         // blank too.
         return scan(SEARCH_COLUMNS + """
-                WHERE  COALESCE(TRIM(samaMainCategory), '') = :mainCategory
+                  AND  COALESCE(TRIM(samaMainCategory), '') = :mainCategory
                   AND  COALESCE(TRIM(samaSubCategory), '') = :subCategory
                 ORDER  BY samaMainCategory, samaSubCategory, custNo
                 """,
@@ -526,10 +537,11 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 SELECT branchCode, userId, datetime_bigdata AS dateTime, bmUpdateStatus,
                        supervisorId, lastUpdateDateTime, samaMainCategory, samaSubCategory
                 FROM   stcustlog
-                WHERE  custNo = :custNo
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
                 ORDER  BY COALESCE(lastUpdateDateTime, '')
                 """,
-                Map.of("custNo", padCust(custNo)),
+                Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
                 (rs, i) -> {
                     String status = trim(rs.getString("bmUpdateStatus"));
                     // Field rule: supervisorId / lastUpdateDateTime blanked
@@ -550,8 +562,9 @@ public class JdbcCustomerRepository implements CustomerRepository {
 
     @Override
     public Optional<CustomerProfile> profile(String custNo) {
-        Map<String, Object> params =
-                Map.of("custNo", padCust(custNo));
+        Map<String, Object> params = Map.of(
+                "bankingDate", bankingDate.bankingDate(),
+                "custNo", padCust(custNo));
         return jdbc.query(PROFILE_SQL, params, PROFILE_MAPPER).stream().findFirst()
                 .map(p -> p.withRelated(idDocuments(params), openUpdate(params, p)));
     }
@@ -637,7 +650,9 @@ public class JdbcCustomerRepository implements CustomerRepository {
         //
         // The same pairing is applied to the stidlog / staddrlog overlays below
         // and to JdbcAccountRepository.snapshot, which has the identical shape.
-        Map<String, Object> params = Map.of("custNo", padCust(custNo),
+        Map<String, Object> params = Map.of(
+                "bankingDate", bankingDate.bankingDate(),
+                "custNo", padCust(custNo),
                 "dateTime", trim(dateTime), "dateTimeIso", BmForms.bmToIso(trim(dateTime)));
         Map<String, String> snapshot = jdbc.query(PROFILE_ASOF_SQL, params, PROFILE_COLUMN_MAPPER)
                 .stream().findFirst().orElse(null);
@@ -652,12 +667,14 @@ public class JdbcCustomerRepository implements CustomerRepository {
         Map<String, Object> logKey = jdbc.query("""
                 SELECT branchCode, userId, datetime_bigdata AS dateTime
                 FROM   stcustlog
-                WHERE  custNo = :custNo
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
                   AND  (datetime_bigdata = :dateTime OR datetime_bigdata = :dateTimeIso)
                 """,
                 params,
                 (rs, i) -> {
                     Map<String, Object> k = new HashMap<>();
+                    k.put("bankingDate", bankingDate.bankingDate());
                     k.put("branchCode", rs.getString("branchCode"));
                     k.put("userId", rs.getString("userId"));
                     String bm = BmForms.isoToBmTimestamp(rs.getString("dateTime"));
@@ -689,7 +706,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     SELECT idType, idNo, idIssuedAt, idIssueDateH, idIssueDateG,
                            idExpiryDateH, idExpiryDateG
                     FROM   stidlog
-                    WHERE  branchCode = :branchCode
+                    WHERE  BankingDate = :bankingDate
+                      AND  branchCode = :branchCode
                       AND  userId = :userId
                       AND  (datetime_bigdata = :dateTime OR datetime_bigdata = :dateTimeIso)
                       AND  idCategory = 'C'
@@ -739,7 +757,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     SELECT address1, address2, poBox, cityName, zipCode, country,
                            telHomeNo, telOffNo, mobileNo, eMail
                     FROM   staddrlog
-                    WHERE  branchCode = :branchCode
+                    WHERE  BankingDate = :bankingDate
+                      AND  branchCode = :branchCode
                       AND  userId = :userId
                       AND  (datetime_bigdata = :dateTime OR datetime_bigdata = :dateTimeIso)
                       AND  addressType = '00' AND addressNo = '0000'
@@ -770,13 +789,15 @@ public class JdbcCustomerRepository implements CustomerRepository {
         // (cbjuristic.c:2968-3320) serves whatever customer it is asked
         // for — screen routing by custType/category is the client's job.
         Map<String, Object> params = Map.of(
+                "bankingDate", bankingDate.bankingDate(),
                 "custNo", padCust(custNo));
         return jdbc.query("""
                 SELECT custNo, branchCode, createdUserId, createdDateTime,
                        signatureNature, internetBankAcc, custAdviceFlag, updatedForSama,
                        relationshipManager, generalMemo, marketingMemo, accFreezingGracePeriod
                 FROM   stcusttab
-                WHERE  custNo = :custNo
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
                 """,
                 params,
                 (rs, i) -> new String[] {
@@ -819,7 +840,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 SELECT address1, address2, poBox, zipCode, cityName, country,
                        telOffNo, telHomeNo, faxNo, mobileNo, pagerNo, eMail
                 FROM   staddrtab
-                WHERE  custNo = :custNo
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
                   AND  addressType = '01' AND addressNo = '0000'
                 """,
                 params,
@@ -855,13 +877,17 @@ public class JdbcCustomerRepository implements CustomerRepository {
             List<String[]> rows = jdbc.query("""
                     SELECT accNo, accStatus, statementFreq, checkBook, droppedAcc
                     FROM   stacclog
-                    WHERE  branchCode = :branchCode
+                    WHERE  BankingDate = :bankingDate
+                      AND  branchCode = :branchCode
                       AND  userId = :userId
                       AND  (datetime_bigdata = :dateTime OR datetime_bigdata = :dateTimeIso)
                     """,
-                    Map.of("branchCode", branchCode == null ? "" : branchCode,
+                    Map.of("bankingDate", bankingDate.bankingDate(),
+                            "branchCode", branchCode == null ? "" : branchCode,
                             "userId", createdUserId == null ? "" : createdUserId,
-                            "dateTime", createdDateTime == null ? "" : createdDateTime),
+                            "dateTime", createdDateTime == null ? "" : createdDateTime,
+                            "dateTimeIso", BmForms.bmToIso(
+                                    createdDateTime == null ? "" : createdDateTime)),
                     (rs, i) -> new String[] {
                             rs.getString("accNo"), rs.getString("accStatus"),
                             rs.getString("statementFreq"), rs.getString("checkBook"),
@@ -914,10 +940,11 @@ public class JdbcCustomerRepository implements CustomerRepository {
                        proxyIssueDateH, proxyIssueDateG, activeStatus, branchCode,
                        COALESCE(NULLIF(TRIM(aShortName), ''), eShortName) AS shortName
                 FROM   stheirtab
-                WHERE  custNo = :custNo
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
                 ORDER  BY heirNo
                 """,
-                Map.of("custNo", padCust(custNo)),
+                Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
                 (rs, i) -> new HeirEntry(
                         rs.getString("heirNo"), rs.getString("heirType"),
                         rs.getString("shortName"), rs.getString("idType"), rs.getString("idNo"),
@@ -936,10 +963,11 @@ public class JdbcCustomerRepository implements CustomerRepository {
                        idType, idNo, nationality, mobileNo, jointOpenDate,
                        activeStatus, branchCode
                 FROM   stjointtab
-                WHERE  custNo = :custNo
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
                 ORDER  BY jointCustNo
                 """,
-                Map.of("custNo", padCust(custNo)),
+                Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
                 (rs, i) -> {
                     String shortName = prefersArabic(rs.getString("preferredLang"))
                             ? firstNonBlank(rs.getString("aShortName"), rs.getString("eShortName"))
@@ -960,10 +988,11 @@ public class JdbcCustomerRepository implements CustomerRepository {
                        idType, idNo, activeStatus, branchCode,
                        COALESCE(NULLIF(TRIM(aShortName), ''), eShortName) AS shortName
                 FROM   stcreftab
-                WHERE  custNo = :custNo
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
                 ORDER  BY referenceNo
                 """,
-                Map.of("custNo", padCust(custNo)),
+                Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
                 (rs, i) -> new ReferenceEntry(
                         rs.getString("referenceNo"), rs.getString("referenceType"),
                         rs.getString("referenceReqdFor"), rs.getString("shortName"),
@@ -978,10 +1007,11 @@ public class JdbcCustomerRepository implements CustomerRepository {
                        shareHoldingPerc, ownerEnabled, branchCode,
                        COALESCE(NULLIF(TRIM(aShortName), ''), eShortName) AS shortName
                 FROM   stowntab
-                WHERE  custNo = :custNo
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
                 ORDER  BY ownerNo
                 """,
-                Map.of("custNo", padCust(custNo)),
+                Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
                 (rs, i) -> new OwnerEntry(
                         rs.getString("ownerNo"), rs.getString("ownerType"),
                         rs.getString("shortName"), rs.getString("idType"), rs.getString("idNo"),
@@ -1024,10 +1054,11 @@ public class JdbcCustomerRepository implements CustomerRepository {
                        accFreezingGracePeriod,
                        branchCode, createdUserId, createdDateTime
                 FROM   stcusttab
-                WHERE  custNo = :custNo
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
                 FETCH FIRST 1 ROWS ONLY
                 """,
-                Map.of("custNo", padCust(custNo)),
+                Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
                 (rs, i) -> {
                     Map<String, String> d = new LinkedHashMap<>();
                     d.put("education", trim(rs.getString("educationCode")));
@@ -1083,10 +1114,11 @@ public class JdbcCustomerRepository implements CustomerRepository {
         List<String[]> cat = jdbc.query("""
                 SELECT samaMainCategory, samaSubCategory
                 FROM   stcusttab
-                WHERE  custNo = :custNo
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
                 FETCH FIRST 1 ROWS ONLY
                 """,
-                Map.of("custNo", padCust(custNo)),
+                Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
                 (rs, i) -> new String[] {trim(rs.getString("samaMainCategory")),
                         trim(rs.getString("samaSubCategory"))});
         if (cat.isEmpty()) {
@@ -1098,10 +1130,12 @@ public class JdbcCustomerRepository implements CustomerRepository {
                        documnetNo11, documnetNo12, documnetNo13, documnetNo14, documnetNo15,
                        documnetNo16, documnetNo17, documnetNo18, documnetNo19, documnetNo20
                 FROM   stctltabDC
-                WHERE  samaMainCategory = :main AND samaSubCategory = :sub
+                WHERE  BankingDate = :bankingDate
+                  AND  samaMainCategory = :main AND samaSubCategory = :sub
                 FETCH FIRST 1 ROWS ONLY
                 """,
-                Map.of("main", cat.get(0)[0], "sub", cat.get(0)[1]),
+                Map.of("bankingDate", bankingDate.bankingDate(),
+                        "main", cat.get(0)[0], "sub", cat.get(0)[1]),
                 (rs, i) -> {
                     List<String> docs = new java.util.ArrayList<>();
                     for (int n = 1; n <= 20; n++) {

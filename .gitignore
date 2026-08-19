@@ -6,6 +6,7 @@ target/
 dist/
 dist-ssr/
 *.class
+.vite/
 
 # ---- Build artifacts (regenerate: `mvn package` / `npm run build`) ----
 deploy/*.jar

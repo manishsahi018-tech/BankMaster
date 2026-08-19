@@ -89,37 +89,56 @@ bank:
     # query is rewritten automatically; blank means "views named like the
     # legacy tables". Change this (not the SQL) when moving staging -> prod.
     table-prefix: ${ARCHIVAL_DB_TABLE_PREFIX:bv_impala_stg_bankmaster_}
-    # Optional fixed restore snapshot (YYYYMMDD). Leave empty to use
-    # MAX(BankingDate) from stcusttab, resolved once at first query.
-    banking-date: ${ARCHIVAL_BANKING_DATE:}
+    # THE BANKING DATE. Every archival view carries a BankingDate column (the
+    # ETL's "Data Restored date", key part 1 on 98 of the 106 views), and every
+    # query this app issues against a Denodo view now filters on it:
+    #
+    #     WHERE ... AND <alias>.BankingDate = :bankingDate
+    #
+    # so one property pins the whole application to a single restore snapshot.
+    # Set it to the snapshot you want the screens to read.
+    #
+    # FORMAT: bound as a plain string and compared with =, so it must be written
+    # EXACTLY as the views store it. The default below is the ISO form
+    # (2009-07-11), which is what a DATE-typed column renders as; if the views
+    # type BankingDate as a YYYYMMDD string instead, set 20090711. A format
+    # mismatch is not an error — it is every screen returning no rows, so this
+    # is the first thing to check if the app comes up empty.
+    #
+    # 11/07/2009 is the restore date the CSD side sits on: all 29 st* views were
+    # measured single-valued at it (18 Aug 2026). It is NOT the latest snapshot
+    # of every view — gld0data/pyd0data/sod0data/rid0data/thd0data span
+    # 1992-2009, and stcardtab runs on to 08/12/2012 — so a key present only in
+    # an older BM snapshot, and any card written after this date, will not be
+    # returned. That trade-off is deliberate; see docs/DENODO-VIEWS.md.
+    #
+    # Leaving this BLANK falls back to MAX(BankingDate) FROM stcusttab, resolved
+    # once at first query and logged as a warning — a dev convenience, not a
+    # configuration.
+    banking-date: ${ARCHIVAL_BANKING_DATE:2009-07-11}
     # Customer-search clock, the legacy's SEARCHTIME (cbcmssrv.cfg = 30;
     # cbrouter.c:92 default). A search is bounded by TIME, not row count: when
     # it expires the rows already read are returned with an "incomplete" flag,
     # exactly as the C's alarm(searchTimeOut) did (cbbranch.c:1728-1755).
     search-timeout-seconds: ${ARCHIVAL_SEARCH_TIMEOUT_SECONDS:30}
-  online-db:              # DB #2 — replaces the cbcmssrv/Finacle online source.
-                          # Engine still undecided (may NOT be Denodo) — it is a
-                          # plain second JDBC connection: point the URL + driver
-                          # env vars at whatever it turns out to be, and drop
-                          # that engine's JDBC driver jar next to the Denodo one
-                          # in the -Dloader.path directory. Defaults to the
-                          # archival Denodo connection until then.
-    jdbc-url: ${ONLINE_DB_URL:${ARCHIVAL_DB_URL:jdbc:vdb://denodo-host:9999/archival}}
-    username: ${ONLINE_DB_USER:${ARCHIVAL_DB_USER:}}
-    password: ${ONLINE_DB_PASSWORD:${ARCHIVAL_DB_PASSWORD:}}
-    driver-class-name: ${ONLINE_DB_DRIVER:com.denodo.vdp.jdbc.Driver}
-    read-only: true
-    maximum-pool-size: 2
-    # Prefix for DB #2's views (defaults to the archival prefix until DB #2 has
-    # its own source). See archival-db.table-prefix above.
-    table-prefix: ${ONLINE_DB_TABLE_PREFIX:${ARCHIVAL_DB_TABLE_PREFIX:}}
+  # NO online-db (DB #2). It was a second pool onto the same Denodo server —
+  # every property defaulted to its archival counterpart and no repository
+  # queried it — so it is merged into archival-db above. On-demand Statement and
+  # Transaction Inquiry no longer need it either: their legacy server (cbrt01)
+  # read local gld0data/crd0data/thd0data, so JdbcOnlineEnquiryRepository serves
+  # them from DB #1. What genuinely still lives on the Finacle gateway is the
+  # card screens' customer header (the TODO(DB #2) markers in JdbcCardRepository).
+  # When that source turns up on its own engine, add the block back with its own
+  # URL + driver and drop that engine's JDBC driver jar next to the Denodo one
+  # in -Dloader.path.
   statement-db:           # DB #3 — the statement archive, Historical Statement only.
                           # A SEPARATE Oracle instance, not Denodo and not DB #2:
                           # it replaces the legacy's Btrieve statement index plus
                           # the zipped pre-rendered pages it pointed at
-                          # (frmHistStmt.frm), and holds nothing else. Drop
-                          # ojdbc*.jar next to the Denodo driver in the
-                          # -Dloader.path directory.
+                          # (frmHistStmt.frm), and holds nothing else. Its
+                          # ojdbc driver is a normal pom.xml dependency bundled
+                          # into the jar — nothing to drop into -Dloader.path,
+                          # unlike the Denodo driver.
                           #
                           # OFF by default: with no URL configured the screen
                           # reports itself unavailable rather than failing with a
@@ -154,9 +173,13 @@ bank:
     #
     # What actually distinguishes the two archives is not recorded anywhere:
     # "PDP" appears nowhere in the VB6, the C, or the archival dictionary. So
-    # BOTH pairs are queried and every statement is tagged with the pair it came
-    # from, rather than one being guessed at and the other dropped. Blank out a
-    # pair's header name to stop querying it.
+    # neither is guessed at: the SCREEN carries a System selector (BM / PDP) and
+    # exactly the chosen pair is queried. Blanking a pair's table names leaves
+    # that system unconfigured — selecting it then reports which properties are
+    # missing rather than returning "no report found".
+    #
+    # The non-PDP pair is the BM one — the archive holding the statements the
+    # legacy screen itself produced — and is what the selector defaults to.
     # ---------------------------------------------------------------------
     hdr-table: ${STATEMENT_DB_HDR_TABLE:STMT_HDR}
     txn-table: ${STATEMENT_DB_TXN_TABLE:STMT_TXN}

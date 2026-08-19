@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Field, TextInput, ReadOnlyInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
 import type { Account } from '../types.ts'
-import type { HistoricalStatement as Statement } from '../api.ts'
+import type { HistoricalStatement as Statement, StatementSystem } from '../api.ts'
 import { api } from '../api.ts'
 import { hasAuthority } from '../session.ts'
 import { formatDate, formatPlainAmount } from '../schema/helpers.ts'
@@ -27,8 +27,38 @@ import { formatDate, formatPlainAmount } from '../schema/helpers.ts'
 //
 // The month loop and the two BM key encodings (convertAcc2Bm, convertYear2Bm)
 // are deliberately absent — they existed only to build Btrieve keys.
+//
+// THE SYSTEM SELECTOR is new as a control, but not as an idea. The legacy had
+// TWO sources on this screen and made the operator choose with separate buttons:
+// Generate/View/Print read the BRANCH archive it built from Btrieve, while View
+// HO / Print HO read reqPath\prtall.$s! — a pre-merged statement delivered by
+// Head Office and requested over FTP (cmdFtp -> frmSendFile), whose absence the
+// screen reports as "Please call HO". DB #3 holds two header/detail pairs, BM
+// and PDP, and the selector is that same either/or in one control. Whether the
+// pairs line up with branch-vs-HO is a hypothesis, not a fact — see
+// JdbcStatementRepository. Exactly one pair is read, so a result is never a
+// merge of the two archives.
+//
+// NOT PORTED, descoped deliberately: Analyse. The legacy shelled out to an
+// `analyse` utility over the merged print file (prtall.$s! -> prtall.$a!, and
+// prtall.$h! for the HO variant) and opened the result in Notepad — four
+// buttons in all. It operated on rendered text, which no longer exists here.
+//
+// Not ported either: the FTP request to Head Office. It fetched a FILE onto a
+// mapped drive, which has no meaning against a relational archive.
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
+
+/**
+ * Where the BM archive ends: Finacle went live in July 2009 and nothing was
+ * written here after it (frmHistStmt.frm:1195-1197). Measured data agrees — the
+ * BM archival views span 1992-2009.
+ */
+const LAST_ARCHIVED_YEAR = '2009'
+const LAST_ARCHIVED_MONTH = '07'
+
+/** The two archives DB #3 holds. Sent verbatim — the API takes these strings. */
+const SYSTEMS: StatementSystem[] = ['BM', 'PDP']
 
 // Legacy message text, transcribed from the inline comments beside each MsgBox
 // in frmHistStmt.frm — the errXxx(UserLang) string table is not in the source
@@ -101,12 +131,13 @@ function StatementCard({ statement }: { statement: Statement }) {
             </p>
           </div>
           <div className="text-right text-xs text-muted-soft">
-            {/* Which of the two archives this came from. Shown because nothing
-                in the legacy says what separates them, so a statement appearing
-                twice must be explainable rather than looking like a duplicate
-                bug. */}
+            {/* Which archive this came from — the System that was selected,
+                echoed back by the server. Redundant on screen while the
+                selector is in view, but it is what makes a saved or printed
+                sheet self-describing, and nothing in the legacy says what
+                separates the two archives. */}
             <span className="rounded-md border border-edge px-2 py-0.5 font-medium text-ink-soft">
-              {s.source === 'PDP' ? 'PDP archive' : 'Statement archive'}
+              {s.source} archive
             </span>
             {s.pageCount > 1 && <p className="mt-1">{s.pageCount} printed pages</p>}
           </div>
@@ -277,11 +308,20 @@ export default function HistoricalStatement({
   const canKeyAccount = deletedAccountRoute && hasAuthority('~87')
   const [accNo, setAccNo] = useState(account?.accountNumber ?? '')
   const [branchCode, setBranchCode] = useState(account?.branchCode ?? '')
+  // Defaults to BM: it is the archive that holds the statements the legacy
+  // screen itself produced, so an operator who never touches the selector gets
+  // what the legacy would have given them.
+  const [system, setSystem] = useState<StatementSystem>('BM')
   const [form, setForm] = useState({
     fromMonth: '',
     fromYear: '',
-    toMonth: String(new Date().getMonth() + 1).padStart(2, '0'),
-    toYear: String(new Date().getFullYear()),
+    // Form_Load (:1195-1197) hardcodes these, having COMMENTED OUT the
+    // Year(Date)/Month(Date) version above them: "since Finacle is implemented
+    // on Jul'2009, historical end date is defaulted to Jul.2009". The BM
+    // archive stops at the Finacle cutover, so today's date would default the
+    // range's upper half to months that cannot hold a statement.
+    toMonth: LAST_ARCHIVED_MONTH,
+    toYear: LAST_ARCHIVED_YEAR,
   })
   const [statements, setStatements] = useState<Statement[] | null>(null)
   const [generating, setGenerating] = useState(false)
@@ -317,6 +357,7 @@ export default function HistoricalStatement({
         branchCode: branchCode.trim(),
         fromYearMonth: `${form.fromYear}${form.fromMonth}`,
         toYearMonth: `${form.toYear}${form.toMonth}`,
+        system,
         // The route is a server-side decision, not just a screen mode: it
         // skips the staff-branch rule and adds the still-exists refusal.
         ...(deletedAccountRoute ? { deletedAccount: 'true' } : {}),
@@ -337,6 +378,7 @@ export default function HistoricalStatement({
     }
   }
 
+  const showBranchCode = system === 'PDP' || deletedAccountRoute
   const hasReport = statements !== null && statements.length > 0
   const lineCount = (statements ?? []).reduce((n, s) => n + s.lines.length, 0)
 
@@ -352,27 +394,52 @@ export default function HistoricalStatement({
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
           Historical Statement Printing
         </h1>
-        <p className="mt-1 text-sm text-muted">
-          Legacy frmHistStmt. Served from the statement archive — a separate database from the
-          archival and online sources.
-        </p>
       </div>
 
       <div className="rounded-2xl border border-edge bg-surface p-5 shadow-sm sm:p-6">
-        <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Branch Code" htmlFor="branchCode">
-            <TextInput
-              id="branchCode"
-              value={branchCode}
-              maxLength={4}
-              inputMode="numeric"
+        {/* Above the legacy fields and separated from them, because it does not
+            narrow the enquiry the way they do — it picks WHICH ARCHIVE the
+            enquiry runs against: BM and PDP are separate sets of tables, and a
+            statement in one need not be in the other. Changing it invalidates
+            any report on screen, same as editing a field (legacy
+            disableButtons, :1570). */}
+        <div className="mb-5 border-b border-edge-soft pb-5">
+          <Field label="System" htmlFor="system" className="w-40">
+            <Select
+              id="system"
+              options={SYSTEMS}
+              value={system}
               onChange={(e) => {
-                setBranchCode(digitsOnly(e.target.value))
+                setSystem(e.target.value as StatementSystem)
                 setStatements(null)
               }}
-              placeholder="0000"
             />
           </Field>
+        </div>
+
+        <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Branch Code filters the PDP header query and nothing else, so it is
+              only worth showing for PDP. It is still SENT for BM — the value
+              comes off the grid row and the server still validates it and keys
+              the staff-branch rule on it — it just has nothing to control there.
+              The exception is the deleted-account route: no grid row means no
+              branch to carry, so hiding the box would leave the operator unable
+              to satisfy a 4-character rule they cannot see. */}
+          {showBranchCode && (
+            <Field label="Branch Code" htmlFor="branchCode">
+              <TextInput
+                id="branchCode"
+                value={branchCode}
+                maxLength={4}
+                inputMode="numeric"
+                onChange={(e) => {
+                  setBranchCode(digitsOnly(e.target.value))
+                  setStatements(null)
+                }}
+                placeholder="0000"
+              />
+            </Field>
+          )}
 
           {/* txtAccNo.Enabled = 0 by default — carried from the grid. The
               deleted-account route enables it, and only for ~87
@@ -516,8 +583,8 @@ export default function HistoricalStatement({
         <section className="print-sheet print-landscape" aria-hidden="true">
           <h1>Historical Statement — {accNo}</h1>
           <p className="print-meta">
-            Branch {branchCode} · {form.fromMonth}/{form.fromYear} to {form.toMonth}/{form.toYear} ·
-            Printed {new Date().toLocaleString('en-GB')}
+            {system} archive · Branch {branchCode} · {form.fromMonth}/{form.fromYear} to{' '}
+            {form.toMonth}/{form.toYear} · Printed {new Date().toLocaleString('en-GB')}
           </p>
           {statements!.map((s) => (
             <table key={`${s.source}-${s.stmtDate}-${s.stmtNum}`} className="page-break">

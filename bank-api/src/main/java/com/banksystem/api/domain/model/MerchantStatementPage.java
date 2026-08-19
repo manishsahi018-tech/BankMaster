@@ -16,6 +16,19 @@ import java.util.List;
  * totalling, and the client only spools what it is given. {@code lines} is
  * therefore a list of strings and nothing here parses them.
  *
+ * <p>Note which side owns the ERROR TEXT here, because it is the opposite of
+ * the online gateway. There, the reply carries a numeric code and the CLIENT
+ * maps it to its own wording ({@code OnlineEnquiryService.checkStatus}). Here
+ * the SERVER sends the sentence, in both languages, and the client only chooses
+ * between them by user language (frmMerchantStmt.frm:421-428). So the remarks
+ * are not decoration to be replaced with a tidier message of our own — they are
+ * the only account anyone gets of why the acquiring system refused.
+ *
+ * @param status         the server's own code; {@code "000"} is success and
+ *                       anything else means the statement was not produced
+ * @param aRemarks       the server's Arabic explanation, shown when the
+ *                       operator's language is Arabic
+ * @param eRemarks       the same in English
  * @param merchantNo     the merchant this page belongs to
  * @param lines          the page's print lines, each up to 150 chars; a leading
  *                       form feed (\f) marks a page break for the printer
@@ -23,12 +36,22 @@ import java.util.List;
  * @param completionFlag "1" when this is the final page
  */
 public record MerchantStatementPage(
+        String status,
+        String aRemarks,
+        String eRemarks,
         String merchantNo,
         List<String> lines,
         String lastRecCount,
         String completionFlag) {
 
+    /** The server's success code — every other value stops the enquiry. */
+    public static final String SUCCESS = "000";
+
     public static MerchantStatementPage empty(String merchantNo) {
-        return new MerchantStatementPage(merchantNo, List.of(), "00000", "1");
+        return new MerchantStatementPage(SUCCESS, "", "", merchantNo, List.of(), "00000", "1");
+    }
+
+    public boolean isSuccess() {
+        return SUCCESS.equals(status == null ? "" : status.trim());
     }
 }

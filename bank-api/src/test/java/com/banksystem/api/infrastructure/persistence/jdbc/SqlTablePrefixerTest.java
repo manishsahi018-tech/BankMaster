@@ -22,6 +22,21 @@ class SqlTablePrefixerTest {
                 .isEqualTo("SELECT c.custNo FROM " + P + "stcusttab c JOIN " + P + "stidtab i ON i.custNo = c.custNo");
     }
 
+    /**
+     * The latest-snapshot predicate (JdbcAccountRepository.standingOrders)
+     * names the SAME table twice — outer row and correlated MAX. Both must be
+     * prefixed; an unprefixed inner reference would resolve only in an
+     * environment with no prefix, so it would pass locally and fail in staging.
+     */
+    @Test
+    void prefixesBothReferencesWhenSubqueryRepeatsTheOuterTable() {
+        String in = "SELECT s.sodNo FROM sod0data s WHERE s.BankingDate = "
+                + "(SELECT MAX(x.BankingDate) FROM sod0data x WHERE x.accNo = s.accNo)";
+        assertThat(prefixer.rewrite(in))
+                .isEqualTo("SELECT s.sodNo FROM " + P + "sod0data s WHERE s.BankingDate = "
+                        + "(SELECT MAX(x.BankingDate) FROM " + P + "sod0data x WHERE x.accNo = s.accNo)");
+    }
+
     @Test
     void prefixesTableInsideCorrelatedSubqueryAndOuter() {
         String in = "SELECT (SELECT COUNT(*) FROM stsodlog s WHERE s.acc = a.acc) FROM stacclog a";

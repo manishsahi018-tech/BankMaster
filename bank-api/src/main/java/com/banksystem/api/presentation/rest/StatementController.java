@@ -39,6 +39,11 @@ public class StatementController {
      *
      * <p>The period is month-granular because the legacy form is: From Year +
      * From Month and To Year + To Month, no day. Both bounds are inclusive.
+     *
+     * <p>{@code system} selects which of DB #3's two archives to read — BM or
+     * PDP. It has no legacy counterpart: the Btrieve arrangement the screen
+     * replaced held one index tree and there was nothing to choose between.
+     * Exactly one archive is read, so the answer is never a merge of both.
      */
     @GetMapping("/accounts/{accNo}/historical-statement")
     public List<HistoricalStatement> historicalStatement(
@@ -46,6 +51,7 @@ public class StatementController {
             @RequestParam String branchCode,
             @RequestParam String fromYearMonth,
             @RequestParam String toYearMonth,
+            @RequestParam(defaultValue = "BM") String system,
             @RequestParam(defaultValue = "false") boolean deletedAccount,
             HttpServletRequest request) {
 
@@ -67,6 +73,6 @@ public class StatementController {
                     "Historical statements for deleted accounts require authority ~87");
         }
         return statements.historicalStatements(
-                accNo, branchCode, fromYearMonth, toYearMonth, deletedAccount, user);
+                accNo, branchCode, fromYearMonth, toYearMonth, system, deletedAccount, user);
     }
 }

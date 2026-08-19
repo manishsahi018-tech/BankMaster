@@ -13,17 +13,13 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 /**
- * The three logical databases of the revamp:
+ * The connections of the revamp:
  *
  *   archival-db  (DB #1) — the BM archival schema (stcusttab, gld0data, …)
  *                          served by Denodo views (Hive-backed) over the
  *                          Denodo JDBC driver; replaces the legacy MS
- *                          Access source.
- *   online-db    (DB #2) — replaces the legacy cbcmssrv TCP/IP / Finacle
- *                          gateway source. Engine still undecided (may not
- *                          be Denodo) — configured purely via properties,
- *                          so switching engines needs only a URL/driver
- *                          change. Defaults to the archival connection.
+ *                          Access source. THE connection: every repository
+ *                          is wired to {@code archivalJdbc}.
  *   statement-db (DB #3) — the statement archive behind Historical Statement
  *                          only. NOT Denodo: a separate Oracle instance whose
  *                          STMT_HDR/STMT_TXN (and PDP_ prefixed) tables replace
@@ -32,28 +28,35 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
  *                          (frmHistStmt.frm generateReport/processStmt). Off by
  *                          default — see JdbcStatementRepository.
  *
- * The class keeps its Denodo name because DB #1, the only one that must be
- * Denodo, is defined here; DB #2 and DB #3 are plain JDBC and are grouped with
- * it so all three connections are configured in one place.
+ * <p>There is no DB #2 datasource. The slot existed for the cbcmssrv/Finacle
+ * online gateway replacement, but it was only ever a second Hikari pool onto
+ * the SAME Denodo server — every property defaulted to its archival
+ * counterpart, no repository queried it, and its one consumer was the health
+ * endpoint probing the connection it had just probed. Both sources being
+ * Denodo, the two are merged into DB #1.
  *
- * Driver jars (Denodo's is not on Maven Central, and neither is Oracle's) are
- * loaded at runtime from the directory given via -Dloader.path (see README
- * "Deploying against Denodo").
+ * <p>This does not retire DB #2 as a CONCEPT — the {@code TODO(DB #2)} markers
+ * in JdbcCardRepository still stand for the card screens' customer header. It
+ * no longer covers On-demand Statement and Transaction Inquiry, though: their
+ * legacy server (cbrt01) read local gld0data/crd0data/thd0data, so
+ * {@code JdbcOnlineEnquiryRepository} serves both from DB #1. When a real DB #2
+ * source turns up on its own engine, add its datasource + template beans back
+ * here and qualify the repositories that need it — the same shape
+ * {@code statementDataSource} already has for DB #3.
+ *
+ * <p>The Denodo driver is licensed and not on Maven Central, so it is loaded at
+ * runtime from the directory given via -Dloader.path (see README "Deploying
+ * against Denodo"). Oracle's IS on Central and is an ordinary pom.xml
+ * dependency bundled into the jar.
  */
 @Configuration
 @Profile("denodo")
-public class DenodoDataSourceConfig {
+public class DataSourceConfig {
 
     @Bean
     @Primary
     @ConfigurationProperties("bank.archival-db")
     public HikariDataSource archivalDataSource() {
-        return new HikariDataSource();
-    }
-
-    @Bean
-    @ConfigurationProperties("bank.online-db")
-    public HikariDataSource onlineDataSource() {
         return new HikariDataSource();
     }
 
@@ -65,26 +68,23 @@ public class DenodoDataSourceConfig {
         return new NamedParameterJdbcTemplate(prefixed(dataSource, tablePrefix));
     }
 
-    @Bean
-    public NamedParameterJdbcTemplate onlineJdbc(
-            @Qualifier("onlineDataSource") DataSource dataSource,
-            @Value("${bank.online-db.table-prefix:}") String tablePrefix) {
-        return new NamedParameterJdbcTemplate(prefixed(dataSource, tablePrefix));
-    }
-
     /**
      * DB #3 — the statement archive. Separate from {@code online-db} on purpose:
      * that slot is reserved for the Finacle/cbcmssrv replacement (Transaction
      * Inquiry, On-demand Statement), and this one holds statements only.
      *
-     * <p>Created ONLY when {@code bank.statement-db.enabled} is true. It has to
-     * be conditional rather than merely unconfigured, because binding this
-     * datasource loads its driver class eagerly: an Oracle driver is a new
-     * requirement that a site running only DB #1 and DB #2 has no reason to
-     * have deployed, and Hikari's ClassNotFoundException on driver-class-name
-     * fails the whole context — taking every other screen down over a facility
-     * that is switched off. {@code UnavailableStatementRepository} answers in
-     * its place when it is off.
+     * <p>Created ONLY when {@code bank.statement-db.enabled} is true, so a site
+     * that has not been given this database yet gets
+     * {@code UnavailableStatementRepository} on the one screen instead of a pool
+     * pointed at nothing. The flag is also what keeps a half-filled config from
+     * being mistaken for a working one: with it off, the URL, credentials and
+     * the four table names below can sit there wrong or blank harmlessly.
+     *
+     * <p>It used to carry a second job — the driver class is loaded eagerly when
+     * this datasource binds, so before ojdbc was a pom.xml dependency an absent
+     * jar meant a ClassNotFoundException that failed the whole context and took
+     * every other screen down with it. The driver now ships in the jar, so that
+     * particular failure is gone.
      */
     @Bean
     @ConditionalOnProperty(name = "bank.statement-db.enabled", havingValue = "true")

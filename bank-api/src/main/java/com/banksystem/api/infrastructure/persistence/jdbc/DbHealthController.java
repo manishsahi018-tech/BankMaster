@@ -9,25 +9,29 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Connectivity smoke test for the target PC: GET /api/health/db proves
- * both Denodo connections work before any screen is exercised.
+ * Connectivity smoke test for the target PC: GET /api/health/db proves the
+ * Denodo connection works before any screen is exercised.
  * Deliberately lives with the JDBC adapters — it is a diagnostic of this
  * infrastructure, not a business endpoint.
+ *
+ * <p>One connection, so one probe. The old response carried a second "online"
+ * block for DB #2; it opened a separate pool to the same Denodo server and
+ * reported on the connection the archival block had already tested, so a
+ * genuine outage lit both and a green "online" never meant the Finacle
+ * gateway was reachable. Its one distinct value — that a differently-shaped
+ * view also resolves — is kept below as {@code controlTable}.
  */
 @RestController
 @Profile("denodo")
 public class DbHealthController {
 
     private final NamedParameterJdbcTemplate archivalJdbc;
-    private final NamedParameterJdbcTemplate onlineJdbc;
     private final BankingDateProvider bankingDate;
 
     public DbHealthController(
             @Qualifier("archivalJdbc") NamedParameterJdbcTemplate archivalJdbc,
-            @Qualifier("onlineJdbc") NamedParameterJdbcTemplate onlineJdbc,
             BankingDateProvider bankingDate) {
         this.archivalJdbc = archivalJdbc;
-        this.onlineJdbc = onlineJdbc;
         this.bankingDate = bankingDate;
     }
 
@@ -39,20 +43,16 @@ public class DbHealthController {
             ok.put("ok", true);
             ok.put("bankingDate", bankingDate.bankingDate());
             ok.put("customers", archivalJdbc.queryForObject(
-                    "SELECT COUNT(*) FROM stcusttab WHERE BankingDate = :bd",
-                    Map.of("bd", bankingDate.bankingDate()), Long.class));
-            return ok;
-        }));
-        result.put("online", probe(() -> {
-            Map<String, Object> ok = new LinkedHashMap<>();
-            ok.put("ok", true);
-            // Same source until DB #2 gets its own schema. The control table is
-            // split into a per-record-type view: the server-config row is the
-            // standalone stctltabSC view (no RecordType column — the type is in
-            // the view name, like stctltabBD).
-            ok.put("reachable", onlineJdbc.queryForObject(
-                    "SELECT COUNT(*) FROM stctltabSC",
-                    Map.of(), Long.class) != null);
+                    "SELECT COUNT(*) FROM stcusttab WHERE BankingDate = :bankingDate",
+                    Map.of("bankingDate", bankingDate.bankingDate()), Long.class));
+            // A second view of a different shape: the control table is split
+            // per record type, so the server-config row is the standalone
+            // stctltabSC view (no RecordType column — the type is in the view
+            // name, like stctltabBD). Proves the prefix resolves for more than
+            // the one table above.
+            ok.put("controlTable", archivalJdbc.queryForObject(
+                    "SELECT COUNT(*) FROM stctltabSC WHERE BankingDate = :bankingDate",
+                    Map.of("bankingDate", bankingDate.bankingDate()), Long.class) != null);
             return ok;
         }));
         return result;

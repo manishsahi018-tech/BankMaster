@@ -1,6 +1,7 @@
 package com.banksystem.api.infrastructure.persistence.jdbc;
 
 import com.banksystem.api.domain.model.BmForms;
+import com.banksystem.api.domain.model.PagedResult;
 import com.banksystem.api.domain.model.TransactionDetail;
 import com.banksystem.api.domain.model.TransactionSummary;
 import com.banksystem.api.domain.model.TransferDetail;
@@ -51,42 +52,111 @@ public class JdbcTransferRepository implements TransferRepository {
 
 
     /** Correlated scalar subquery (Denodo has no LATERAL) for the customer short
-     *  name, faithful to getCustName + caller (cbothers.c:8237-8240, cbswift.c:
+     *  name, faithful to getCustName + caller (cbothers.c:8234-8239, cbswift.c:
      *  1464/2001): getCustName overwrites the short name with the ORG short name
      *  when custType != '0' (juristic), THEN the caller picks Arabic-else-English.
      *  Net: individuals use the consumer short names, juristic use the org short
-     *  names — custType decides, they are NOT a flat fallback chain.
-     *  (Not modelled: the crd0data fallback for a custNo absent from stcusttab.) */
-    private static final String CUST_NAME_SUBQUERY = """
+     *  names — custType decides, they are NOT a flat fallback chain. */
+    private static final String STCUSTTAB_NAME = """
             (SELECT CASE WHEN c.custType = '0'
                          THEN COALESCE(NULLIF(TRIM(c.aShortName), ''), c.eShortName)
                          ELSE COALESCE(NULLIF(TRIM(c.aOrgShortName), ''), c.eOrgShortName)
                     END
              FROM stcusttab c
-             WHERE c.custNo = SUBSTR(%s.%s, 6, 7))""";
+             WHERE c.BankingDate = :bankingDate
+               AND c.custNo = SUBSTR(%1$s.%2$s, 6, 7))""";
+
+    /**
+     * The second half of getCustName (cbothers.c:8210-8231): a customer NOT in
+     * stcusttab is read from crd0data instead, whose single {@code shortName} is
+     * moved into both the Arabic and English slots — so there is nothing to pick
+     * between and no custType branch, just the one column.
+     *
+     * <p>This one CANNOT ride along as a correlated subquery beside
+     * {@link #STCUSTTAB_NAME}, because crd0data is keyed the way the legacy keys
+     * it: the 6-char PACKED BM customer that {@code actualToBmCust} produces
+     * ({@link BmForms#bmCust}). Below 1,000,000 that is just the last six digits,
+     * but from there to 6,199,999 the leading two digits collapse into a single
+     * letter — arithmetic no SUBSTR expresses, and the kind of number-form
+     * conversion this port deliberately keeps in Java rather than in SQL text.
+     * So it runs as its own point read, after the main query, only when the
+     * stcusttab name came back empty.
+     *
+     * <p>Which is also CLOSER to the C than the subquery form was: getCustName
+     * falls back on the stcusttab ROW being absent, and an empty name is very
+     * nearly that test — where it differs (a row present with blank names)
+     * crd0data holds the same name anyway.
+     */
+    private static final String CRD0DATA_NAME = """
+            SELECT shortName
+            FROM   crd0data
+            WHERE  BankingDate = :bankingDate
+              AND  accNo = :bmCustNo
+            """;
+
+    /** stcusttab alone; {@link #crdShortName} supplies getCustName's other half. */
+    private static final String CUST_NAME_SUBQUERY = STCUSTTAB_NAME;
 
     private final NamedParameterJdbcTemplate jdbc;
+    private final BankingDateProvider bankingDate;
 
     public JdbcTransferRepository(
-            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc) {
+            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
+            BankingDateProvider bankingDate) {
         this.jdbc = jdbc;
+        this.bankingDate = bankingDate;
     }
 
     // ------------------------------------------------------------------
     // §17 SARIE transfer enquiry — rid0data, legacy index 4 on issueDate
     // ------------------------------------------------------------------
 
+    /**
+     * One page of the transfer enquiry, windowed IN THE QUERY.
+     *
+     * <p>The enquiry used to read every row in the date range and let
+     * {@code PagedResult.page} slice ten out of it in Java, so every page cost a
+     * full-range scan of rid0data and threw the rest away. The window is now
+     * {@code OFFSET n ROWS FETCH FIRST m ROWS ONLY} on the same
+     * {@code ORDER BY issueDate, transRef} the legacy index-4 walk implies, so a
+     * page reads (at most) eleven rows.
+     *
+     * <p>Eleven, not ten: {@link PagedResult} reports {@code hasMore} as a flag
+     * rather than a count, and one extra row answers it exactly without a second
+     * COUNT(*) round trip. The probe row is dropped before the page is returned.
+     *
+     * <p>Two dialect notes. {@code FETCH FIRST n ROWS ONLY} is already used
+     * against these views (see the point reads below and JdbcCardRepository), so
+     * only {@code OFFSET} is new here — and it is emitted ONLY for page &gt; 0,
+     * which keeps the first page, the overwhelmingly common one, on syntax this
+     * codebase has already exercised. Both counts are interpolated as int
+     * literals rather than bound: JDBC drivers commonly reject bind parameters in
+     * the fetch clause, and the codebase already interpolates there.
+     *
+     * <p>The window assumes {@code (issueDate, transRef)} identifies one row,
+     * which holds only because the BankingDate predicate is there. rid0data is
+     * one of the BM views holding the SAME record once per restore snapshot (it
+     * spans 1992..11/07/2009), so without the predicate a transfer present in
+     * several snapshots was several rows sharing a transRef: duplicates in the
+     * grid, and TIES under the ORDER BY that Hive breaks arbitrarily — and since
+     * each page is its own query, a tie group straddling a page boundary could
+     * repeat a row across pages or drop one. Pinning the enquiry to one snapshot
+     * (bank.archival-db.banking-date) removes the duplicates, so the sort is
+     * total and the window is stable; no third sort key is needed.
+     */
     @Override
-    public List<TransferSummary> sarieTransfers(
-            String accNo, String fromDate, String toDate, String refNo, String status) {
+    public PagedResult<TransferSummary> sarieTransfers(
+            String accNo, String fromDate, String toDate, String refNo, String status, int page) {
         StringBuilder sql = new StringBuilder("""
                 SELECT transRef, issueDate, valueDate, drAccNo, transCurrCode,
                        netAmt, payCurrCode, payAmt, statusFlag
                 FROM   rid0data
-                WHERE  crAccNo = :accNo
+                WHERE  BankingDate = :bankingDate
+                  AND  crAccNo = :accNo
                   AND  issueDate BETWEEN :fromDate AND :toDate
                 """);
         MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("bankingDate", bankingDate.bankingDate())
                 .addValue("accNo", actualAccForm(accNo))
                 // issueDate is a Date column in the view; the UI sends the BM
                 // YYYYMMDD the legacy compares against (cbswift.c:492-494 does
@@ -107,7 +177,8 @@ public class JdbcTransferRepository implements TransferRepository {
         sql.append("""
                 ORDER  BY issueDate, transRef
                 """);
-        return jdbc.query(sql.toString(), params, (rs, i) -> new TransferSummary(
+        appendWindow(sql, page);
+        List<TransferSummary> rows = jdbc.query(sql.toString(), params, (rs, i) -> new TransferSummary(
                 scrub(rs.getString("transRef")),
                 BmForms.isoToBmDate(scrub(rs.getString("issueDate"))),
                 BmForms.isoToBmDate(scrub(rs.getString("valueDate"))),
@@ -117,6 +188,7 @@ public class JdbcTransferRepository implements TransferRepository {
                 scrub(rs.getString("payCurrCode")),
                 scrub(rs.getString("payAmt")),
                 scrub(rs.getString("statusFlag"))));
+        return pageOf(rows);
     }
 
     // ------------------------------------------------------------------
@@ -136,9 +208,11 @@ public class JdbcTransferRepository implements TransferRepository {
                 + CUST_NAME_SUBQUERY.formatted("r", "crAccNo") + " AS custName\n"
                 + """
                 FROM   rid0data r
-                WHERE  r.transRef = :refNo
+                WHERE  r.BankingDate = :bankingDate
+                  AND  r.transRef = :refNo
                 """);
         MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("bankingDate", bankingDate.bankingDate())
                 .addValue("refNo", refNo);
         if (!isBlank(transDate)) {
             sql.append("  AND  r.issueDate = :transDate\n");
@@ -188,6 +262,9 @@ public class JdbcTransferRepository implements TransferRepository {
         // (cbswift.c:2355-2382) keys on transRefNo + the FOUND row's
         // issueDate and treats only bmUpdateStatus '1'/'2' as pending.
         TransferDetail detail = rows.get(0);
+        if (detail.custName().isEmpty()) {
+            detail = detail.withCustName(crdShortName(detail.crAccNo()));
+        }
         if (hasPendingSwiftUpdate(refNo, detail.issueDate())) {
             log.warn("Transfer {} has a pending stswiftlog update — blocking detail enquiry", refNo);
             return Optional.empty();
@@ -199,17 +276,46 @@ public class JdbcTransferRepository implements TransferRepository {
     // §18 BM transaction enquiry — thd0data
     // ------------------------------------------------------------------
 
+    /**
+     * One page of the BM transaction enquiry, windowed in the query exactly as
+     * {@link #sarieTransfers} — same OFFSET/FETCH FIRST shape, same n+1 probe
+     * for hasMore, OFFSET emitted only past the first page.
+     *
+     * <p>The caller does NOT stop at one page: the legacy cmdGo_Click loops
+     * until the server clears completionFlag (frmTransEnq.frm), loads every
+     * batch, and only then sums the amounts and enables Print — so the screen
+     * walks the pages to the end and the window is a bound on each READ, not on
+     * what the operator sees. That is the point: the walk used to cost one
+     * full-range scan of thd0data per page and discard all but ten rows.
+     *
+     * <p>Unlike rid0data, the ordering here is a genuine key — but NOT the one
+     * an earlier note here claimed. thd0data's index 1 is 26 bytes,
+     * {@code accNo[13] + filler1[7] + transCounter[5] + recType}
+     * (cbslib/layout.h:1575-1578); postDate sits at offset 27 and is not in the
+     * key at all. The C seeks that index with keylen 13 and walks ISNEXT
+     * (cbswift.c:1871-1872), so it returns rows in POSTING-SEQUENCE order, and
+     * {@code ORDER BY transCounter} is what reproduces it.
+     *
+     * <p>Ordering by postDate first, as this did, was a total order too —
+     * transCounter is unique within an account, so the window still could not
+     * repeat or skip — but it is a DIFFERENT order, and the two disagree exactly
+     * where a transaction was back-valued or posted late. The row set and the
+     * screen's total are unaffected either way, since the caller drains every
+     * page before summing; what changes is the sequence the operator reads.
+     */
     @Override
-    public List<TransactionSummary> bmTransactions(
-            String accNo, String fromDate, String toDate, String transType) {
+    public PagedResult<TransactionSummary> bmTransactions(
+            String accNo, String fromDate, String toDate, String transType, int page) {
         StringBuilder sql = new StringBuilder("""
                 SELECT transRef, postDate, valueDate, userId, transAmt,
                        transCounter, transType
                 FROM   thd0data
-                WHERE  accNo = :accNo
+                WHERE  BankingDate = :bankingDate
+                  AND  accNo = :accNo
                   AND  postDate BETWEEN :fromDate AND :toDate
                 """);
         MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("bankingDate", bankingDate.bankingDate())
                 .addValue("accNo", actualAccForm(accNo))
                 // postDate is a Date column in the view; the legacy compares the
                 // ACTUAL YYYYMMDD (bmDateToActual(thdRec.postDate) vs from/to,
@@ -227,9 +333,10 @@ public class JdbcTransferRepository implements TransferRepository {
             }
         }
         sql.append("""
-                ORDER  BY postDate, transCounter
+                ORDER  BY transCounter
                 """);
-        return jdbc.query(sql.toString(), params, (rs, i) -> new TransactionSummary(
+        appendWindow(sql, page);
+        List<TransactionSummary> rows = jdbc.query(sql.toString(), params, (rs, i) -> new TransactionSummary(
                 scrub(rs.getString("transRef")),
                 BmForms.isoToBmDate(scrub(rs.getString("postDate"))),
                 BmForms.isoToBmDate(scrub(rs.getString("valueDate"))),
@@ -237,6 +344,7 @@ public class JdbcTransferRepository implements TransferRepository {
                 scrub(rs.getString("transAmt")),
                 scrub(rs.getString("transCounter")),
                 scrub(rs.getString("transType"))));
+        return pageOf(rows);
     }
 
     // ------------------------------------------------------------------
@@ -247,6 +355,7 @@ public class JdbcTransferRepository implements TransferRepository {
     public Optional<TransactionDetail> bmTransactionDetail(String accNo, String refNo) {
         String actualAcc = actualAccForm(accNo);
         MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("bankingDate", bankingDate.bankingDate())
                 .addValue("accNo", actualAcc)
                 .addValue("refNo", refNo);
         // Legacy index 2 (accNo + transRef), recType '0' header. The C reads
@@ -265,7 +374,8 @@ public class JdbcTransferRepository implements TransferRepository {
                 + CUST_NAME_SUBQUERY.formatted("t", "accNo") + " AS custName\n"
                 + """
                 FROM   thd0data t
-                WHERE  t.accNo = :accNo
+                WHERE  t.BankingDate = :bankingDate
+                  AND  t.accNo = :accNo
                   AND  t.transRef = :refNo
                 ORDER  BY t.postDate, t.transCounter
                 FETCH FIRST 1 ROWS ONLY
@@ -283,7 +393,36 @@ public class JdbcTransferRepository implements TransferRepository {
                 scrub(rs.getString("narrative1")),
                 scrub(rs.getString("narrative2")),
                 scrub(rs.getString("narrative3"))));
-        return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        TransactionDetail detail = rows.get(0);
+        return Optional.of(detail.custName().isEmpty()
+                ? detail.withCustName(crdShortName(actualAcc))
+                : detail);
+    }
+
+    /**
+     * getCustName's crd0data branch — the 6-char PACKED BM customer, exactly as
+     * {@code actualToBmCust(&accNo[5])} builds it. See {@link #CRD0DATA_NAME}
+     * for why this is a separate read rather than part of the main query.
+     *
+     * @param actualAcc 14-char actual account; its customer is chars 5..11
+     * @return the crd0data short name, or "" when there is no row either
+     */
+    private String crdShortName(String actualAcc) {
+        String bmCustNo = BmForms.bmCust(BmForms.custFromActualAcc(actualAcc));
+        if (bmCustNo.isBlank()) {
+            // bmCust returns six blanks for a customer it cannot pack — the same
+            // give-up the C's actualToBmCust does. No key, no lookup.
+            return "";
+        }
+        List<String> names = jdbc.queryForList(
+                CRD0DATA_NAME,
+                new MapSqlParameterSource("bmCustNo", bmCustNo)
+                        .addValue("bankingDate", bankingDate.bankingDate()),
+                String.class);
+        return names.isEmpty() ? "" : scrub(names.get(0));
     }
 
     // ------------------------------------------------------------------
@@ -309,11 +448,13 @@ public class JdbcTransferRepository implements TransferRepository {
             Integer count = jdbc.queryForObject("""
                     SELECT COUNT(*)
                     FROM   stswiftlog
-                    WHERE  transRefNo = :refNo
+                    WHERE  BankingDate = :bankingDate
+                      AND  transRefNo = :refNo
                       AND  issueDate = :issueDate
                       AND  bmUpdateStatus IN ('1', '2')
                     """,
                     new MapSqlParameterSource()
+                            .addValue("bankingDate", bankingDate.bankingDate())
                             .addValue("refNo", refNo)
                             .addValue("issueDate", BmForms.bmToIso(issueDate)),
                     Integer.class);
@@ -323,6 +464,29 @@ public class JdbcTransferRepository implements TransferRepository {
                     e.getMostSpecificCause().getMessage(), refNo);
             return false;
         }
+    }
+
+    /**
+     * Appends the paging window to a statement whose ORDER BY is already in
+     * place. One row past the page is requested so its presence answers
+     * hasMore without a second COUNT round trip, and OFFSET is left out
+     * entirely on the first page, where it would be a no-op.
+     */
+    private static void appendWindow(StringBuilder sql, int page) {
+        int offset = Math.max(0, page) * PagedResult.PAGE_SIZE;
+        if (offset > 0) {
+            sql.append("OFFSET %d ROWS\n".formatted(offset));
+        }
+        sql.append("FETCH FIRST %d ROWS ONLY\n".formatted(PagedResult.PAGE_SIZE + 1));
+    }
+
+    /** Trims the probe row {@link #appendWindow} asked for and reports it as hasMore. */
+    private static <T> PagedResult<T> pageOf(List<T> rows) {
+        boolean hasMore = rows.size() > PagedResult.PAGE_SIZE;
+        return new PagedResult<>(
+                hasMore ? List.copyOf(rows.subList(0, PagedResult.PAGE_SIZE)) : List.copyOf(rows),
+                hasMore,
+                false);
     }
 
     /**

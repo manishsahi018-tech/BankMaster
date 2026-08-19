@@ -1,5 +1,6 @@
 package com.banksystem.api.infrastructure.persistence.mock;
 
+import com.banksystem.api.domain.model.PagedResult;
 import com.banksystem.api.domain.model.TransactionDetail;
 import com.banksystem.api.domain.model.TransactionSummary;
 import com.banksystem.api.domain.model.TransferDetail;
@@ -88,15 +89,17 @@ public class MockTransferRepository implements TransferRepository {
     }
 
     @Override
-    public List<TransactionSummary> bmTransactions(String accNo, String fromDate, String toDate,
-                                                   String transType) {
-        return historyFor(accNo).stream()
+    public PagedResult<TransactionSummary> bmTransactions(String accNo, String fromDate,
+                                                          String toDate, String transType,
+                                                          int page) {
+        List<TransactionSummary> all = historyFor(accNo).stream()
                 .filter(t -> DemoData.inRange(t.postDate(), fromDate, toDate))
                 // Legacy three-way filter: blank = all, RR = reversals
                 // (statmentFlag > '1'), else an exact transType match.
                 .filter(t -> transType == null || transType.isBlank()
                         || ("RR".equals(transType) ? isReversal(t) : t.transType().equals(transType)))
                 .toList();
+        return PagedResult.page(all, page);
     }
 
     /** Mock stand-in for statmentFlag > '1': roughly one in twenty. */
@@ -171,15 +174,21 @@ public class MockTransferRepository implements TransferRepository {
         return List.copyOf(rows);
     }
 
+    /**
+     * The fixtures are generated in memory, so the window the JDBC repository
+     * pushes into SQL is applied here with {@link PagedResult#page} — same
+     * contract (a page plus hasMore), no query to push it into.
+     */
     @Override
-    public List<TransferSummary> sarieTransfers(String accNo, String fromDate, String toDate,
-                                                String refNo, String status) {
-        return transfersFor(accNo).stream()
+    public PagedResult<TransferSummary> sarieTransfers(String accNo, String fromDate, String toDate,
+                                                       String refNo, String status, int page) {
+        List<TransferSummary> all = transfersFor(accNo).stream()
                 .filter(t -> DemoData.inRange(t.issueDate(), fromDate, toDate))
                 .filter(t -> refNo == null || refNo.isBlank() || t.transRef().equals(refNo))
                 .filter(t -> status == null || status.isBlank() || "A".equals(status)
                         || t.statusFlag().equals(status))
                 .toList();
+        return PagedResult.page(all, page);
     }
 
     @Override

@@ -52,18 +52,41 @@ public class MockMerchantRepository implements MerchantRepository {
             return MerchantStatementPage.empty(merchant);
         }
 
+        // The server refusing is part of the contract, and a mock that can only
+        // succeed lets the failure path ship untested. A merchant number ending
+        // in the refusal marker asks for one — the server owns the wording, so
+        // the mock supplies a sentence rather than a code for the client to
+        // interpret.
+        if (merchant.endsWith(REFUSAL_MARKER)) {
+            return new MerchantStatementPage("012",
+                    "\u0627\u0644\u062a\u0627\u062c\u0631 \u063a\u064a\u0631 "
+                            + "\u0645\u0633\u062c\u0644 \u0641\u064a \u0627\u0644\u0646"
+                            + "\u0638\u0627\u0645",
+                    "Merchant is not registered in the acquiring system",
+                    merchant, List.of(), "00000", "1");
+        }
+
         List<String> all = render(merchant, stmtType, fromDate, toDate);
 
         int offset = parseCursor(lastTransPtr);
         if (offset >= all.size()) {
-            return new MerchantStatementPage(merchant, List.of(),
-                    String.format("%05d", all.size()), "1");
+            return new MerchantStatementPage(MerchantStatementPage.SUCCESS, "", "", merchant,
+                    List.of(), String.format("%05d", all.size()), "1");
         }
         int end = Math.min(all.size(), offset + LINES_PER_PAGE);
         boolean last = end >= all.size();
-        return new MerchantStatementPage(merchant, List.copyOf(all.subList(offset, end)),
+        return new MerchantStatementPage(MerchantStatementPage.SUCCESS, "", "", merchant,
+                List.copyOf(all.subList(offset, end)),
                 String.format("%05d", end), last ? "1" : "0");
     }
+
+    /**
+     * Merchant numbers ending in this get a refused reply. "99" keeps the number
+     * the right LENGTH, so it still passes the screen's own validation and the
+     * refusal comes from the server rather than from the client's checks —
+     * which is the path being exercised.
+     */
+    private static final String REFUSAL_MARKER = "99";
 
     private static int parseCursor(String lastTransPtr) {
         try {

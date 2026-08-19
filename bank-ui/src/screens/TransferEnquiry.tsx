@@ -36,6 +36,12 @@ export default function TransferEnquiry({
   const [toDate, setToDate] = useState(todayYyyymmdd)
   const [refNo, setRefNo] = useState('')
   const [rows, setRows] = useState<GridRow[] | null>(null)
+  // Server paging state. The API windows the scan in SQL (10 rows per page), so
+  // the grid holds only the pages actually asked for: `page` is the last one
+  // fetched, `hasMore` is the server saying another exists.
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [fetching, setFetching] = useState(false)
   const [detail, setDetail] = useState<GridRow | null>(null)
   // Fetch errors surface as the shared top-center toast (shim keeps the existing
   // setError('…') call sites; setError('') is a no-op).
@@ -44,12 +50,38 @@ export default function TransferEnquiry({
     if (msg) toast.error(msg)
   }
 
+  // Fetch restarts at page 0 and replaces the grid; a new date range or
+  // reference has nothing to do with the pages already on screen.
   const fetchRows = () => {
     setError('')
+    setFetching(true)
     api
-      .sarieTransfers(account.accountNumber, { fromDate, toDate, refNo })
-      .then((r) => setRows(r.rows))
+      .sarieTransfers(account.accountNumber, { fromDate, toDate, refNo }, 0)
+      .then((r) => {
+        setRows(r.rows)
+        setPage(0)
+        setHasMore(r.hasMore)
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setFetching(false))
+  }
+
+  // GridScreen's pager calls this when Next steps past the last loaded page:
+  // fetch the next server page and append it (App's appendPage, kept local
+  // because this screen owns its own fetch rather than going through App).
+  const fetchMore = () => {
+    if (!hasMore || fetching) return
+    const next = page + 1
+    setFetching(true)
+    api
+      .sarieTransfers(account.accountNumber, { fromDate, toDate, refNo }, next)
+      .then((r) => {
+        setRows((prev) => [...(prev ?? []), ...r.rows])
+        setPage(next)
+        setHasMore(r.hasMore)
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setFetching(false))
   }
 
   if (detail) {
@@ -72,9 +104,10 @@ export default function TransferEnquiry({
           <button
             type="button"
             onClick={fetchRows}
-            className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong"
+            disabled={fetching}
+            className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong disabled:cursor-not-allowed disabled:bg-faint"
           >
-            Fetch Transfers
+            {fetching ? 'Fetching…' : 'Fetch Transfers'}
           </button>
         </div>
       </div>
@@ -85,6 +118,8 @@ export default function TransferEnquiry({
         columns={COLUMNS}
         rows={rows ?? []}
         emptyText={rows === null ? 'Enter a date range and fetch.' : 'No transfers in this range.'}
+        hasMore={hasMore}
+        onMore={fetchMore}
         buttonGroups={[
           [
             {

@@ -33,10 +33,13 @@ public class JdbcSadadRepository implements SadadRepository {
 
 
     private final NamedParameterJdbcTemplate jdbc;
+    private final BankingDateProvider bankingDate;
 
     public JdbcSadadRepository(
-            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc) {
+            @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
+            BankingDateProvider bankingDate) {
         this.jdbc = jdbc;
+        this.bankingDate = bankingDate;
     }
 
     @Override
@@ -54,22 +57,33 @@ public class JdbcSadadRepository implements SadadRepository {
                        paymentType, preOrPostpaid, postingStatus, cashOrAcc,
                        supervisorId
                 FROM   stsadadlog
+                -- Every predicate below is optional (which ones apply depends
+                -- on the legacy key branch), so there is no mandatory column to
+                -- anchor the WHERE on; 1 = 1 gives the appended AND clauses
+                -- something to hang off. Without it the first appended clause
+                -- followed the table name with a bare AND and the statement
+                -- could not parse at all.
+                WHERE  1 = 1
+                  AND  BankingDate = :bankingDate
                 """);
         MapSqlParameterSource params = new MapSqlParameterSource();
+        params.addValue("bankingDate", bankingDate.bankingDate());
         if (!isBlank(companyId)) {
             sql.append("  AND  companyId = :companyId\n");
             params.addValue("companyId", companyId.trim());
         }
         if (!isBlank(transDate)) {
             // SUBSTR is 1-based in Denodo VQL; first 8 chars = YYYYMMDD.
-            // KNOWN ISSUE: transDateTime is a Timestamp column in the view, so
-            // the driver renders it "YYYY-MM-DD HH:MM:SS" and SUBSTR(...,1,8)
-            // yields "YYYY-MM-" — this predicate cannot match as written. Left
-            // as-is rather than guessed at: no UI screen calls /api/sadad/
-            // transactions, and the legacy path here is a live Tuxedo call
-            // (UTBLENQ/SADBILLENQ), not this view.
-            sql.append("  AND  SUBSTR(transDateTime, 1, 8) = :transDate\n");
+            // Keyed in both forms: when the view types transDateTime as a
+            // Timestamp the driver renders it YYYY-MM-DD HH:MM:SS, so
+            // SUBSTR(...,1,8) yields YYYY-MM- and the BM arm alone matches
+            // nothing; the 10-char ISO arm covers that case. Same defect, and
+            // same fix, as the cheque book history key in
+            // JdbcAccountRepository.chequeBookHistory.
+            sql.append("  AND  (SUBSTR(transDateTime, 1, 8) = :transDate\n");
+            sql.append("        OR SUBSTR(transDateTime, 1, 10) = :transDateIso)\n");
             params.addValue("transDate", transDate.trim());
+            params.addValue("transDateIso", BmForms.bmToIso(transDate.trim()));
         }
         if (!isBlank(tellerId)) {
             sql.append("  AND  tellerId = :tellerId\n");

@@ -1,0 +1,24 @@
+# Everything here is excluded from the build context (what gets sent to the
+# Docker daemon). Keep it tight: the context is uploaded on every build.
+
+# Build output — the image builds the jar itself from src/.
+target/
+
+# Source archives checked into the tree (src/main.zip, api.zip) — tens of MB
+# that the build never reads.
+*.zip
+
+# Docs: not needed to compile.
+README.md
+QUERY-SPECS.md
+
+# Editor / OS noise.
+.DS_Store
+.project
+.classpath
+.settings/
+.idea/
+*.iml
+
+# Windows launcher — the image builds on Linux.
+mvnw.cmd

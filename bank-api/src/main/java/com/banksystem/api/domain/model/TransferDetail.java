@@ -28,4 +28,17 @@ public record TransferDetail(
         String transferPurpose,
         String exchangeRate,
         String message1) {
+
+    /**
+     * The same detail with a different customer name — the crd0data half of
+     * getCustName (cbothers.c:8210-8231), applied after the read because the
+     * key it needs is a PACKED form no SQL expression produces.
+     */
+    public TransferDetail withCustName(String name) {
+        return new TransferDetail(transRef, issueDate, valueDate, crAccNo, drAccNo,
+                transCurrCode, payCurrCode, netAmt, payAmt, applicantName,
+                benefName, benefAddr1, benefAddr2, benefBank, transType,
+                paymentType, branchCode, name, transferPurpose, exchangeRate,
+                message1);
+    }
 }

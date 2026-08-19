@@ -267,7 +267,10 @@ export default function AccountMaintenance({
           </div>
         </SectionCard>
 
-        <div className="grid gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
+        <div className="rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
+          {/* One wrapping row, not two: with the write actions hidden for
+              enquiry-only users the first row held Signatory by itself, which
+              read as a separate group it is not. */}
           <div className="flex flex-wrap items-center gap-3">
             {/* Hidden for enquiry-only (write actions: create / approve / reject / supervisor). */}
             {!ENQUIRY_ONLY &&
@@ -289,8 +292,6 @@ export default function AccountMaintenance({
             >
               Signatory
             </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={onCards}

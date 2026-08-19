@@ -11,12 +11,11 @@ import org.springframework.stereotype.Repository;
 /**
  * The {@code denodo}-profile StatementRepository when DB #3 is switched off.
  *
- * <p>DB #3 is a separate database from DB #1 and DB #2 and needs its own JDBC
- * driver on the loader path, so a site can perfectly reasonably be running the
- * rest of the application without it. When it is off, the datasource and its
- * template are not created at all
- * ({@code DenodoDataSourceConfig.statementDataSource}) — otherwise binding them
- * would load a driver that is not deployed and fail the entire context.
+ * <p>DB #3 is a separate database from DB #1 and DB #2, so a site can perfectly
+ * reasonably be running the rest of the application without it. When it is off,
+ * the datasource and its template are not created at all
+ * ({@code DataSourceConfig.statementDataSource}), rather than pointing a pool
+ * at a connection nobody has configured.
  *
  * <p>This bean exists so the CONTEXT STILL STARTS in that case, the same reason
  * {@link UnavailableMerchantRepository} does: StatementService is an
@@ -34,7 +33,8 @@ public class UnavailableStatementRepository implements StatementRepository {
 
     @Override
     public List<HistoricalStatement> historicalStatements(
-            String acctNum, String fromYearMonth, String toYearMonth) {
+            String acctNum, String branchCode, String fromYearMonth, String toYearMonth,
+            String system) {
         throw new NotAvailableException(
                 "Historical statements are not available in this environment: the statement "
                         + "archive is not configured. It is a separate database from the archival "
