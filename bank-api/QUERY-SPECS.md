@@ -742,9 +742,26 @@ guard against the view regressing, not an expected state.
   buttons) and the FTP request, both of which act on rendered text on a mapped
   drive. **To-date defaults to 2009/07**, as the legacy hardcodes it — the BM
   archive stops at the Finacle cutover, and the measured views span 1992-2009.
-- **Merchant statement**: lives in the acquiring/POS system entirely; here it is
-  only authority role 81. Port = out of scope until that system's data source is
-  identified.
+- **Merchant statement**: no C handler either — same sweep, same zero hits. It
+  lives in the acquiring/POS system entirely, reached over a THIRD socket whose
+  host/port come from `mrchdata.ini` (not `statdata.ini`). Here it is only
+  authority role 81, and the port stops at `MerchantRepository`: the mock stands
+  in for that system, `UnavailableMerchantRepository` answers under denodo.
+
+  Two details a real client must not lose. **Both dates are shifted forward one
+  month** before they go on the wire — `incMonth` on the from-date plus `"01"`,
+  `incMonth` on the to-date plus its last day (:875, :884) — so a request for
+  Jan-Mar reaches the server as Feb 1 - Apr 30. And **the rows are opaque
+  150-char print lines**; the acquiring system formats, paginates and totals,
+  and the client spools. Neither is optional: dropping the shift returns the
+  wrong months, parsing the lines invents structure that is not there.
+
+  Error text works the OPPOSITE way round from the online gateway. There a
+  numeric code arrives and the client owns the wording; here `status != "000"`
+  comes with the server's own sentence in `aRemarks`/`eRemarks` and the client
+  only picks by language (:421-428). `MerchantService.checkStatus` surfaces that
+  sentence rather than a message of ours — inventing one would discard the only
+  explanation the acquiring system gives.
 
 ## 22. Related parties — heirs/proxy, joint holders, references, owners (tier-2)
 

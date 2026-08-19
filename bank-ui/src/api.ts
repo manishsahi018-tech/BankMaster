@@ -497,7 +497,20 @@ export interface BlockedAmountBreakup {
  * 150-char print lines — a leading \f marks a printer page break. Nothing
  * parses them; the client only spools what it is given.
  */
+/**
+ * One page from the acquiring/POS system (legacy frmMerchantStmt).
+ *
+ * `status` "000" is success; on anything else the API has already turned the
+ * server's own `eRemarks` sentence into the error, so a successful response
+ * here always carries lines. The remarks travel anyway: unlike the online
+ * gateway, where the client owns the wording for each numeric code, here the
+ * SERVER writes the sentence in both languages and the caller only picks one
+ * (frmMerchantStmt.frm:421-428).
+ */
 export interface MerchantStatementPage {
+  status: string
+  aRemarks: string
+  eRemarks: string
   merchantNo: string
   lines: string[]
   lastRecCount: string

@@ -37,8 +37,39 @@ public class MerchantService {
         if (!isValidMerchantNo(merchant, type)) {
             throw new BadRequestException("Invalid Merchant no.. Please check and correct....");
         }
-        return merchants.statement(merchant, type, fromDate.trim(), toDate.trim(),
+        MerchantStatementPage page = merchants.statement(merchant, type,
+                fromDate.trim(), toDate.trim(),
                 lastTransPtr == null || lastTransPtr.isBlank() ? "00000" : lastTransPtr.trim());
+        checkStatus(page);
+        return page;
+    }
+
+    /**
+     * frmMerchantStmt.frm:421-428 — any status but "000" stops the enquiry and
+     * shows the SERVER's own sentence, Arabic or English by user language.
+     *
+     * <p>English is chosen here rather than at the screen because the API has
+     * one message field, and the alternative — shipping both and letting the
+     * client pick — would put a language decision in the browser that the rest
+     * of this port makes on the server. The Arabic text is still carried on the
+     * page for a client that wants it.
+     *
+     * <p>No code table: unlike the online gateway, nothing here maps a number
+     * to wording of our own. Inventing a message would DISCARD the only
+     * explanation the acquiring system gives, so a blank remark falls back to
+     * naming the code rather than to a guess about what it meant.
+     */
+    private static void checkStatus(MerchantStatementPage page) {
+        if (page.isSuccess()) {
+            return;
+        }
+        String remark = page.eRemarks() == null ? "" : page.eRemarks().trim();
+        if (remark.isEmpty()) {
+            remark = page.aRemarks() == null ? "" : page.aRemarks().trim();
+        }
+        throw new BadRequestException(remark.isEmpty()
+                ? "The merchant system returned status " + page.status()
+                : remark);
     }
 
     private static boolean isValidMerchantNo(String merchantNo, String stmtType) {
