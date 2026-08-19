@@ -1,6 +1,7 @@
 package com.banksystem.api.infrastructure.persistence.jdbc;
 
 import com.banksystem.api.domain.model.BmForms;
+import com.banksystem.api.domain.model.PagedResult;
 import com.banksystem.api.domain.model.TransactionDetail;
 import com.banksystem.api.domain.model.TransactionSummary;
 import com.banksystem.api.domain.model.TransferDetail;
@@ -76,9 +77,50 @@ public class JdbcTransferRepository implements TransferRepository {
     // §17 SARIE transfer enquiry — rid0data, legacy index 4 on issueDate
     // ------------------------------------------------------------------
 
+    /**
+     * One page of the transfer enquiry, windowed IN THE QUERY.
+     *
+     * <p>The enquiry used to read every row in the date range and let
+     * {@code PagedResult.page} slice ten out of it in Java, so every page cost a
+     * full-range scan of rid0data and threw the rest away. The window is now
+     * {@code OFFSET n ROWS FETCH FIRST m ROWS ONLY} on the same
+     * {@code ORDER BY issueDate, transRef} the legacy index-4 walk implies, so a
+     * page reads (at most) eleven rows.
+     *
+     * <p>Eleven, not ten: {@link PagedResult} reports {@code hasMore} as a flag
+     * rather than a count, and one extra row answers it exactly without a second
+     * COUNT(*) round trip. The probe row is dropped before the page is returned.
+     *
+     * <p>Two dialect notes. {@code FETCH FIRST n ROWS ONLY} is already used
+     * against these views (see the point reads below and JdbcCardRepository), so
+     * only {@code OFFSET} is new here — and it is emitted ONLY for page &gt; 0,
+     * which keeps the first page, the overwhelmingly common one, on syntax this
+     * codebase has already exercised. Both counts are interpolated as int
+     * literals rather than bound: JDBC drivers commonly reject bind parameters in
+     * the fetch clause, and the codebase already interpolates there.
+     *
+     * <p>KNOWN GAP, pending the BankingDate work: the window assumes
+     * {@code (issueDate, transRef)} identifies one row, and today it does not.
+     * rid0data is one of the BM views holding the SAME record once per restore
+     * snapshot (it spans 1992..11/07/2009), so a transfer present in several
+     * snapshots is several rows sharing a transRef. That already shows as
+     * duplicate rows in the grid — the sod0data equivalent was fixed by
+     * partitioning on the legacy key, {@code standingOrders()} in
+     * JdbcAccountRepository — and it additionally makes the paging unstable:
+     * duplicates are TIES under the ORDER BY, Hive breaks ties arbitrarily, and
+     * each page is now its own query, so a tie group straddling a page boundary
+     * can repeat a row across pages or drop one. The Java-side slicing this
+     * replaced was immune (one query, one ordering).
+     *
+     * <p>The fix belongs with the snapshot dedupe rather than here — a
+     * correlated {@code AND r.BankingDate = (SELECT MAX(x.BankingDate) FROM
+     * rid0data x WHERE x.transRef = r.transRef)}, per key and never a table-wide
+     * MAX. Once each transRef yields one row the sort is total and the window is
+     * stable, so no third sort key is added in the meantime.
+     */
     @Override
-    public List<TransferSummary> sarieTransfers(
-            String accNo, String fromDate, String toDate, String refNo, String status) {
+    public PagedResult<TransferSummary> sarieTransfers(
+            String accNo, String fromDate, String toDate, String refNo, String status, int page) {
         StringBuilder sql = new StringBuilder("""
                 SELECT transRef, issueDate, valueDate, drAccNo, transCurrCode,
                        netAmt, payCurrCode, payAmt, statusFlag
@@ -107,7 +149,13 @@ public class JdbcTransferRepository implements TransferRepository {
         sql.append("""
                 ORDER  BY issueDate, transRef
                 """);
-        return jdbc.query(sql.toString(), params, (rs, i) -> new TransferSummary(
+        int offset = Math.max(0, page) * PagedResult.PAGE_SIZE;
+        if (offset > 0) {
+            sql.append("OFFSET %d ROWS\n".formatted(offset));
+        }
+        // One row past the page: its presence IS hasMore.
+        sql.append("FETCH FIRST %d ROWS ONLY\n".formatted(PagedResult.PAGE_SIZE + 1));
+        List<TransferSummary> rows = jdbc.query(sql.toString(), params, (rs, i) -> new TransferSummary(
                 scrub(rs.getString("transRef")),
                 BmForms.isoToBmDate(scrub(rs.getString("issueDate"))),
                 BmForms.isoToBmDate(scrub(rs.getString("valueDate"))),
@@ -117,6 +165,11 @@ public class JdbcTransferRepository implements TransferRepository {
                 scrub(rs.getString("payCurrCode")),
                 scrub(rs.getString("payAmt")),
                 scrub(rs.getString("statusFlag"))));
+        boolean hasMore = rows.size() > PagedResult.PAGE_SIZE;
+        return new PagedResult<>(
+                hasMore ? List.copyOf(rows.subList(0, PagedResult.PAGE_SIZE)) : List.copyOf(rows),
+                hasMore,
+                false);
     }
 
     // ------------------------------------------------------------------

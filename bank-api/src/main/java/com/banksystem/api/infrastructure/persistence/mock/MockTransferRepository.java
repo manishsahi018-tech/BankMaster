@@ -1,5 +1,6 @@
 package com.banksystem.api.infrastructure.persistence.mock;
 
+import com.banksystem.api.domain.model.PagedResult;
 import com.banksystem.api.domain.model.TransactionDetail;
 import com.banksystem.api.domain.model.TransactionSummary;
 import com.banksystem.api.domain.model.TransferDetail;
@@ -171,15 +172,21 @@ public class MockTransferRepository implements TransferRepository {
         return List.copyOf(rows);
     }
 
+    /**
+     * The fixtures are generated in memory, so the window the JDBC repository
+     * pushes into SQL is applied here with {@link PagedResult#page} — same
+     * contract (a page plus hasMore), no query to push it into.
+     */
     @Override
-    public List<TransferSummary> sarieTransfers(String accNo, String fromDate, String toDate,
-                                                String refNo, String status) {
-        return transfersFor(accNo).stream()
+    public PagedResult<TransferSummary> sarieTransfers(String accNo, String fromDate, String toDate,
+                                                       String refNo, String status, int page) {
+        List<TransferSummary> all = transfersFor(accNo).stream()
                 .filter(t -> DemoData.inRange(t.issueDate(), fromDate, toDate))
                 .filter(t -> refNo == null || refNo.isBlank() || t.transRef().equals(refNo))
                 .filter(t -> status == null || status.isBlank() || "A".equals(status)
                         || t.statusFlag().equals(status))
                 .toList();
+        return PagedResult.page(all, page);
     }
 
     @Override
