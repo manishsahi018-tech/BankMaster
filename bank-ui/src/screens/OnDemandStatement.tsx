@@ -16,17 +16,22 @@ import {
 // Mirrors legacy frmInputform (OnlineStmt.frm, "OnLine Statement Printing") —
 // the frmAccount cmdStatement button, authority ~60/~61/~62.
 //
-// THIS SCREEN HAS NO ARCHIVAL SOURCE. cmdStatement first asks cbcmssrv for the
-// IBAN (service "BB", frmAccount.frm:1130), then opens frmInputform, whose
-// Form_Load connects to a SEPARATE socket — the online gateway, bmrtServer at
-// onlineHostName:OnlinePort — and sends service "07". The gateway owns live
-// balances and same-day postings; no Denodo view holds them. That connection is
-// what bank.online-db (DB #2) is reserved for, and it is not wired up yet, so
-// the banner below says so and MockOnlineEnquiryRepository stands in.
+// cmdStatement first asks cbcmssrv for the IBAN (service "BB",
+// frmAccount.frm:1130), then opens frmInputform, whose Form_Load connects to a
+// SEPARATE socket — bmrtServer at onlineHostName:OnlinePort — and sends service
+// "07". A separate socket, but NOT a separate data source: the server on the
+// far end is cbrt01, whose getOndemandStmt() is a local read over
+// gld0data/crd0data/thd0data (QUERY-SPECS §21.1). So this is served from the
+// archival DB like every other screen — JdbcOnlineEnquiryRepository.
 //
-// Everything else is ported and works unchanged the day a real gateway client
-// lands: the day-granular date pair, the validation order, the pointer paging
-// loop, the running carried balance, the movement totals and the printed sheet.
+// The one thing that separates this screen from Transaction Inquiry is that the
+// statement HIDES rows flagged do-not-print, and its balance brought forward is
+// walked back over only the rows it shows. The two screens can therefore report
+// different opening balances for the same account and range, correctly.
+//
+// Ported unchanged: the day-granular date pair, the validation order, the
+// pointer paging loop, the running carried balance, the movement totals and the
+// printed sheet.
 
 const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'))
 const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
@@ -251,8 +256,11 @@ export default function OnDemandStatement({
           <p>{unavailable}</p>
         </SourceBanner>
       ) : (
-        <SourceBanner title="Demo data — the online gateway is not connected">
-          <p>Figures below are generated. Service 07 (bmrtServer) is not wired up here.</p>
+        <SourceBanner title="Demo data — no database is connected">
+          <p>
+            Figures below are generated. Against a real archival database this statement is
+            served from thd0data, gld0data and crd0data (legacy service 07).
+          </p>
         </SourceBanner>
       )}
 

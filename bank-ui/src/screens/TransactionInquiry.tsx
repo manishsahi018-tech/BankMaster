@@ -11,12 +11,17 @@ import { balanceMarker, formatGatewayDate, formatMinor, splitAmount } from '../g
 // cmdTransaction button, authority ~60/~61/~62).
 //
 // NOT frmTransEnq.frm — that is the separate "Transaction Type Enquiry" button,
-// which speaks cbcmssrv service 85 over thd0data and IS built (see
-// TransactionEnquiry.tsx). This one speaks the online-gateway envelope
-// (checkSum / branchName / Source / EOT, service 11) to bmrtServer over its own
-// socket, and has no archival source at all. That connection is what
-// bank.online-db (DB #2) is reserved for; until it exists the banner below says
-// so and MockOnlineEnquiryRepository stands in.
+// which speaks cbcmssrv service 85 over thd0data (see TransactionEnquiry.tsx).
+// This one speaks the online-gateway envelope (checkSum / branchName / Source /
+// EOT, service 11) to bmrtServer over its own socket — but the server on the far
+// end is cbrt01, whose getTransEnquiry() reads the SAME local thd0data, plus
+// gld0data and crd0data for the header (QUERY-SPECS §21.1). Two different
+// sockets in the legacy, one archival source here.
+//
+// Against On-demand Statement this screen is the WIDER of the two: it keeps
+// rows flagged do-not-print, which the statement hides, and its balance brought
+// forward is walked back over all of them. Different opening balances for the
+// same range are expected, not a bug.
 //
 // Ported unchanged: the two mutually exclusive starting points, the absent
 // toDate, the pointer paging loop and the ten grid columns.
@@ -212,8 +217,11 @@ export default function TransactionInquiry({
           <p>{unavailable}</p>
         </SourceBanner>
       ) : (
-        <SourceBanner title="Demo data — the online gateway is not connected">
-          <p>Rows below are generated. Service 11 (bmrtServer) is not wired up here.</p>
+        <SourceBanner title="Demo data — no database is connected">
+          <p>
+            Rows below are generated. Against a real archival database this enquiry is served
+            from thd0data, gld0data and crd0data (legacy service 11).
+          </p>
         </SourceBanner>
       )}
 

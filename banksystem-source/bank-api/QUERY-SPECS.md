@@ -610,13 +610,90 @@ ORDER  BY s.accNo, s.signatoryNo
 OFFSET :lastRecCount ROWS FETCH NEXT 20 ROWS ONLY;
 ```
 
-## 21. Statements & merchant — not in this codebase
+## 21. Statements — where each one actually lives
 
-Verified by sweep: the C server has **no handler** for on-demand statements,
-historical statements, or merchant statements.
-- **On-demand statement**: served by the core banking host via the Tuxedo gateways
-  (`ONLNGWENQ`/`FINONLNGWENQ` relay account enquiries; no statement service exists
-  here). Port = query the core/DB #2 transaction store.
+### 21.1 On-demand statement + transaction inquiry (services 07/11) — cbrt01, fully local
+
+**Corrected.** An earlier sweep concluded these had no C handler; that sweep covered
+`cbcmssrv` only. They live in a SECOND server binary — `bmrtServer`, the "Real Time
+Update process" (`docs/cbrt.h`, `docs/cbrt01.c`) — which the VB6 client reaches on its
+own socket (`onlineHostName:OnlinePort`, default 2006). Neither handler touches
+Tuxedo, Finacle or the core host: `dealWithFingw()` sits in the same file but serves
+only the card services (00/31/33/61/62).
+
+Both read the same three local ISAM files:
+- **gld0data** — 13-char BM accNo (`actualToBmAcc`); supplies `bookBal`, `branchCode`
+- **crd0data** — 6-char BM custNo (`actualToBmCust(&accNo[5])`); supplies `shortName`,
+  `address1`, `language`
+- **thd0data** — recType `'0'` rows, plus a second handle on the recType `'1'`
+  continuation for narratives 2/3
+
+So these are **DB #1 enquiries over the same thd0data as §18**, not DB #2.
+
+#### The two handlers, diffed
+
+`getOndemandStmt()` (cbrt01.c:545) and `getTransEnquiry()` (:915) are near-identical
+copies. Every real difference:
+
+| | **07** on-demand statement | **11** transaction inquiry |
+|---|---|---|
+| row filter (:790 / :1162) | `recType != '0' \|\| statmentFlag >= '1'` → skip | `recType != '0'` → skip |
+| blank `toDate` | not substituted; `validate()` fails → `INCORRECTMSG` "03" | substituted with the SERVER's system date (:971-976) |
+| per-txn extras | — | `refNo`←`transRef`, `transCounter`, `supervisorId`, `statementFlag` |
+| detail record | 111 bytes (`ondemandStmtTrans`) | 130 bytes (`transEnquiryDetails`, "added for version 3.7") |
+| B/F balance | reverses out statement-eligible rows only | reverses out every row |
+
+The B/F difference is a definition, not a discrepancy: `bfBal = bookBal + |debits| -
+credits` accumulated over exactly the rows that survived the filter, so the two screens
+legitimately report DIFFERENT opening balances for the same account and range.
+
+`thd0data.statmentFlag` is documented `/* 1 - do not print */` (cbslib/layout.h:1583).
+Note §18's reversal filter uses `statmentFlag > '1'` while 07 excludes `>= '1'` — so
+flag value exactly `'1'` is suppressed from statements but is NOT an RR reversal.
+Probe real data before relying on either threshold.
+
+#### Shared mechanics
+
+`accNo[5..] > "6199999"` → `NOMAINACC`; overpunch decode at byte 13 (`>= 'P'` →
+negative); non-printable scrub (`>= 0 && < 27` → space) on name, address and all three
+narratives; 50 rows per page; continuation pages `break` out early rather than
+rescanning the whole history.
+
+Paging rides **index 1 = 26 bytes: `accNo[13] + filler1[7] + transCounter[5] +
+recType`** (layout.h:1575-1578). The seek is `isstart(..., 26, ISGREAT)` with
+`transCounter = lastTransPtr` and `recType='0'`, so ordering is `accNo, transCounter`
+and resume is `transCounter > :lastTransPtr`. That also settles §18's note: narratives
+2/3 correlate on **transCounter** — `thd1data` carries no `transRef`.
+
+`getTransEnquiry` at :953 has `strncmp(inBuf->lastTransPtr, "00000")` **missing its
+length argument** (07 has it at :583), so 11's "skip from-date validation on
+continuation pages" branch is decided by whatever the third argument happens to hold.
+Port 07's intent; do not replicate the bug.
+
+#### Open before the JDBC port
+
+1. **`crd0data` is being created in Denodo** (absent when DENODO-VIEWS.md:156 was
+   written, confirmed 2026-08-19 as coming). Both handlers source
+   `custName`/`custAddress`/`languageCode` from it, so target it directly — no
+   `stcusttab`+`staddrtab` substitute. Columns needed: `accNo[6]` (the 6-char BM
+   custNo from `actualToBmCust(&accNo[5])`, NOT the 14-char actual form — see the
+   key-length caveat at DENODO-VIEWS.md:150), `shortName[30]`, `address1[30]`,
+   `address2[30]`, `language`.
+
+   **`address1` is 30 chars, not 60** (cbslib/layout.h:751). Both handlers do
+   `strncpy(inBuf->custAddress, crdRec.address1, 60)` — copying 60 bytes from a
+   30-char field, so `custAddress[60]` is `address1 ‖ address2` CONCATENATED.
+   Requesting `address1` alone yields half the address.
+2. **`bookBal` snapshot.** The B/F walk-back starts from `gld0data.bookBal`, so it is
+   only meaningful against a single-valued `BankingDate` snapshot. Confirm `gld0data`
+   is one of those views first.
+
+Served by `JdbcOnlineEnquiryRepository` under the `denodo` profile. While
+crd0data is absent it throws `NotAvailableException` (HTTP 501) BEFORE fetching
+any transactions, so the screen shows nothing rather than an unnamed customer.
+
+### 21.2 Historical & merchant statements — genuinely not in this codebase
+
 - **Historical statement**: produced by an external batch and delivered to branches
   **by FTP**; only the authority codes (87, 94) exist in this system. Port = query
   the archive store directly (thd0data in DB #1 may cover it — confirm).
@@ -677,11 +754,14 @@ owners W/'03'+'04' (local + home addresses). These also apply to signatories
    worth a query timeout + partial-result convention in the API.
 7. **Archival schema gaps (raise with the DB team):** `bkd0data` and `ccarrblk` are
    read by the blocked-amount breakup but are absent from the workbook's 106 tables.
-8. **Two integrations survive the DB consolidation:** live SADAD bill enquiry
-   (Tuxedo `UTBLENQ`/`SADBILLENQ`) and the core-host statement services — neither is
-   servable from DB #1/DB #2 as currently defined.
+8. **One integration survives the DB consolidation:** live SADAD bill enquiry
+   (Tuxedo `UTBLENQ`/`SADBILLENQ`), which neither DB #1 nor DB #2 can serve. The
+   on-demand statement was previously listed here as a second one; that was wrong —
+   `cbrt01.c` serves services 07 and 11 from local gld0data/crd0data/thd0data, so both
+   are DB #1 work. See §21.1.
 9. **Tier-1 is otherwise DB #1 territory:** SARIE transfers (rid0data), BM
-   transactions (thd0data + type-1 continuation rows), cards (stcardtab/stcardlog —
+   transactions AND the two cbrt01 enquiries — on-demand statement and transaction
+   inquiry — (thd0data + type-1 continuation rows), cards (stcardtab/stcardlog —
    the workbook already carries the CBS-era coreCustNo/coreAccNo columns),
    signatories (stsigntab⋈stidtab), SADAD history (stsadadlog), stop-cheque /
    standing-order / cheque-book details. Only the card screens' customer header

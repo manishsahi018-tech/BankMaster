@@ -99,11 +99,14 @@ bank:
     search-timeout-seconds: ${ARCHIVAL_SEARCH_TIMEOUT_SECONDS:30}
   # NO online-db (DB #2). It was a second pool onto the same Denodo server —
   # every property defaulted to its archival counterpart and no repository
-  # queried it — so it is merged into archival-db above. The cbcmssrv/Finacle
-  # gateway data still does not exist here (UnavailableOnlineEnquiryRepository
-  # answers On-demand Statement / Transaction Inquiry); when it arrives on its
-  # own engine, add the block back with its own URL + driver and drop that
-  # engine's JDBC driver jar next to the Denodo one in -Dloader.path.
+  # queried it — so it is merged into archival-db above. On-demand Statement and
+  # Transaction Inquiry no longer need it either: their legacy server (cbrt01)
+  # read local gld0data/crd0data/thd0data, so JdbcOnlineEnquiryRepository serves
+  # them from DB #1. What genuinely still lives on the Finacle gateway is the
+  # card screens' customer header (the TODO(DB #2) markers in JdbcCardRepository).
+  # When that source turns up on its own engine, add the block back with its own
+  # URL + driver and drop that engine's JDBC driver jar next to the Denodo one
+  # in -Dloader.path.
   statement-db:           # DB #3 — the statement archive, Historical Statement only.
                           # A SEPARATE Oracle instance, not Denodo and not DB #2:
                           # it replaces the legacy's Btrieve statement index plus

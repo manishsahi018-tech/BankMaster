@@ -17,10 +17,12 @@ import org.springframework.web.server.ResponseStatusException;
  * frmTransaction (service 11), the frmAccount cmdStatement and cmdTransaction
  * buttons.
  *
- * <p>Routing them through the API keeps one client contract, but the data comes
- * from the online gateway rather than the archival schema — see
- * {@code OnlineEnquiryRepository}. Both page by sending back the previous
- * reply's {@code lastTransPtr} until {@code completionFlag} is "1".
+ * <p>The legacy reached these over a separate gateway socket, but the server on
+ * the far end (cbrt01) read the same local thd0data every other transaction
+ * screen reads — so they belong in the archival schema like the rest, and the
+ * repository is simply unwritten. See {@code OnlineEnquiryRepository}. Both
+ * page by sending back the previous reply's {@code lastTransPtr} until
+ * {@code completionFlag} is "1".
  */
 @RestController
 @RequestMapping("/api/accounts/{accNo}")

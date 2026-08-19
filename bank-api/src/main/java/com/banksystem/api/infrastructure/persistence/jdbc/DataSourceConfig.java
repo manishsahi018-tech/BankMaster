@@ -35,10 +35,11 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
  * endpoint probing the connection it had just probed. Both sources being
  * Denodo, the two are merged into DB #1.
  *
- * <p>This does not retire DB #2 as a CONCEPT: the online gateway's data still
- * does not exist here, which is why {@code UnavailableOnlineEnquiryRepository}
- * answers On-demand Statement and Transaction Inquiry, and why the
- * {@code TODO(DB #2)} markers in JdbcCardRepository still stand. When that
+ * <p>This does not retire DB #2 as a CONCEPT — the {@code TODO(DB #2)} markers
+ * in JdbcCardRepository still stand for the card screens' customer header. It
+ * no longer covers On-demand Statement and Transaction Inquiry, though: their
+ * legacy server (cbrt01) read local gld0data/crd0data/thd0data, so
+ * {@code JdbcOnlineEnquiryRepository} serves both from DB #1. When a real DB #2
  * source turns up on its own engine, add its datasource + template beans back
  * here and qualify the repositories that need it — the same shape
  * {@code statementDataSource} already has for DB #3.

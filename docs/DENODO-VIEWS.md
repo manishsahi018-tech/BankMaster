@@ -4,25 +4,36 @@ Every table below is referenced by a `FROM`/`JOIN` in `bank-api` under the
 `denodo` profile. Extracted from
 `bank-api/src/main/java/com/banksystem/api/infrastructure/persistence/jdbc/Jdbc*Repository.java`.
 
-**38 views total** — 30 on the BM archival schema, 8 on the online/Finacle side.
+**39 views total** — 30 on the BM archival schema, 9 on the online/Finacle side.
 
-## Availability (confirmed against Cloudera/Denodo, 2026-07-28)
+## Availability (confirmed against Cloudera/Denodo, 2026-07-28; `crd0data` added 2026-08-19)
 
-**35 of the 38 exist. Three do not:**
+**35 of the 39 exist. Four do not:**
 
 | Missing view | Screen impact | Severity |
 |---|---|---|
 | `bkd0data` | Blocked Amount Breakup loses source 3 (`O` — other BM blocking) | degrades |
 | `ccarrblk` | Blocked Amount Breakup loses source 4 (`M`/`C` — credit-card arrear blocks) | degrades |
 | `stswiftlog` | Transfer Detail's pending-SWIFT-amendment guard never fires | degrades |
+| `crd0data` | On-demand Statement and Transaction Inquiry refuse to run at all | **blocks** |
 
-None of the three breaks a screen. All are read inside their own try/catch and
-fail to a warn log — see `JdbcAccountRepository.blockedSource` and
+The first three do not break a screen. All are read inside their own try/catch
+and fail to a warn log — see `JdbcAccountRepository.blockedSource` and
 `JdbcTransferRepository.hasPendingSwiftUpdate`. The one user-visible symptom is
 on Blocked Amount Breakup: the "Total Blocked Balance" tile comes from the
 `gld0data` header and is independent of the detail rows, so for an account
 carrying an `O` or credit-card block the total will exceed the sum of the rows
 shown, with nothing on screen explaining the difference.
+
+**`crd0data` is deliberately not in that pattern.** It supplies the customer
+name, address and language on the two cbrt01 enquiries, and
+`JdbcOnlineEnquiryRepository` queries it FIRST and throws
+`NotAvailableException` (HTTP 501) when it cannot be read — before a single
+transaction is fetched. That is a decision, not an oversight: on a banking
+enquiry a nameless customer header is worse than no screen. It is being created
+on the Denodo side; both screens start working the day it lands, no code change.
+A missing crd0data ROW is a different case and stays the legacy's answer for it
+(status "05", NOMAINACC).
 
 Two lookalikes exist in Denodo and must **not** be substituted:
 `stsodlog` is the standing-order audit log, not `sod0data` (the order master);
@@ -108,8 +119,10 @@ All views are **read-only**; the pool is `read-only: true`.
 
 ## DB #2 — online / Finacle source (no connection of its own)
 
-⚠️ These are the tables the legacy `cbcmssrv` TCP/IP server read. **All of them
-are queried through the archival connection** — every repository is wired to
+⚠️ These are the tables the legacy TCP/IP servers read — `cbcmssrv` for most,
+and `cbrt01` (`bmrtServer`, the second socket) for `gld0data`/`crd0data`/
+`thd0data` on services 07 and 11. **All of them are queried through the archival
+connection** — every repository is wired to
 `@Qualifier("archivalJdbc")` — so they must exist as Denodo views on the
 archival datasource. There is no longer a separate `online-db`: it pointed at
 the same Denodo server, nothing queried it, and it has been merged into DB #1.
@@ -118,10 +131,11 @@ legacy, which is why they are the ones most likely to be missing.
 
 | View | Used by (screen) |
 |---|---|
-| `gld0data` | Account list for customer, Account Detail (current master), Standing Order Detail branch, Blocked Amount Breakup |
+| `gld0data` | Account list for customer, Account Detail (current master), Standing Order Detail branch, Blocked Amount Breakup, On-demand Statement + Transaction Inquiry (bookBal, branchCode) |
 | `sod0data` | Standing Order grid + detail |
 | `pyd0data` | Stop Cheque grid + detail |
-| `thd0data` | Transaction Type Enquiry + Transaction Detail |
+| `thd0data` | Transaction Type Enquiry + Transaction Detail, On-demand Statement + Transaction Inquiry |
+| `crd0data` | On-demand Statement + Transaction Inquiry (customer header) — **being created**, see Availability |
 | `rid0data` | SARIE Transfer Enquiry + Transfer Detail |
 | `aad0data` | Blocked Amount Breakup (source 2) |
 | `bkd0data` | Blocked Amount Breakup (source 3) |
@@ -151,8 +165,32 @@ legacy, which is why they are the ones most likely to be missing.
    (`CCMMMNNNNNNNSS`) per the workbook, and the customer scan uses
    `gld0data.custNo`. The legacy C used the 13-char BM form. `bkd0data` keeps
    the 13-char key. Needs one real-data probe to validate.
+   **`crd0data` inherits this question and is the sharpest case of it**: the C
+   keys it on the 6-char PACKED BM customer (`actualToBmCust(&accNo[5])`), while
+   every view delivered so far carries the actual form, so
+   `JdbcOnlineEnquiryRepository` binds the 7-char actual customer. If the view
+   arrives keyed the BM way instead, every account answers "05" and the fix is
+   one call to `BmForms.bmCust`. Settle it when the view is defined.
 3. **`aad0data` account column** is `FinoneAlcoAccNo` in the workbook, not the
    spec's `accNo`.
-4. **`crd0data`** is *not* in the list — the cheque-book search's
-   `alternativeBranchCode` was deliberately not ported. Add it only if that
-   field is required.
+4. **`crd0data` is now required**, and confirmed as being created (2026-08-19).
+   It was previously left out because its only consumer was the cheque-book
+   search's `alternativeBranchCode`; the two cbrt01 enquiries changed that.
+   Columns needed now: `accNo` (6, the key — see item 2), `shortName` (30),
+   `address1` (30), `address2` (30), `language` (1).
+   **Ask for `address1` AND `address2`.** `cbrt01.c` copies 60 bytes starting at
+   `address1`, which is only 30 wide (`cbslib/layout.h:751`), so the reply's
+   60-char `custAddress` is the two columns CONCATENATED. `address1` alone
+   yields half the address and looks like clean data. Since the view is being
+   built anyway, request the whole record — `branchCode` (1860),
+   `alternativeBranchCode` (1864), `packageAcc` (1922), `vipFlag` (1921) and
+   `nonResident` (148) all have callers in the C, and one creation unblocks the
+   cheque-book field too.
+5. **`stctltabXC.decimalPlace`** (offset 92 of `struct cnd0dataXC`,
+   `cbslib/layout.h:1054`). The view exists and `JdbcReferenceDataRepository`
+   already reads its `currCode`/names, but nothing has yet needed
+   `decimalPlace` — the divisor every amount on the two cbrt01 enquiries is
+   scaled by. `JdbcOnlineEnquiryRepository` refuses the enquiry if the column is
+   not there, rather than guessing: the legacy's own fallback is 2 decimals, the
+   mock assumes 3, and picking wrong renders every figure off by a factor of ten
+   with nothing on screen to say so. Confirm the column is exposed.
