@@ -197,8 +197,18 @@ legacy, which is why they are the ones most likely to be missing.
    defaulting silently would render every figure off by a factor of ten with
    nothing on screen to say so.
 
-   **Still worth one probe: what VALUES it holds.** The legacy's read-failure
-   fallback is `'2'` and the mock assumes `'3'` for SAR, so the two disagree
-   about the local currency. Whichever the column says now wins for real, but a
-   glance at `SELECT currCode, decimalPlace FROM stctltabXC` would confirm the
-   SAR row and settle which of the two guesses was right.
+   **Values checked 2026-08-19: they VARY by currency — 0, 2 and 3 all occur.**
+   That is the shape the C always assumed (`readCnd` looks the value up per
+   account, keyed `"XC00"` + the account's 2-char currency), and
+   `JdbcOnlineEnquiryRepository` already does the same, so nothing needed
+   changing server-side. `0` is not an unhandled case either: the legacy's own
+   `Else` branch gives `coinDenomination = 1, coinPrecision = 0`
+   (frmTransaction.frm:428-440) and `gateway.ts` ports exactly that.
+
+   What DID need fixing was the mock, which answered a flat `'3'` for every
+   account and so never once exercised the whole-unit path — the branch where
+   dividing by the wrong power of ten looks least wrong on screen. It now
+   derives decimalPlace from the currency like the real repository, and scales
+   the amounts it generates to match. Every DemoData account is currency `01`
+   (`ACC_PREFIX`), so to see a 0-decimal statement in dev, ask for an account
+   number starting `03`.

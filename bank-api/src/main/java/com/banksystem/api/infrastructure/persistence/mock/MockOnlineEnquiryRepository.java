@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
@@ -34,8 +35,31 @@ public class MockOnlineEnquiryRepository implements OnlineEnquiryRepository {
     /** Transactions per reply, so the screens exercise the paging loop. */
     private static final int PAGE_SIZE = 20;
 
-    /** Three decimals, as SAR carries — so coinDenomination is 1000. */
-    private static final String DECIMAL_PLACE = "3";
+    /**
+     * decimalPlace by CURRENCY, because that is what it is: readCnd
+     * (cbrt01.c:3144) reads cnd0data key "XC00" + the account's 2-char currency,
+     * and real stctltabXC data carries a mix — 0, 2 and 3 all occur. A single
+     * constant here would have let the screens pass while silently skipping the
+     * whole-unit path, which is the one where dividing by the wrong power of ten
+     * is least obvious on screen.
+     *
+     * <p>Every demo account is currency "01" (DemoData.ACC_PREFIX), so the
+     * others only show up if you ask for an account number that starts with a
+     * different pair — {@code /api/accounts/03008...} renders a 0-decimal,
+     * whole-unit statement. That is deliberate: same currency, same scale, as
+     * the real thing guarantees.
+     *
+     * <p>The values are illustrative, not the bank's table. "01" is SAR; the
+     * rest are stand-ins picked to cover each branch of coinDenomination.
+     */
+    private static final Map<String, String> DECIMAL_PLACE_BY_CURRENCY = Map.of(
+            "01", "3",
+            "02", "2",
+            "03", "0",
+            "04", "1");
+
+    /** readCnd's own fallback for a currency it cannot read (cbrt01.c:3154). */
+    private static final String DEFAULT_DECIMAL_PLACE = "2";
 
     /** langCode: the legacy reads "0" as Arabic and anything else as English. */
     private static final String LANG_ENGLISH = "3";
@@ -76,6 +100,7 @@ public class MockOnlineEnquiryRepository implements OnlineEnquiryRepository {
         long days = Math.min(java.time.temporal.ChronoUnit.DAYS.between(from, to) + 1, 400);
         int total = (int) Math.min(days * 2, 137);
 
+        long denomination = denomination(decimalPlace(accNo));
         Random random = new Random(31L * accNo.hashCode() + from.hashCode());
         // Replay from the start so page N is deterministic and the running
         // balance is continuous across pages, exactly as a cursor would be.
@@ -84,8 +109,13 @@ public class MockOnlineEnquiryRepository implements OnlineEnquiryRepository {
             String[] kind = KINDS[random.nextInt(KINDS.length)];
             boolean credit = kind[0].contains("CREDIT") || kind[0].contains("INWARD")
                     || random.nextInt(3) == 0;
-            // Minor units, three decimals: 25.000 - 9024.999
-            long minor = (25L + random.nextInt(9_000)) * 1000L + random.nextInt(1000);
+            // Minor units, scaled to THIS currency so the displayed figure lands in
+            // 25 - 9024.xxx whatever the decimalPlace is. Generating a fixed
+            // 3-decimal magnitude would have shown a whole-unit currency
+            // amounts in the millions — plausible-looking nonsense that hides
+            // whether the screen divided by anything at all.
+            long minor = (25L + random.nextInt(9_000)) * denomination
+                    + (denomination > 1 ? random.nextInt((int) denomination) : 0);
             LocalDate posted = from.plusDays(random.nextInt((int) days));
 
             all.add(new OnlineTransaction(
@@ -124,13 +154,29 @@ public class MockOnlineEnquiryRepository implements OnlineEnquiryRepository {
                 "0127",
                 "OLAYA MAIN BRANCH",
                 LANG_ENGLISH,
-                DECIMAL_PLACE,
+                decimalPlace(accNo),
                 bfBalance,
                 from.format(YYYYMMDD),
                 to.format(YYYYMMDD),
                 slice,
                 String.valueOf(end),
                 complete ? "1" : "0");
+    }
+
+    /** coinDenomination — what the screens divide by (gateway.ts, OnlineStmt.frm:748). */
+    private static long denomination(String decimalPlace) {
+        return switch (decimalPlace) {
+            case "1" -> 10L;
+            case "2" -> 100L;
+            case "3" -> 1000L;
+            default -> 1L;
+        };
+    }
+
+    /** The account's currency is its first two characters, as in the real repository. */
+    private static String decimalPlace(String accNo) {
+        String currCode = accNo != null && accNo.length() >= 2 ? accNo.substring(0, 2) : "";
+        return DECIMAL_PLACE_BY_CURRENCY.getOrDefault(currCode, DEFAULT_DECIMAL_PLACE);
     }
 
     private static LocalDate parse(String yyyymmdd, LocalDate fallback) {
