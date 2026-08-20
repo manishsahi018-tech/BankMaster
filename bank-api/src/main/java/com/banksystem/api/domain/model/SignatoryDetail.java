@@ -16,5 +16,22 @@ public record SignatoryDetail(
         String idIssueDateG,
         String idExpiryDateH,
         String idExpiryDateG,
-        String signatoryShortName) {
+        String signatoryShortName,
+        // The rest of frmJuristicSignatory's panel, all stsigntab's own columns.
+        String aFirstName,
+        String aSecondName,
+        String aThirdName,
+        String aLastName,
+        String aShortName,
+        String eFirstName,
+        String eSecondName,
+        String eThirdName,
+        String eLastName,
+        String eShortName,
+        /** "Signature Enabled" — the panel's Yes/No pair. */
+        String activeStatus,
+        /** "Reasons for Disabled Signature", shown when the signature is off. */
+        String reason,
+        String signatureActionDate,
+        String diplomaticPpNo) {
 }

@@ -81,7 +81,10 @@ public class JdbcSignatoryRepository implements SignatoryRepository {
                        i.idDateType, i.idIssuedAt,
                        i.idIssueDateH, i.idIssueDateG,
                        i.idExpiryDateH, i.idExpiryDateG,
-                       COALESCE(NULLIF(TRIM(s.aShortName), ''), s.eShortName) AS signatoryShortName
+                       COALESCE(NULLIF(TRIM(s.aShortName), ''), s.eShortName) AS signatoryShortName,
+                       s.aFirstName, s.aSecondName, s.aThirdName, s.aLastName, s.aShortName,
+                       s.eFirstName, s.eSecondName, s.eThirdName, s.eLastName, s.eShortName,
+                       s.activeStatus, s.reason, s.signatureActionDate, s.diplomaticPpNo
                 FROM   stsigntab s
                 -- INNER (not LEFT): legacy readSignTabInfo (cbsama.c:4021) treats
                 -- the stidtab read as mandatory. readIdTabFile(ISEQUAL) below
@@ -106,7 +109,16 @@ public class JdbcSignatoryRepository implements SignatoryRepository {
                         rs.getString("idIssuedAt"),
                         BmForms.actualDate(rs.getString("idIssueDateH")), BmForms.actualDate(rs.getString("idIssueDateG")),
                         BmForms.actualDate(rs.getString("idExpiryDateH")), BmForms.actualDate(rs.getString("idExpiryDateG")),
-                        rs.getString("signatoryShortName")));
+                        rs.getString("signatoryShortName"),
+                        rs.getString("aFirstName"), rs.getString("aSecondName"),
+                        rs.getString("aThirdName"), rs.getString("aLastName"),
+                        rs.getString("aShortName"),
+                        rs.getString("eFirstName"), rs.getString("eSecondName"),
+                        rs.getString("eThirdName"), rs.getString("eLastName"),
+                        rs.getString("eShortName"),
+                        rs.getString("activeStatus"), rs.getString("reason"),
+                        BmForms.actualDate(rs.getString("signatureActionDate")),
+                        rs.getString("diplomaticPpNo")));
         return rows.stream().findFirst();
     }
 }

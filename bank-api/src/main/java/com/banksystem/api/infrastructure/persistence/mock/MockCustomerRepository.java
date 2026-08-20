@@ -391,6 +391,52 @@ public class MockCustomerRepository implements CustomerRepository {
     }
 
     @Override
+    public java.util.Optional<com.banksystem.api.domain.model.PartyDetail> referenceDetail(
+            String custNo, String referenceNo) {
+        return references(custNo).stream()
+                .filter(r -> r.referenceNo().equals(referenceNo.trim()))
+                .findFirst()
+                .map(r -> party("reference", custNo, r.referenceNo(), r.referenceType(),
+                        r.shortName(), r.idType(), r.idNo(), r.activeStatus(),
+                        // The six packed flags the panel shows as check boxes.
+                        DemoData.pick(custNo + referenceNo, 90, 2) == 0 ? "000100" : "010000",
+                        "", "", ""));
+    }
+
+    @Override
+    public java.util.Optional<com.banksystem.api.domain.model.PartyDetail> heirDetail(
+            String custNo, String heirNo) {
+        return heirs(custNo).stream()
+                .filter(h -> h.heirNo().equals(heirNo.trim()))
+                .findFirst()
+                .map(h -> party("heir", custNo, h.heirNo(), h.heirType(),
+                        h.shortName(), h.idType(), h.idNo(), h.activeStatus(),
+                        "", h.proxyNo(), h.proxyIssueDateH(), h.proxyIssueDateG()));
+    }
+
+    /** Both panels are the same shape; only the extras differ. */
+    private com.banksystem.api.domain.model.PartyDetail party(
+            String kind, String custNo, String partyNo, String partyType, String shortName,
+            String idType, String idNo, String activeStatus, String referenceReqdFor,
+            String proxyNo, String proxyIssueDateH, String proxyIssueDateG) {
+        DemoData.Customer c = DemoData.customer(custNo);
+        String key = custNo + kind + partyNo;
+        var address = new com.banksystem.api.domain.model.OwnerDetail.Address(
+                "طريق الأمير سلطان", "", "3" + DemoData.pick(key, 91, 9000),
+                c.city(), c.zipCode(), "001", "0", "",
+                "011", String.valueOf(4000000 + DemoData.pick(key, 92, 900000)), "",
+                "011", String.valueOf(4000000 + DemoData.pick(key, 93, 900000)), "",
+                "", "", "", "05" + DemoData.pick(key, 94, 90000000), "", "");
+        return new com.banksystem.api.domain.model.PartyDetail(
+                kind, custNo, partyNo, partyType, activeStatus, "", c.branchCode(),
+                "سعد", "علي", "", "القحطاني", shortName,
+                "Saad", "Ali", "", "Al-Qahtani", shortName,
+                idType, idNo, c.city(), "1", "", "19970418", "", "20270417",
+                referenceReqdFor, proxyNo, proxyNo.isEmpty() ? "" : "1",
+                proxyIssueDateH, proxyIssueDateG, address);
+    }
+
+    @Override
     public List<HeirEntry> heirs(String custNo) {
         DemoData.Customer c = DemoData.customer(custNo);
         if (c.juristic()) {

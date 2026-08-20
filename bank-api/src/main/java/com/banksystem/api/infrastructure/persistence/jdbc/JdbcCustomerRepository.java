@@ -13,6 +13,7 @@ import com.banksystem.api.domain.model.JuristicAccountInfo;
 import com.banksystem.api.domain.model.OpenUpdateInfo;
 import com.banksystem.api.domain.model.OwnerDetail;
 import com.banksystem.api.domain.model.OwnerEntry;
+import com.banksystem.api.domain.model.PartyDetail;
 import com.banksystem.api.domain.model.ReferenceEntry;
 import com.banksystem.api.domain.repository.CustomerRepository;
 import java.util.ArrayList;
@@ -1053,8 +1054,10 @@ public class JdbcCustomerRepository implements CustomerRepository {
         }
         Object[] o = owner.get(0);
 
-        String[] id = ownerIdRow(params, (String) o[4], (String) o[5]);
-        Map<String, OwnerDetail.Address> addresses = ownerAddresses(params);
+        String[] id = partyIdRow(params, "W", (String) o[4], (String) o[5]);
+        Map<String, OwnerDetail.Address> addresses = partyAddresses(new HashMap<>(Map.of(
+                "bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo),
+                "partyNo", ownerNo.trim(), "addressTypes", List.of("03", "04"))));
 
         return Optional.of(new OwnerDetail(
                 trim(custNo), (String) o[0], (String) o[1], (String) o[2], (String) o[3],
@@ -1067,18 +1070,114 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 addresses.getOrDefault("04", OwnerDetail.Address.empty())));
     }
 
-    /** stidtab, idCategory 'W' — the owner bucket (cbsama.c:2356). */
-    private String[] ownerIdRow(Map<String, Object> base, String idType, String idNo) {
+    /**
+     * The Reference / Legal Representative panel — frmIndividualSaudi2's
+     * double-click (referenceInfoGrid_DblClick :2722, readReferenceTabInfo
+     * cbsama.c:3400). stcreftab plus the 'R' ID row and the '02' address.
+     */
+    @Override
+    public Optional<PartyDetail> referenceDetail(String custNo, String referenceNo) {
+        return partyDetail("reference", custNo, referenceNo, """
+                SELECT referenceNo AS partyNo, referenceType AS partyType,
+                       referenceReqdFor, activeStatus, disabledDate, branchCode,
+                       idType, idNo,
+                       aFirstName, aSecondName, aThirdName, aLastName, aShortName,
+                       eFirstName, eSecondName, eThirdName, eLastName, eShortName,
+                       '' AS proxyNo, '' AS proxyDateType,
+                       '' AS proxyIssueDateH, '' AS proxyIssueDateG
+                FROM   stcreftab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  referenceNo = :partyNo
+                FETCH FIRST 1 ROWS ONLY
+                """, "R", "02");
+    }
+
+    /**
+     * The Heirs / Proxy panel — frmIndividualHeirs' double-click
+     * (heirInfoGrid_DblClick :2807). stheirtab plus the 'H' ID row and the '05'
+     * address. The proxy block is stheirtab's own, not an ID row.
+     */
+    @Override
+    public Optional<PartyDetail> heirDetail(String custNo, String heirNo) {
+        return partyDetail("heir", custNo, heirNo, """
+                SELECT heirNo AS partyNo, heirType AS partyType,
+                       '' AS referenceReqdFor, activeStatus, disabledDate, branchCode,
+                       idType, idNo,
+                       aFirstName, aSecondName, aThirdName, aLastName, aShortName,
+                       eFirstName, eSecondName, eThirdName, eLastName, eShortName,
+                       proxyNo, proxyDateType, proxyIssueDateH, proxyIssueDateG
+                FROM   stheirtab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  heirNo = :partyNo
+                FETCH FIRST 1 ROWS ONLY
+                """, "H", "05");
+    }
+
+    /**
+     * The shared half of the two panels: read the party row, then its ID row
+     * and its address. Only the table, the ID bucket and the address type
+     * differ, which is exactly what the C varies between
+     * readReferenceTabInfo and the heir path.
+     */
+    private Optional<PartyDetail> partyDetail(String kind, String custNo, String partyNo,
+            String sql, String idCategory, String addressType) {
+        Map<String, Object> params = new HashMap<>(Map.of(
+                "bankingDate", bankingDate.bankingDate(),
+                "custNo", padCust(custNo),
+                "partyNo", partyNo.trim()));
+
+        List<String[]> rows = jdbc.query(sql, params, (rs, i) -> new String[] {
+                trim(rs.getString("partyNo")), trim(rs.getString("partyType")),
+                trim(rs.getString("referenceReqdFor")), trim(rs.getString("activeStatus")),
+                BmForms.actualDate(rs.getString("disabledDate")), trim(rs.getString("branchCode")),
+                trim(rs.getString("idType")), trim(rs.getString("idNo")),
+                trim(rs.getString("aFirstName")), trim(rs.getString("aSecondName")),
+                trim(rs.getString("aThirdName")), trim(rs.getString("aLastName")),
+                trim(rs.getString("aShortName")),
+                trim(rs.getString("eFirstName")), trim(rs.getString("eSecondName")),
+                trim(rs.getString("eThirdName")), trim(rs.getString("eLastName")),
+                trim(rs.getString("eShortName")),
+                trim(rs.getString("proxyNo")), trim(rs.getString("proxyDateType")),
+                BmForms.actualDate(rs.getString("proxyIssueDateH")),
+                BmForms.actualDate(rs.getString("proxyIssueDateG"))});
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        String[] r = rows.get(0);
+
+        String[] id = partyIdRow(params, idCategory, r[6], r[7]);
+        Map<String, OwnerDetail.Address> addresses = partyAddresses(new HashMap<>(Map.of(
+                "bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo),
+                "partyNo", partyNo.trim(), "addressTypes", List.of(addressType))));
+
+        return Optional.of(new PartyDetail(
+                kind, trim(custNo), r[0], r[1], r[3], r[4], r[5],
+                r[8], r[9], r[10], r[11], r[12], r[13], r[14], r[15], r[16], r[17],
+                r[6], r[7], id[0], id[1], id[2], id[3], id[4], id[5],
+                r[2], r[18], r[19], r[20], r[21],
+                addresses.getOrDefault(addressType, OwnerDetail.Address.empty())));
+    }
+
+    /**
+     * One party's stidtab row. The idCategory letter is the bucket: 'W' owners
+     * (cbsama.c:2356), 'R' references (:3400), 'H' heirs (:1632), against the
+     * customer's own 'C' documents.
+     */
+    private String[] partyIdRow(Map<String, Object> base, String idCategory,
+            String idType, String idNo) {
         Map<String, Object> params = new HashMap<>(base);
         params.put("idType", idType);
         params.put("idNo", idNo);
+        params.put("idCategory", idCategory);
         List<String[]> rows = jdbc.query("""
                 SELECT idIssuedAt, idDateType, idIssueDateH, idIssueDateG,
                        idExpiryDateH, idExpiryDateG
                 FROM   stidtab
                 WHERE  BankingDate = :bankingDate
                   AND  custNo = :custNo
-                  AND  idCategory = 'W'
+                  AND  idCategory = :idCategory
                   AND  idType = :idType
                   AND  idNo = :idNo
                 FETCH FIRST 1 ROWS ONLY
@@ -1091,8 +1190,15 @@ public class JdbcCustomerRepository implements CustomerRepository {
         return rows.isEmpty() ? new String[] {"", "", "", "", "", ""} : rows.get(0);
     }
 
-    /** staddrtab rows whose addressNo is the ownerNo, by address type. */
-    private Map<String, OwnerDetail.Address> ownerAddresses(Map<String, Object> params) {
+    /**
+     * staddrtab rows hanging off a party number rather than the customer.
+     *
+     * <p>Every related party's address lives in the CUSTOMER's address file,
+     * keyed by {@code addressNo} = that party's number, with the type saying
+     * which party family it belongs to: '02' references, '03'/'04' owner local
+     * and home, '05' heirs (cbsama.c:1792, 2380, 2421, 3422).
+     */
+    private Map<String, OwnerDetail.Address> partyAddresses(Map<String, Object> params) {
         Map<String, OwnerDetail.Address> byType = new HashMap<>();
         jdbc.query("""
                 SELECT addressType, address1, address2, poBox, cityName, zipCode,
@@ -1103,8 +1209,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 FROM   staddrtab
                 WHERE  BankingDate = :bankingDate
                   AND  custNo = :custNo
-                  AND  addressNo = :ownerNo
-                  AND  addressType IN ('03', '04')
+                  AND  addressNo = :partyNo
+                  AND  addressType IN (:addressTypes)
                 """, params, (rs, i) -> {
                     byType.put(trim(rs.getString("addressType")), new OwnerDetail.Address(
                             trim(rs.getString("address1")), trim(rs.getString("address2")),

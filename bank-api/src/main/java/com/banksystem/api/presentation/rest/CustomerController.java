@@ -10,6 +10,7 @@ import com.banksystem.api.domain.model.JointHolderEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
 import com.banksystem.api.domain.model.OwnerDetail;
 import com.banksystem.api.domain.model.OwnerEntry;
+import com.banksystem.api.domain.model.PartyDetail;
 import com.banksystem.api.domain.model.PagedResult;
 import com.banksystem.api.domain.model.ReferenceEntry;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -96,6 +97,19 @@ public class CustomerController {
     @GetMapping("/{custNo}/owners/{ownerNo}")
     public OwnerDetail ownerDetail(@PathVariable String custNo, @PathVariable String ownerNo) {
         return customers.ownerDetail(custNo, ownerNo);
+    }
+
+    /** frmIndividualSaudi2's grid double-click. */
+    @GetMapping("/{custNo}/references/{referenceNo}")
+    public PartyDetail referenceDetail(
+            @PathVariable String custNo, @PathVariable String referenceNo) {
+        return customers.referenceDetail(custNo, referenceNo);
+    }
+
+    /** frmIndividualHeirs' grid double-click. */
+    @GetMapping("/{custNo}/heirs/{heirNo}")
+    public PartyDetail heirDetail(@PathVariable String custNo, @PathVariable String heirNo) {
+        return customers.heirDetail(custNo, heirNo);
     }
 
     @GetMapping("/{custNo}/acct-info")

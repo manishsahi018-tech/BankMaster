@@ -9,6 +9,7 @@ import com.banksystem.api.domain.model.JointHolderEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
 import com.banksystem.api.domain.model.OwnerDetail;
 import com.banksystem.api.domain.model.OwnerEntry;
+import com.banksystem.api.domain.model.PartyDetail;
 import com.banksystem.api.domain.model.PagedResult;
 import com.banksystem.api.domain.model.SearchScan;
 import java.util.List;
@@ -75,6 +76,18 @@ public class CustomerService {
     public OwnerDetail ownerDetail(String custNo, String ownerNo) {
         return customers.ownerDetail(custNo, ownerNo).orElseThrow(() ->
                 new NotFoundException("No details found for this owner."));
+    }
+
+    /** One reference / legal representative in full. */
+    public PartyDetail referenceDetail(String custNo, String referenceNo) {
+        return customers.referenceDetail(custNo, referenceNo).orElseThrow(() ->
+                new NotFoundException("No details found for this reference."));
+    }
+
+    /** One heir / proxy in full. */
+    public PartyDetail heirDetail(String custNo, String heirNo) {
+        return customers.heirDetail(custNo, heirNo).orElseThrow(() ->
+                new NotFoundException("No details found for this heir."));
     }
 
     public java.util.Map<String, String> acctInfo(String custNo) {

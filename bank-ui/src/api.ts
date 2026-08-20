@@ -485,6 +485,14 @@ export const api = {
   ownerDetail: (custNo: string, ownerNo: string) =>
     get<GridRow>(`/api/customers/${custNo}/owners/${ownerNo}`, 'open this owner'),
 
+  /** One reference / legal representative in full (frmIndividualSaudi2). */
+  referenceDetail: (custNo: string, referenceNo: string) =>
+    get<GridRow>(`/api/customers/${custNo}/references/${referenceNo}`, 'open this reference'),
+
+  /** One heir / proxy in full (frmIndividualHeirs). */
+  heirDetail: (custNo: string, heirNo: string) =>
+    get<GridRow>(`/api/customers/${custNo}/heirs/${heirNo}`, 'open this heir'),
+
   /** Individual page-2 attributes (stcusttab) for the Account Details screen. */
   customerAcctInfo: (custNo: string) =>
     get<Record<string, string>>(`/api/customers/${custNo}/acct-info`, 'load the account information page'),

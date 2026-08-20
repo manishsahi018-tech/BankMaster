@@ -7,6 +7,7 @@ import com.banksystem.api.domain.model.JuristicAccountInfo;
 import com.banksystem.api.domain.model.JointHolderEntry;
 import com.banksystem.api.domain.model.OwnerDetail;
 import com.banksystem.api.domain.model.OwnerEntry;
+import com.banksystem.api.domain.model.PartyDetail;
 import com.banksystem.api.domain.model.ReferenceEntry;
 import com.banksystem.api.domain.model.CustomerSearchCriteria;
 import com.banksystem.api.domain.model.CustomerSummary;
@@ -62,6 +63,12 @@ public interface CustomerRepository {
      * stowntab, the owner's stidtab row and its staddrtab '03'/'04' addresses.
      */
     Optional<OwnerDetail> ownerDetail(String custNo, String ownerNo);
+
+    /** One reference / legal representative in full — frmIndividualSaudi2's double-click. */
+    Optional<PartyDetail> referenceDetail(String custNo, String referenceNo);
+
+    /** One heir / proxy in full — frmIndividualHeirs' double-click. */
+    Optional<PartyDetail> heirDetail(String custNo, String heirNo);
 
     /** Individual page 2 (frmIndividualSaudiAcctInfo) — the customer's
      *  employment/income/segmentation/employer/memo attributes from stcusttab.

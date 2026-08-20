@@ -47,6 +47,7 @@ import JointHolders from './screens/JointHolders.tsx'
 import References from './screens/References.tsx'
 import Owners from './screens/Owners.tsx'
 import OwnerDetail from './screens/OwnerDetail.tsx'
+import PartyDetail from './screens/PartyDetail.tsx'
 import MerchantStatement from './screens/MerchantStatement.tsx'
 import HistoricalStatement from './screens/HistoricalStatement.tsx'
 import OnDemandStatement from './screens/OnDemandStatement.tsx'
@@ -83,6 +84,8 @@ interface ScreenState {
   profile?: GridRow
   /** screen to return to from a related-party grid */
   partyFrom?: string
+  /** grid to return to from a related-party DETAIL */
+  partyBack?: string
   /** server-side pagination cursor for the current paged grid */
   page?: number
   hasMore?: boolean
@@ -507,7 +510,18 @@ export default function App() {
       )}
 
       {screen.name === 'heirs' && customer && (
-        <HeirsProxy customer={customer} rows={screen.gridRows ?? []} hasMore={screen.hasMore ?? false} onMore={appendPage('gridRows', (p) => api.heirs(customer.custNo, p))} onExit={() => go(screen.partyFrom ?? 'detail')} />
+        <HeirsProxy
+          customer={customer}
+          rows={screen.gridRows ?? []}
+          hasMore={screen.hasMore ?? false}
+          onMore={appendPage('gridRows', (p) => api.heirs(customer.custNo, p))}
+          onEnquiry={(row) =>
+            goFetch('partyDetail', { partyBack: 'heirs' }, async () => ({
+              detail: await api.heirDetail(customer.custNo, String(row.heirNo ?? '')),
+            }))
+          }
+          onExit={() => go(screen.partyFrom ?? 'detail')}
+        />
       )}
 
       {screen.name === 'jointHolders' && customer && (
@@ -515,7 +529,18 @@ export default function App() {
       )}
 
       {screen.name === 'references' && customer && (
-        <References customer={customer} rows={screen.gridRows ?? []} hasMore={screen.hasMore ?? false} onMore={appendPage('gridRows', (p) => api.references(customer.custNo, p))} onExit={() => go(screen.partyFrom ?? 'detail')} />
+        <References
+          customer={customer}
+          rows={screen.gridRows ?? []}
+          hasMore={screen.hasMore ?? false}
+          onMore={appendPage('gridRows', (p) => api.references(customer.custNo, p))}
+          onEnquiry={(row) =>
+            goFetch('partyDetail', { partyBack: 'references' }, async () => ({
+              detail: await api.referenceDetail(customer.custNo, String(row.referenceNo ?? '')),
+            }))
+          }
+          onExit={() => go(screen.partyFrom ?? 'detail')}
+        />
       )}
 
       {screen.name === 'owners' && customer && (
@@ -584,6 +609,14 @@ export default function App() {
 
       {screen.name === 'sadadTransactions' && (
         <SadadTransEnquiry onExit={() => setScreen({ name: 'search' })} />
+      )}
+
+      {screen.name === 'partyDetail' && screen.detail && (
+        <PartyDetail
+          customer={customer}
+          detail={screen.detail}
+          onReturn={() => go(screen.partyBack ?? 'references')}
+        />
       )}
 
       {screen.name === 'ownerDetail' && screen.detail && (

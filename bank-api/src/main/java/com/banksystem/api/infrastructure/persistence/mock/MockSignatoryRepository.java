@@ -83,7 +83,13 @@ public class MockSignatoryRepository implements SignatoryRepository {
                             s.idType(), s.idNo(), "0", c.city(),
                             hijri(issuedDaysAgo), DemoData.dateBack(issuedDaysAgo),
                             hijri(expiryDaysAgo), DemoData.dateBack(expiryDaysAgo),
-                            s.signatoryShortName());
+                            s.signatoryShortName(),
+                            // The panel's name grid and signature state.
+                            "فهد", "عبدالعزيز", "", "الدوسري", s.signatoryShortName(),
+                            "Fahad", "Abdulaziz", "", "Al-Dosari", s.signatoryShortName(),
+                            DemoData.pick(key, 2, 5) == 0 ? "0" : "1",
+                            DemoData.pick(key, 2, 5) == 0 ? "Signature card not renewed" : "",
+                            DemoData.dateBack(expiryDaysAgo), "");
                 });
     }
 
