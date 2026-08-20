@@ -22,12 +22,14 @@ export default function Owners({
   rows,
   hasMore = false,
   onMore,
+  onEnquiry,
   onExit,
 }: {
   customer: Customer
   rows: GridRow[]
   hasMore?: boolean
   onMore?: () => void
+  onEnquiry: (row: GridRow) => void
   onExit: () => void
 }) {
   return (
@@ -45,6 +47,20 @@ export default function Owners({
       onMore={onMore}
       buttonGroups={[
         [
+          {
+            // The legacy opens this on a grid DOUBLE-CLICK (ownerInfoGrid_DblClick,
+            // frmJuristicOwner.frm:3650 → service 77). Ported as the button this
+            // app uses everywhere for "open the selected row".
+            label: 'Enquiry',
+            kind: 'primary',
+            onClick: ({ row, notify }) => {
+              if (!row) {
+                notify('warn', 'Empty row selected — please select an owner.')
+                return
+              }
+              onEnquiry(row)
+            },
+          },
           { label: 'Exit', kind: 'danger', alignEnd: true, onClick: () => onExit() },
         ],
       ]}

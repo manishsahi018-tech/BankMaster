@@ -7,6 +7,7 @@ import com.banksystem.api.domain.model.CustomerSummary;
 import com.banksystem.api.domain.model.HeirEntry;
 import com.banksystem.api.domain.model.JointHolderEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
+import com.banksystem.api.domain.model.OwnerDetail;
 import com.banksystem.api.domain.model.OwnerEntry;
 import com.banksystem.api.domain.model.PagedResult;
 import com.banksystem.api.domain.model.SearchScan;
@@ -68,6 +69,12 @@ public class CustomerService {
 
     public PagedResult<OwnerEntry> owners(String custNo, int page) {
         return PagedResult.page(customers.owners(custNo), page);
+    }
+
+    /** One owner in full — the legacy's grid double-click (service 77). */
+    public OwnerDetail ownerDetail(String custNo, String ownerNo) {
+        return customers.ownerDetail(custNo, ownerNo).orElseThrow(() ->
+                new NotFoundException("No details found for this owner."));
     }
 
     public java.util.Map<String, String> acctInfo(String custNo) {

@@ -481,6 +481,10 @@ export const api = {
   owners: (custNo: string, page = 0) =>
     get<Paged<GridRow>>(`/api/customers/${custNo}/owners`, 'load the owners and management', { page: String(page) }),
 
+  /** One owner in full — the legacy's grid double-click (service 77). */
+  ownerDetail: (custNo: string, ownerNo: string) =>
+    get<GridRow>(`/api/customers/${custNo}/owners/${ownerNo}`, 'open this owner'),
+
   /** Individual page-2 attributes (stcusttab) for the Account Details screen. */
   customerAcctInfo: (custNo: string) =>
     get<Record<string, string>>(`/api/customers/${custNo}/acct-info`, 'load the account information page'),

@@ -8,6 +8,7 @@ import com.banksystem.api.domain.model.CustomerSummary;
 import com.banksystem.api.domain.model.HeirEntry;
 import com.banksystem.api.domain.model.JointHolderEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
+import com.banksystem.api.domain.model.OwnerDetail;
 import com.banksystem.api.domain.model.OwnerEntry;
 import com.banksystem.api.domain.model.PagedResult;
 import com.banksystem.api.domain.model.ReferenceEntry;
@@ -89,6 +90,12 @@ public class CustomerController {
     public PagedResult<OwnerEntry> owners(
             @PathVariable String custNo, @RequestParam(defaultValue = "0") int page) {
         return customers.owners(custNo, page);
+    }
+
+    /** The owner form's detail panel — frmJuristicOwner's grid double-click. */
+    @GetMapping("/{custNo}/owners/{ownerNo}")
+    public OwnerDetail ownerDetail(@PathVariable String custNo, @PathVariable String ownerNo) {
+        return customers.ownerDetail(custNo, ownerNo);
     }
 
     @GetMapping("/{custNo}/acct-info")

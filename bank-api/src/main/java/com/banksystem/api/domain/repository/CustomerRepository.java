@@ -5,6 +5,7 @@ import com.banksystem.api.domain.model.CustomerProfile;
 import com.banksystem.api.domain.model.HeirEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
 import com.banksystem.api.domain.model.JointHolderEntry;
+import com.banksystem.api.domain.model.OwnerDetail;
 import com.banksystem.api.domain.model.OwnerEntry;
 import com.banksystem.api.domain.model.ReferenceEntry;
 import com.banksystem.api.domain.model.CustomerSearchCriteria;
@@ -54,6 +55,13 @@ public interface CustomerRepository {
 
     /** stowntab rows (legacy processOwnerTabSearch, cbsama.c). */
     List<OwnerEntry> owners(String custNo);
+
+    /**
+     * One owner in full — the record frmJuristicOwner opens on a grid
+     * double-click (service 77, cbsama.c readOwnerTabInfo). Assembled from
+     * stowntab, the owner's stidtab row and its staddrtab '03'/'04' addresses.
+     */
+    Optional<OwnerDetail> ownerDetail(String custNo, String ownerNo);
 
     /** Individual page 2 (frmIndividualSaudiAcctInfo) — the customer's
      *  employment/income/segmentation/employer/memo attributes from stcusttab.

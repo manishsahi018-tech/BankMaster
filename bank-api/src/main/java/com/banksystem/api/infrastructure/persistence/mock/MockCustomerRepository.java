@@ -444,6 +444,36 @@ public class MockCustomerRepository implements CustomerRepository {
     }
 
     @Override
+    public java.util.Optional<com.banksystem.api.domain.model.OwnerDetail> ownerDetail(
+            String custNo, String ownerNo) {
+        // Built from the same seed as the grid row, so the detail an operator
+        // opens always matches the row they clicked.
+        return owners(custNo).stream()
+                .filter(o -> o.ownerNo().equals(ownerNo.trim()))
+                .findFirst()
+                .map(o -> {
+                    DemoData.Customer c = DemoData.customer(custNo);
+                    String key = custNo + ownerNo;
+                    var local = new com.banksystem.api.domain.model.OwnerDetail.Address(
+                            "شارع الملك فهد", "", "5" + DemoData.pick(key, 80, 9000),
+                            c.city(), c.zipCode(), "001", "0", "",
+                            "011", String.valueOf(4000000 + DemoData.pick(key, 81, 900000)), "",
+                            "011", String.valueOf(4000000 + DemoData.pick(key, 82, 900000)), "",
+                            "011", String.valueOf(4000000 + DemoData.pick(key, 83, 900000)), "",
+                            "05" + DemoData.pick(key, 84, 90000000), "",
+                            "owner" + o.ownerNo() + "@example.com");
+                    return new com.banksystem.api.domain.model.OwnerDetail(
+                            custNo, o.ownerNo(), o.ownerType(), o.ownerEnabled(),
+                            o.branchCode(), o.shareHoldingPerc(), o.parentCompanyName(),
+                            "عبدالله", "محمد", "", "الشمري", o.shortName(),
+                            "Abdullah", "Mohammed", "", "Al-Shammari", o.shortName(),
+                            o.idType(), o.idNo(), c.city(), "1",
+                            "", "19990312", "", "20290311",
+                            local, com.banksystem.api.domain.model.OwnerDetail.Address.empty());
+                });
+    }
+
+    @Override
     public List<OwnerEntry> owners(String custNo) {
         DemoData.Customer c = DemoData.customer(custNo);
         if (!c.juristic()) {

@@ -46,6 +46,7 @@ import HeirsProxy from './screens/HeirsProxy.tsx'
 import JointHolders from './screens/JointHolders.tsx'
 import References from './screens/References.tsx'
 import Owners from './screens/Owners.tsx'
+import OwnerDetail from './screens/OwnerDetail.tsx'
 import MerchantStatement from './screens/MerchantStatement.tsx'
 import HistoricalStatement from './screens/HistoricalStatement.tsx'
 import OnDemandStatement from './screens/OnDemandStatement.tsx'
@@ -518,7 +519,18 @@ export default function App() {
       )}
 
       {screen.name === 'owners' && customer && (
-        <Owners customer={customer} rows={screen.gridRows ?? []} hasMore={screen.hasMore ?? false} onMore={appendPage('gridRows', (p) => api.owners(customer.custNo, p))} onExit={() => go(screen.partyFrom ?? 'juristic')} />
+        <Owners
+          customer={customer}
+          rows={screen.gridRows ?? []}
+          hasMore={screen.hasMore ?? false}
+          onMore={appendPage('gridRows', (p) => api.owners(customer.custNo, p))}
+          onEnquiry={(row) =>
+            goFetch('ownerDetail', {}, async () => ({
+              detail: await api.ownerDetail(customer.custNo, String(row.ownerNo ?? '')),
+            }))
+          }
+          onExit={() => go(screen.partyFrom ?? 'juristic')}
+        />
       )}
 
       {screen.name === 'detail2' && screen.acctInfo && (
@@ -572,6 +584,14 @@ export default function App() {
 
       {screen.name === 'sadadTransactions' && (
         <SadadTransEnquiry onExit={() => setScreen({ name: 'search' })} />
+      )}
+
+      {screen.name === 'ownerDetail' && screen.detail && (
+        <OwnerDetail
+          customer={customer}
+          detail={screen.detail}
+          onReturn={() => go('owners')}
+        />
       )}
 
       {screen.name === 'documents' && screen.documents && (

@@ -11,6 +11,7 @@ import com.banksystem.api.domain.model.IdDocument;
 import com.banksystem.api.domain.model.JointHolderEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
 import com.banksystem.api.domain.model.OpenUpdateInfo;
+import com.banksystem.api.domain.model.OwnerDetail;
 import com.banksystem.api.domain.model.OwnerEntry;
 import com.banksystem.api.domain.model.ReferenceEntry;
 import com.banksystem.api.domain.repository.CustomerRepository;
@@ -1002,6 +1003,124 @@ public class JdbcCustomerRepository implements CustomerRepository {
                         rs.getString("referenceReqdFor"), rs.getString("shortName"),
                         rs.getString("idType"), rs.getString("idNo"),
                         rs.getString("activeStatus"), rs.getString("branchCode")));
+    }
+
+    /**
+     * The owner form's detail panel — 54 controls the grid does not carry.
+     *
+     * <p>Three reads, keyed as the C keys them (cbsama.c:2302-2450):
+     * stowntab on custNo + ownerNo; stidtab on custNo + the owner's own idType
+     * and idNo with {@code idCategory = 'W'}, which is the OWNER bucket ('C' is
+     * the customer's own documents); and staddrtab on custNo where
+     * {@code addressNo} equals the ownerNo — type '03' local, '04' home. The C
+     * walks the customer's address rows and keeps those two; here they are two
+     * predicates on one read, which is the same set.
+     *
+     * <p>Both addresses are optional: an owner with neither still returns, with
+     * empty blocks, exactly as the legacy form shows empty frames.
+     */
+    @Override
+    public Optional<OwnerDetail> ownerDetail(String custNo, String ownerNo) {
+        Map<String, Object> params = Map.of(
+                "bankingDate", bankingDate.bankingDate(),
+                "custNo", padCust(custNo),
+                "ownerNo", ownerNo.trim());
+
+        List<Object[]> owner = jdbc.query("""
+                SELECT ownerNo, ownerType, ownerEnabled, branchCode, idType, idNo,
+                       shareHoldingPerc, parentCompanyName,
+                       aFirstName, aSecondName, aThirdName, aLastName, aShortName,
+                       eFirstName, eSecondName, eThirdName, eLastName, eShortName
+                FROM   stowntab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  ownerNo = :ownerNo
+                FETCH FIRST 1 ROWS ONLY
+                """, params, (rs, i) -> new Object[] {
+                        trim(rs.getString("ownerNo")), trim(rs.getString("ownerType")),
+                        trim(rs.getString("ownerEnabled")), trim(rs.getString("branchCode")),
+                        trim(rs.getString("idType")), trim(rs.getString("idNo")),
+                        trim(rs.getString("shareHoldingPerc")),
+                        trim(rs.getString("parentCompanyName")),
+                        trim(rs.getString("aFirstName")), trim(rs.getString("aSecondName")),
+                        trim(rs.getString("aThirdName")), trim(rs.getString("aLastName")),
+                        trim(rs.getString("aShortName")),
+                        trim(rs.getString("eFirstName")), trim(rs.getString("eSecondName")),
+                        trim(rs.getString("eThirdName")), trim(rs.getString("eLastName")),
+                        trim(rs.getString("eShortName"))});
+        if (owner.isEmpty()) {
+            return Optional.empty();
+        }
+        Object[] o = owner.get(0);
+
+        String[] id = ownerIdRow(params, (String) o[4], (String) o[5]);
+        Map<String, OwnerDetail.Address> addresses = ownerAddresses(params);
+
+        return Optional.of(new OwnerDetail(
+                trim(custNo), (String) o[0], (String) o[1], (String) o[2], (String) o[3],
+                (String) o[6], (String) o[7],
+                (String) o[8], (String) o[9], (String) o[10], (String) o[11], (String) o[12],
+                (String) o[13], (String) o[14], (String) o[15], (String) o[16], (String) o[17],
+                (String) o[4], (String) o[5],
+                id[0], id[1], id[2], id[3], id[4], id[5],
+                addresses.getOrDefault("03", OwnerDetail.Address.empty()),
+                addresses.getOrDefault("04", OwnerDetail.Address.empty())));
+    }
+
+    /** stidtab, idCategory 'W' — the owner bucket (cbsama.c:2356). */
+    private String[] ownerIdRow(Map<String, Object> base, String idType, String idNo) {
+        Map<String, Object> params = new HashMap<>(base);
+        params.put("idType", idType);
+        params.put("idNo", idNo);
+        List<String[]> rows = jdbc.query("""
+                SELECT idIssuedAt, idDateType, idIssueDateH, idIssueDateG,
+                       idExpiryDateH, idExpiryDateG
+                FROM   stidtab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  idCategory = 'W'
+                  AND  idType = :idType
+                  AND  idNo = :idNo
+                FETCH FIRST 1 ROWS ONLY
+                """, params, (rs, i) -> new String[] {
+                        trim(rs.getString("idIssuedAt")), trim(rs.getString("idDateType")),
+                        BmForms.actualDate(rs.getString("idIssueDateH")),
+                        BmForms.actualDate(rs.getString("idIssueDateG")),
+                        BmForms.actualDate(rs.getString("idExpiryDateH")),
+                        BmForms.actualDate(rs.getString("idExpiryDateG"))});
+        return rows.isEmpty() ? new String[] {"", "", "", "", "", ""} : rows.get(0);
+    }
+
+    /** staddrtab rows whose addressNo is the ownerNo, by address type. */
+    private Map<String, OwnerDetail.Address> ownerAddresses(Map<String, Object> params) {
+        Map<String, OwnerDetail.Address> byType = new HashMap<>();
+        jdbc.query("""
+                SELECT addressType, address1, address2, poBox, cityName, zipCode,
+                       country, addrType, unitNo,
+                       telOffAreaCode, telOffNo, telOffExt,
+                       telHomeAreaCode, telHomeNo, telHomeExt,
+                       faxAreaCode, faxNo, faxExt, mobileNo, pagerNo, eMail
+                FROM   staddrtab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  addressNo = :ownerNo
+                  AND  addressType IN ('03', '04')
+                """, params, (rs, i) -> {
+                    byType.put(trim(rs.getString("addressType")), new OwnerDetail.Address(
+                            trim(rs.getString("address1")), trim(rs.getString("address2")),
+                            trim(rs.getString("poBox")), trim(rs.getString("cityName")),
+                            trim(rs.getString("zipCode")), trim(rs.getString("country")),
+                            trim(rs.getString("addrType")), trim(rs.getString("unitNo")),
+                            trim(rs.getString("telOffAreaCode")), trim(rs.getString("telOffNo")),
+                            trim(rs.getString("telOffExt")),
+                            trim(rs.getString("telHomeAreaCode")), trim(rs.getString("telHomeNo")),
+                            trim(rs.getString("telHomeExt")),
+                            trim(rs.getString("faxAreaCode")), trim(rs.getString("faxNo")),
+                            trim(rs.getString("faxExt")), trim(rs.getString("mobileNo")),
+                            trim(rs.getString("pagerNo")), trim(rs.getString("eMail"))));
+                    return null;
+                });
+        return byType;
     }
 
     @Override
