@@ -4,6 +4,7 @@ import com.banksystem.api.domain.model.CustUpdateHistoryEntry;
 import com.banksystem.api.domain.model.CustomerProfile;
 import com.banksystem.api.domain.model.HeirEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
+import com.banksystem.api.domain.model.JointHolderDetail;
 import com.banksystem.api.domain.model.JointHolderEntry;
 import com.banksystem.api.domain.model.OwnerDetail;
 import com.banksystem.api.domain.model.OwnerEntry;
@@ -69,6 +70,9 @@ public interface CustomerRepository {
 
     /** One heir / proxy in full — frmIndividualHeirs' double-click. */
     Optional<PartyDetail> heirDetail(String custNo, String heirNo);
+
+    /** One joint holder in full — frmIndividualJoint's double-click. */
+    Optional<JointHolderDetail> jointHolderDetail(String custNo, String jointCustNo);
 
     /** Individual page 2 (frmIndividualSaudiAcctInfo) — the customer's
      *  employment/income/segmentation/employer/memo attributes from stcusttab.

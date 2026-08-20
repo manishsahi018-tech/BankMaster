@@ -6,6 +6,7 @@ import com.banksystem.api.domain.model.CustomerProfile;
 import com.banksystem.api.domain.model.CustomerSearchCriteria;
 import com.banksystem.api.domain.model.CustomerSummary;
 import com.banksystem.api.domain.model.HeirEntry;
+import com.banksystem.api.domain.model.JointHolderDetail;
 import com.banksystem.api.domain.model.JointHolderEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
 import com.banksystem.api.domain.model.OwnerDetail;
@@ -110,6 +111,13 @@ public class CustomerController {
     @GetMapping("/{custNo}/heirs/{heirNo}")
     public PartyDetail heirDetail(@PathVariable String custNo, @PathVariable String heirNo) {
         return customers.heirDetail(custNo, heirNo);
+    }
+
+    /** frmIndividualJoint's grid double-click. */
+    @GetMapping("/{custNo}/joint-holders/{jointCustNo}")
+    public JointHolderDetail jointHolderDetail(
+            @PathVariable String custNo, @PathVariable String jointCustNo) {
+        return customers.jointHolderDetail(custNo, jointCustNo);
     }
 
     @GetMapping("/{custNo}/acct-info")

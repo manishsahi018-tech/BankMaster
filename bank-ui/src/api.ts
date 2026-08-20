@@ -493,6 +493,10 @@ export const api = {
   heirDetail: (custNo: string, heirNo: string) =>
     get<GridRow>(`/api/customers/${custNo}/heirs/${heirNo}`, 'open this heir'),
 
+  /** One joint holder in full (frmIndividualJoint). */
+  jointHolderDetail: (custNo: string, jointCustNo: string) =>
+    get<GridRow>(`/api/customers/${custNo}/joint-holders/${jointCustNo}`, 'open this joint holder'),
+
   /** Individual page-2 attributes (stcusttab) for the Account Details screen. */
   customerAcctInfo: (custNo: string) =>
     get<Record<string, string>>(`/api/customers/${custNo}/acct-info`, 'load the account information page'),

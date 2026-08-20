@@ -8,6 +8,7 @@ import com.banksystem.api.domain.model.CustomerSearchCriteria;
 import com.banksystem.api.domain.model.CustomerSummary;
 import com.banksystem.api.domain.model.HeirEntry;
 import com.banksystem.api.domain.model.IdDocument;
+import com.banksystem.api.domain.model.JointHolderDetail;
 import com.banksystem.api.domain.model.JointHolderEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
 import com.banksystem.api.domain.model.OpenUpdateInfo;
@@ -1068,6 +1069,110 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 id[0], id[1], id[2], id[3], id[4], id[5],
                 addresses.getOrDefault("03", OwnerDetail.Address.empty()),
                 addresses.getOrDefault("04", OwnerDetail.Address.empty())));
+    }
+
+    /**
+     * The Joint Holders panel — frmIndividualJoint's grid double-click
+     * (fetchJointDetailInfo). One point read: stjointtab keeps a joint holder
+     * as a near-complete customer record, so unlike the owner, reference and
+     * heir panels there is no ID row or address row to fetch alongside.
+     */
+    @Override
+    public Optional<JointHolderDetail> jointHolderDetail(String custNo, String jointCustNo) {
+        List<JointHolderDetail> rows = jdbc.query("""
+                SELECT jointCustNo, branchCode, activeStatus, jointOpenDate,
+                       aFirstName, a2ndName, a3rdName, aLastName, aShortName,
+                       eFirstName, e2ndName, e3rdName, eLastName, eShortName,
+                       idType, idNo, idIssuedAt, idDateType,
+                       idIssueDateH, idIssueDateG, idExpiryDateH, idExpiryDateG,
+                       preferredLang, nationality, titleCode,
+                       dobDateType, dobDateH, dobDateG, sexCode, vipCode,
+                       marritalStatus, noOfDependents, residentStatus, businessType,
+                       address1, address2, poBox, cityName, zipCode, country,
+                       addressType, gprsNo, unitNo,
+                       telOffAreaCode, telOffNo, telOffExt,
+                       telHomeAreaCode, telHomeNo, telHomeExt,
+                       faxAreaCode, faxNo, faxExt, mobileNo, pagerNo, eMail,
+                       educationCode, professionCode, positionCode, monthlyIncome,
+                       ownerShip, segmenation, employerName, department,
+                       employerPoBox, employerCity, employerZipCode
+                FROM   stjointtab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  jointCustNo = :jointCustNo
+                FETCH FIRST 1 ROWS ONLY
+                """,
+                Map.of("bankingDate", bankingDate.bankingDate(),
+                        "custNo", padCust(custNo), "jointCustNo", jointCustNo.trim()),
+                (rs, i) -> new JointHolderDetail(
+                        trim(custNo),
+                        trim(rs.getString("jointCustNo")),
+                        trim(rs.getString("branchCode")),
+                        trim(rs.getString("activeStatus")),
+                        BmForms.actualDate(rs.getString("jointOpenDate")),
+                        trim(rs.getString("aFirstName")),
+                        trim(rs.getString("a2ndName")),
+                        trim(rs.getString("a3rdName")),
+                        trim(rs.getString("aLastName")),
+                        trim(rs.getString("aShortName")),
+                        trim(rs.getString("eFirstName")),
+                        trim(rs.getString("e2ndName")),
+                        trim(rs.getString("e3rdName")),
+                        trim(rs.getString("eLastName")),
+                        trim(rs.getString("eShortName")),
+                        trim(rs.getString("idType")),
+                        trim(rs.getString("idNo")),
+                        trim(rs.getString("idIssuedAt")),
+                        trim(rs.getString("idDateType")),
+                        BmForms.actualDate(rs.getString("idIssueDateH")),
+                        BmForms.actualDate(rs.getString("idIssueDateG")),
+                        BmForms.actualDate(rs.getString("idExpiryDateH")),
+                        BmForms.actualDate(rs.getString("idExpiryDateG")),
+                        trim(rs.getString("preferredLang")),
+                        trim(rs.getString("nationality")),
+                        trim(rs.getString("titleCode")),
+                        trim(rs.getString("dobDateType")),
+                        BmForms.actualDate(rs.getString("dobDateH")),
+                        BmForms.actualDate(rs.getString("dobDateG")),
+                        trim(rs.getString("sexCode")),
+                        trim(rs.getString("vipCode")),
+                        trim(rs.getString("marritalStatus")),
+                        trim(rs.getString("noOfDependents")),
+                        trim(rs.getString("residentStatus")),
+                        trim(rs.getString("businessType")),
+                        trim(rs.getString("address1")),
+                        trim(rs.getString("address2")),
+                        trim(rs.getString("poBox")),
+                        trim(rs.getString("cityName")),
+                        trim(rs.getString("zipCode")),
+                        trim(rs.getString("country")),
+                        trim(rs.getString("addressType")),
+                        trim(rs.getString("gprsNo")),
+                        trim(rs.getString("unitNo")),
+                        trim(rs.getString("telOffAreaCode")),
+                        trim(rs.getString("telOffNo")),
+                        trim(rs.getString("telOffExt")),
+                        trim(rs.getString("telHomeAreaCode")),
+                        trim(rs.getString("telHomeNo")),
+                        trim(rs.getString("telHomeExt")),
+                        trim(rs.getString("faxAreaCode")),
+                        trim(rs.getString("faxNo")),
+                        trim(rs.getString("faxExt")),
+                        trim(rs.getString("mobileNo")),
+                        trim(rs.getString("pagerNo")),
+                        trim(rs.getString("eMail")),
+                        trim(rs.getString("educationCode")),
+                        trim(rs.getString("professionCode")),
+                        trim(rs.getString("positionCode")),
+                        trim(rs.getString("monthlyIncome")),
+                        trim(rs.getString("ownerShip")),
+                        trim(rs.getString("segmenation")),
+                        trim(rs.getString("employerName")),
+                        trim(rs.getString("department")),
+                        trim(rs.getString("employerPoBox")),
+                        trim(rs.getString("employerCity")),
+                        trim(rs.getString("employerZipCode"))));
+        return rows.stream().findFirst();
     }
 
     /**

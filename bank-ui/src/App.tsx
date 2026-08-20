@@ -48,6 +48,7 @@ import References from './screens/References.tsx'
 import Owners from './screens/Owners.tsx'
 import OwnerDetail from './screens/OwnerDetail.tsx'
 import PartyDetail from './screens/PartyDetail.tsx'
+import JointHolderDetail from './screens/JointHolderDetail.tsx'
 import MerchantStatement from './screens/MerchantStatement.tsx'
 import HistoricalStatement from './screens/HistoricalStatement.tsx'
 import OnDemandStatement from './screens/OnDemandStatement.tsx'
@@ -525,7 +526,18 @@ export default function App() {
       )}
 
       {screen.name === 'jointHolders' && customer && (
-        <JointHolders customer={customer} rows={screen.gridRows ?? []} hasMore={screen.hasMore ?? false} onMore={appendPage('gridRows', (p) => api.jointHolders(customer.custNo, p))} onExit={() => go(screen.partyFrom ?? 'detail')} />
+        <JointHolders
+          customer={customer}
+          rows={screen.gridRows ?? []}
+          hasMore={screen.hasMore ?? false}
+          onMore={appendPage('gridRows', (p) => api.jointHolders(customer.custNo, p))}
+          onEnquiry={(row) =>
+            goFetch('jointHolderDetail', {}, async () => ({
+              detail: await api.jointHolderDetail(customer.custNo, String(row.jointCustNo ?? '')),
+            }))
+          }
+          onExit={() => go(screen.partyFrom ?? 'detail')}
+        />
       )}
 
       {screen.name === 'references' && customer && (
@@ -609,6 +621,14 @@ export default function App() {
 
       {screen.name === 'sadadTransactions' && (
         <SadadTransEnquiry onExit={() => setScreen({ name: 'search' })} />
+      )}
+
+      {screen.name === 'jointHolderDetail' && screen.detail && (
+        <JointHolderDetail
+          customer={customer}
+          detail={screen.detail}
+          onReturn={() => go('jointHolders')}
+        />
       )}
 
       {screen.name === 'partyDetail' && screen.detail && (

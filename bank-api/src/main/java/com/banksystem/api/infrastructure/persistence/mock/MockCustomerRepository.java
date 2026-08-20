@@ -414,6 +414,35 @@ public class MockCustomerRepository implements CustomerRepository {
                         "", h.proxyNo(), h.proxyIssueDateH(), h.proxyIssueDateG()));
     }
 
+    @Override
+    public java.util.Optional<com.banksystem.api.domain.model.JointHolderDetail> jointHolderDetail(
+            String custNo, String jointCustNo) {
+        return jointHolders(custNo).stream()
+                .filter(j -> j.jointCustNo().equals(jointCustNo.trim()))
+                .findFirst()
+                .map(j -> {
+                    DemoData.Customer c = DemoData.customer(custNo);
+                    String key = custNo + jointCustNo;
+                    return new com.banksystem.api.domain.model.JointHolderDetail(
+                            custNo, j.jointCustNo(), j.branchCode(), j.activeStatus(),
+                            j.jointOpenDate(),
+                            "منيرة", "خالد", "", "الحربي", j.shortName(),
+                            "Munira", "Khalid", "", "Al-Harbi", j.shortName(),
+                            j.idType(), j.idNo(), c.city(), "1",
+                            "", "20010914", "", "20310913",
+                            "0", j.nationality(), "01",
+                            "1", "", "19790622", "F", "0", "M",
+                            String.valueOf(DemoData.pick(key, 95, 5)), "0", "0004",
+                            "طريق العليا", "", "4" + DemoData.pick(key, 96, 9000),
+                            c.city(), c.zipCode(), "001", "0", "", "",
+                            "011", String.valueOf(4000000 + DemoData.pick(key, 97, 900000)), "",
+                            "011", String.valueOf(4000000 + DemoData.pick(key, 98, 900000)), "",
+                            "", "", "", j.mobileNo(), "", "",
+                            "0003", "0006", "0005", "0002", "010000", "1",
+                            "شركة الاتصالات السعودية", "قسم المبيعات", "6677", c.city(), c.zipCode());
+                });
+    }
+
     /** Both panels are the same shape; only the extras differ. */
     private com.banksystem.api.domain.model.PartyDetail party(
             String kind, String custNo, String partyNo, String partyType, String shortName,
