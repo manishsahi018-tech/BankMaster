@@ -4,7 +4,9 @@
 export ARCHIVAL_DB_URL="jdbc:vdb://DENODO-HOST:9999/VDB_NAME"
 export ARCHIVAL_DB_USER="YOUR_USER"
 export ARCHIVAL_DB_PASSWORD="YOUR_PASSWORD"
-# export ARCHIVAL_BANKING_DATE=20251231   # optional fixed snapshot
+# The login allow-list and the restore snapshot are NOT set here: they live in
+# bank-runtime.properties (this folder, created on the first run) so they can be
+# changed WHILE THE APP IS RUNNING - edit, save, done. No restart.
 # One connection only: the online/Finacle source was the same Denodo server, so
 # DB #1 and DB #2 are merged. Nothing else to export here.
 

@@ -7,6 +7,7 @@
   --color-primary-strong: var(--primary-strong);
   --color-primary-ink: var(--primary-ink);
   --color-primary-soft: var(--primary-soft);
+  --color-primary-selected: var(--primary-selected);
   --color-page: var(--page);
   --color-surface: var(--surface);
   --color-surface-muted: var(--surface-muted);
@@ -56,6 +57,9 @@
   /* Tinted soft backgrounds derive from the accent + surface, so they adapt
      to any accent and to dark mode automatically. */
   --primary-soft: color-mix(in srgb, var(--primary) 9%, var(--surface));
+  /* Grid row selection. A heavier tint than --primary-soft: the selected row
+     has to win against the odd/even striping, which a 9% mix does not. */
+  --primary-selected: color-mix(in srgb, var(--primary) 18%, var(--surface));
   --danger-soft: color-mix(in srgb, var(--danger) 9%, var(--surface));
   --warn-soft: color-mix(in srgb, var(--warn-mix) 13%, var(--surface));
   --success-soft: color-mix(in srgb, var(--success) 10%, var(--surface));

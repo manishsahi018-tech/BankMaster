@@ -59,6 +59,11 @@ public class MockUserProfileRepository implements UserProfileRepository {
         // Stand-in directory: the fixture's baked nameSearchAllowed is used
         // as-is. The real homeBranch-keyed, fail-closed BD lookup lives in
         // JdbcUserProfileRepository; the mock has no branch BD rows to key on.
-        return Optional.ofNullable(PROFILES.get(userId));
+        // Keys are uppercase but the operator's id is never upcased — match
+        // case-insensitively so 'devuser' finds DEVUSER.
+        return PROFILES.entrySet().stream()
+                .filter(e -> e.getKey().equalsIgnoreCase(userId == null ? "" : userId.trim()))
+                .map(Map.Entry::getValue)
+                .findFirst();
     }
 }

@@ -212,9 +212,10 @@ export default function GridScreen({
                 <tr
                   key={i}
                   onClick={() => setSelected(i)}
+                  aria-selected={selected === i}
                   className={`cursor-pointer border-b border-edge-soft transition-colors last:border-b-0 ${
                     selected === i
-                      ? 'bg-primary-soft/70'
+                      ? 'bg-primary-selected'
                       : 'odd:bg-surface even:bg-surface-muted/40 hover:bg-surface-muted'
                   }`}
                 >
@@ -224,7 +225,14 @@ export default function GridScreen({
                       dir="auto"
                       className={`whitespace-nowrap px-3.5 py-2.5 ${
                         col.align === 'right' ? 'text-right tabular-nums' : ''
-                      } ${ci === 0 ? 'font-semibold text-primary-ink' : 'text-ink-soft'}`}
+                      } ${ci === 0 ? 'font-semibold text-primary-ink' : 'text-ink-soft'} ${
+                        // Accent bar down the left edge of the clicked row. It
+                        // sits on the first cell, not the <tr>: with
+                        // border-collapse a row's box-shadow is not painted.
+                        selected === i && ci === 0
+                          ? 'shadow-[inset_3px_0_0_0_var(--primary)]'
+                          : ''
+                      } ${selected === i && ci !== 0 ? 'text-ink' : ''}`}
                     >
                       {col.render ? col.render(row[col.key], row) : row[col.key]}
                     </td>

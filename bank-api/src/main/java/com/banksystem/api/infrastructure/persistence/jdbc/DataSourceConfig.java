@@ -1,5 +1,7 @@
 package com.banksystem.api.infrastructure.persistence.jdbc;
 
+import com.banksystem.api.infrastructure.sqllog.SqlLogWriter;
+import com.banksystem.api.infrastructure.sqllog.SqlLoggingDataSource;
 import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -64,8 +66,9 @@ public class DataSourceConfig {
     @Primary
     public NamedParameterJdbcTemplate archivalJdbc(
             @Qualifier("archivalDataSource") DataSource dataSource,
-            @Value("${bank.archival-db.table-prefix:}") String tablePrefix) {
-        return new NamedParameterJdbcTemplate(prefixed(dataSource, tablePrefix));
+            @Value("${bank.archival-db.table-prefix:}") String tablePrefix,
+            SqlLogWriter sqlLog) {
+        return new NamedParameterJdbcTemplate(prefixed(logged(dataSource, sqlLog, "archival"), tablePrefix));
     }
 
     /**
@@ -103,8 +106,9 @@ public class DataSourceConfig {
     @ConditionalOnProperty(name = "bank.statement-db.enabled", havingValue = "true")
     public NamedParameterJdbcTemplate statementJdbc(
             @Qualifier("statementDataSource") DataSource dataSource,
-            @Value("${bank.statement-db.table-prefix:}") String tablePrefix) {
-        return new NamedParameterJdbcTemplate(prefixed(dataSource, tablePrefix));
+            @Value("${bank.statement-db.table-prefix:}") String tablePrefix,
+            SqlLogWriter sqlLog) {
+        return new NamedParameterJdbcTemplate(prefixed(logged(dataSource, sqlLog, "statement"), tablePrefix));
     }
 
     /**
@@ -119,5 +123,19 @@ public class DataSourceConfig {
             return dataSource;
         }
         return new PrefixingDataSource(dataSource, new SqlTablePrefixer(tablePrefix));
+    }
+
+    /**
+     * Wraps the datasource so every statement is written to the SQL audit log
+     * (bank.sql-log.*). Applied UNDER {@link #prefixed} on purpose: the prefixer
+     * rewrites the table names first, so what is logged is the SQL the driver
+     * actually received. Disabled — the default — this returns the datasource
+     * untouched and no proxy is installed at all.
+     */
+    private static DataSource logged(DataSource dataSource, SqlLogWriter sqlLog, String db) {
+        if (sqlLog == null || !sqlLog.isEnabled()) {
+            return dataSource;
+        }
+        return new SqlLoggingDataSource(dataSource, sqlLog, db);
     }
 }

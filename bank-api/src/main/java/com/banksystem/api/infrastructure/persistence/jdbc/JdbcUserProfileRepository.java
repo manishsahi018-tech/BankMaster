@@ -54,7 +54,7 @@ public class JdbcUserProfileRepository implements UserProfileRepository {
                        u.liveStatus
                 FROM   stuser u
                 WHERE  u.BankingDate = :bankingDate
-                  AND  u.userId = :userId
+                  AND  UPPER(u.userId) = UPPER(:userId)
                 """,
                 Map.of("bankingDate", bankingDate.bankingDate(), "userId", userId),
                 (rs, i) -> new UserProfile(

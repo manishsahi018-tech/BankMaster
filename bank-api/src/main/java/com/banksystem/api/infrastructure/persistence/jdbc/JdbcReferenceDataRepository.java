@@ -60,9 +60,11 @@ import org.springframework.stereotype.Repository;
  * </ul>
  *
  * <p>Any set whose view is missing at runtime is logged and returned as an
- * empty list — codes() never fails as a whole. Loaded lazily once and cached
- * (reference data is static per BankingDate, and BankingDateProvider fixes
- * the date for the process lifetime).
+ * empty list — codes() never fails as a whole. Loaded lazily once and cached,
+ * KEYED ON THE BANKING DATE it was loaded for: reference data is static per
+ * BankingDate, but the date itself is editable while the application runs
+ * (RuntimeSettings), so a cache pinned for the process lifetime would keep
+ * serving the previous snapshot's codes after the date moved.
  */
 @Repository
 @Profile("denodo")
@@ -84,7 +86,10 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
     private final NamedParameterJdbcTemplate jdbc;
     private final BankingDateProvider bankingDate;
 
-    private volatile Map<String, List<CodeEntry>> cached;
+    /** The loaded sets together with the BankingDate they were read at. */
+    private record Cached(String bankingDate, Map<String, List<CodeEntry>> codes) {}
+
+    private volatile Cached cached;
 
     public JdbcReferenceDataRepository(
             @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
@@ -107,25 +112,31 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
 
     @Override
     public Map<String, List<CodeEntry>> codes() {
-        Map<String, List<CodeEntry>> result = cached;
-        if (result == null) {
-            synchronized (this) {
-                if (cached == null) {
-                    Map<String, List<CodeEntry>> loaded = load();
-                    if (anyDbSetPopulated(loaded)) {
-                        cached = loaded;
-                    } else {
-                        // Serve what we have; the next call retries the DB.
-                        log.warn("Reference data: every archival-backed code set came back "
-                                + "empty — serving constants only and NOT caching, so the "
-                                + "next call retries.");
-                        return loaded;
-                    }
-                }
-                result = cached;
-            }
+        String date = bankingDate.bankingDate();
+        Cached result = cached;
+        if (result != null && result.bankingDate().equals(date)) {
+            return result.codes();
         }
-        return result;
+        synchronized (this) {
+            result = cached;
+            if (result != null && result.bankingDate().equals(date)) {
+                return result.codes();
+            }
+            Map<String, List<CodeEntry>> loaded = load();
+            if (!anyDbSetPopulated(loaded)) {
+                // Serve what we have; the next call retries the DB.
+                log.warn("Reference data: every archival-backed code set came back "
+                        + "empty — serving constants only and NOT caching, so the "
+                        + "next call retries.");
+                return loaded;
+            }
+            if (result != null) {
+                log.info("Reference data reloaded for banking-date {} (was {}).",
+                        date, result.bankingDate());
+            }
+            cached = new Cached(date, loaded);
+            return loaded;
+        }
     }
 
     private static boolean anyDbSetPopulated(Map<String, List<CodeEntry>> sets) {

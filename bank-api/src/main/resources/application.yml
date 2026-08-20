@@ -32,11 +32,9 @@ bank:
     admin-authority: ${BANK_ADMIN_AUTHORITY:~00~01~02~04~06~32~41~42~43~45~50~60~61~62~81~86~87~94~}
     # Branch stamped on the session when no local profile supplies one (LDAP path).
     admin-branch: ${BANK_ADMIN_BRANCH:0001}
-    # Comma-separated user IDs allowed in. A user who authenticates via LDAP but
-    # is NOT listed here is refused with "User is not allowed to access the
-    # application." EMPTY = allow all (dev convenience; a warning is logged).
-    # e.g. BANK_ALLOWED_USERS=DEVUSER,OPER1,ENQ1
-    allowed-users: ${BANK_ALLOWED_USERS:}
+    # NOTE: allowed-users is NOT here. It lives in the runtime configuration file
+    # (bank.runtime-config.file below) so the list can be changed while the
+    # application is running.
   ldap:
     # Active Directory bind authentication. OFF by default so machines with no
     # domain (local dev) keep working on the local fallback ladder. Switch on per
@@ -54,6 +52,55 @@ bank:
     # Allow the local fallback ladder when the directory is UNREACHABLE. A
     # directory that answers "wrong password" is always final regardless of this.
     fallback-to-local-users: ${BANK_LDAP_FALLBACK:true}
+  # SQL audit log — every /api hit and the queries that ran behind it, written
+  # to a file of its own (never to the console, never mixed with the app log).
+  # An entry per API call: the request line, then each statement with its SQL
+  # exactly as the driver received it (Denodo view prefixes already applied) with
+  # the bound values substituted for their ? so it can be pasted into Design
+  # Studio and run, the row count and the elapsed time.
+  #
+  #   2026-08-19 14:22:01.412 [r-7f] >>>> GET /api/customers/0123456 user=DEVUSER
+  #   2026-08-19 14:22:01.502 [r-7f] SQL #1 · archival · 1 row · 84 ms
+  #       SELECT c.custNo, c.name1 FROM bv_impala_stg_bankmaster_stcusttab c
+  #       WHERE c.custNo = '0123456' AND c.BankingDate = '2009-07-11'
+  #   2026-08-19 14:22:01.560 [r-7f] <<<< 200 · 1 query · 148 ms
+  #
+  # OFF by default: no proxy is installed and no file is created. Turn it on for
+  # a diagnostic run with BANK_SQL_LOG=true (it applies to the denodo profile —
+  # the mock profile has no database and so no queries to record).
+  #
+  # NOTE: parameter values are written in the CLEAR, so an enabled log holds
+  # real customer, account and ID numbers. Treat the file as bank data: keep it
+  # off shared paths and delete it when the diagnosis is done.
+  sql-log:
+    enabled: ${BANK_SQL_LOG:false}
+    # Relative paths resolve against the working directory the API is started
+    # from (deploy\ for run-denodo.bat).
+    file: ${BANK_SQL_LOG_FILE:logs/bank-api-sql.log}
+    # Rolls at this size to bank-api-sql.log.1, .2, … keeping max-history of them.
+    max-size-mb: ${BANK_SQL_LOG_MAX_MB:50}
+    max-history: ${BANK_SQL_LOG_HISTORY:3}
+  # ------------------------------------------------------------------------
+  # RUNTIME CONFIGURATION FILE — the settings an operator may change WITHOUT
+  # restarting the API. Everything else in this file is startup configuration.
+  #
+  # Currently two settings live there:
+  #     allowed-users   who may log in
+  #     banking-date    the archival restore snapshot every query filters on
+  #
+  # It is a plain properties file next to the jar (created with a documented
+  # template on first start). Edit and save it and the change is picked up
+  # within poll-millis: the next login sees the new allow-list, the next query
+  # binds the new BankingDate. A file that fails to parse is REJECTED and the
+  # previously loaded values stay in force — see RuntimeSettings.
+  # ------------------------------------------------------------------------
+  runtime-config:
+    # Relative paths resolve against the working directory the API is started
+    # from (deploy\ for run-denodo.bat), same as the SQL log above.
+    file: ${BANK_RUNTIME_CONFIG_FILE:bank-runtime.properties}
+    # How often the file's timestamp may be checked, at most. One stat per
+    # second, not one per query.
+    poll-millis: ${BANK_RUNTIME_CONFIG_POLL_MS:1000}
   cors:
     # Origins allowed to call /api/** (the Vite dev server). Comma-separated.
     allowed-origins: ${BANK_CORS_ORIGINS:http://localhost:5173,http://localhost:5199}
@@ -89,33 +136,17 @@ bank:
     # query is rewritten automatically; blank means "views named like the
     # legacy tables". Change this (not the SQL) when moving staging -> prod.
     table-prefix: ${ARCHIVAL_DB_TABLE_PREFIX:bv_impala_stg_bankmaster_}
-    # THE BANKING DATE. Every archival view carries a BankingDate column (the
-    # ETL's "Data Restored date", key part 1 on 98 of the 106 views), and every
-    # query this app issues against a Denodo view now filters on it:
+    # NOTE: banking-date is NOT here. Every archival view carries a BankingDate
+    # column (the ETL's "Data Restored date", key part 1 on 98 of the 106 views)
+    # and every query this app issues adds
     #
     #     WHERE ... AND <alias>.BankingDate = :bankingDate
     #
-    # so one property pins the whole application to a single restore snapshot.
-    # Set it to the snapshot you want the screens to read.
-    #
-    # FORMAT: bound as a plain string and compared with =, so it must be written
-    # EXACTLY as the views store it. The default below is the ISO form
-    # (2009-07-11), which is what a DATE-typed column renders as; if the views
-    # type BankingDate as a YYYYMMDD string instead, set 20090711. A format
-    # mismatch is not an error — it is every screen returning no rows, so this
-    # is the first thing to check if the app comes up empty.
-    #
-    # 11/07/2009 is the restore date the CSD side sits on: all 29 st* views were
-    # measured single-valued at it (18 Aug 2026). It is NOT the latest snapshot
-    # of every view — gld0data/pyd0data/sod0data/rid0data/thd0data span
-    # 1992-2009, and stcardtab runs on to 08/12/2012 — so a key present only in
-    # an older BM snapshot, and any card written after this date, will not be
-    # returned. That trade-off is deliberate; see docs/DENODO-VIEWS.md.
-    #
-    # Leaving this BLANK falls back to MAX(BankingDate) FROM stcusttab, resolved
-    # once at first query and logged as a warning — a dev convenience, not a
-    # configuration.
-    banking-date: ${ARCHIVAL_BANKING_DATE:2009-07-11}
+    # so one value pins the whole application to a single restore snapshot. That
+    # value now lives in the RUNTIME CONFIGURATION FILE (bank.runtime-config.file
+    # above) as banking-date, because moving the application to another snapshot
+    # is an operational act that must not require a restart. See that file for
+    # the format rules and DENODO-VIEWS.md for which views span which dates.
     # Customer-search clock, the legacy's SEARCHTIME (cbcmssrv.cfg = 30;
     # cbrouter.c:92 default). A search is bounded by TIME, not row count: when
     # it expires the rows already read are returned with an "incomplete" flag,

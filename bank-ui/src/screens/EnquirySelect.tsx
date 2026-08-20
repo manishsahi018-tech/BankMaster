@@ -159,8 +159,11 @@ export default function EnquirySelect({
                   key={row.custNo}
                   onClick={() => setSelected(i)}
                   onDoubleClick={handleEnquiry}
+                  aria-selected={selected === i}
                   className={`cursor-pointer border-b border-edge-soft transition-colors last:border-b-0 ${
-                    selected === i ? 'bg-primary-soft/70' : 'odd:bg-surface even:bg-surface-muted/40 hover:bg-surface-muted'
+                    selected === i
+                      ? 'bg-primary-selected'
+                      : 'odd:bg-surface even:bg-surface-muted/40 hover:bg-surface-muted'
                   }`}
                 >
                   {COLUMNS.map((col) => (
@@ -171,11 +174,15 @@ export default function EnquirySelect({
                         col.key === 'custNo'
                           ? 'font-semibold text-primary-ink'
                           : 'text-ink-soft'
-                      }`}
+                      } ${
+                        // Same selection marker as GridScreen: an accent bar on
+                        // the first cell (a <tr> box-shadow is not painted under
+                        // border-collapse), and darker ink across the row.
+                        selected === i && col.key === 'custNo'
+                          ? 'shadow-[inset_3px_0_0_0_var(--primary)]'
+                          : ''
+                      } ${selected === i && col.key !== 'custNo' ? 'text-ink' : ''}`}
                     >
-                      {selected === i && col.key === 'custNo' && (
-                        <span className="mr-2 inline-block h-2 w-2 rounded-full bg-primary align-middle" />
-                      )}
                       {col.render ? col.render(row[col.key]) : row[col.key]}
                     </td>
                   ))}

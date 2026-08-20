@@ -59,11 +59,18 @@ filters on it**:
 WHERE ... AND <alias>.BankingDate = :bankingDate
 ```
 
-The value is one property, `bank.archival-db.banking-date`, bound from
-`BankingDateProvider`; a blank property falls back to `MAX(BankingDate) FROM
-stcusttab` with a warning. It is a plain string compared with `=`, so it must be
-written exactly as the views store it — a format mismatch is not an error, it is
-every screen returning no rows.
+The value is one setting, `banking-date` in the runtime configuration file
+(`bank-runtime.properties`, next to the jar), read through `BankingDateProvider`;
+a blank value falls back to `MAX(BankingDate) FROM stcusttab` with a warning. It
+is a plain string compared with `=`, so it must be written exactly as the views
+store it — `2009-07-11` if BankingDate is a DATE column, `20090711` if it is a
+YYYYMMDD string. A format mismatch is not an error, it is every screen returning
+no rows, which is why the file is validated on load and an unusable date is
+refused outright rather than applied.
+
+**It can be changed while the application is running.** Save the file and the
+next query binds the new date — no restart, no dropped session — so moving the
+screens onto another restore snapshot is an operational act, not a redeploy.
 
 Why it is mandatory rather than optional: several views hold the SAME record
 once per restore snapshot (a real account in `sod0data` was measured with four

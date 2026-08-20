@@ -20,6 +20,10 @@ Steps
    app work on the PC.
 3. Put the Denodo driver jar in drivers\.
 4. Edit run-denodo.bat: set the Denodo URL, user and password.
+4b. Edit bank-runtime.properties: list the user IDs allowed to log in, and
+   set the restore snapshot (banking-date). See "Changing settings while the
+   app is running" below - you can also leave it for later and change it
+   without stopping anything.
 5. Run run-denodo.bat, then open http://localhost:8080/api/health/db in a
    browser BEFORE using the UI. It must show "ok": true for archival, the
    resolved bankingDate, and a customers row count.
@@ -29,6 +33,30 @@ Steps
    - a customer number above 1,000,000
    (these verify whether the Denodo views hold decoded values or raw
    BankMaster encodings — see bank-api/README.md)
+
+Changing settings while the app is running
+-----------------------------------------
+Two settings live in bank-runtime.properties (this folder) instead of inside
+the jar, because they are the ones that get changed in service:
+
+    allowed-users   who may log in, comma-separated. BLANK = anyone who
+                    authenticates gets in, which is a dev convenience only.
+                    e.g.  allowed-users=DEVUSER,OPER1,ENQ1
+    banking-date    the restore snapshot every screen reads. Write it exactly
+                    as the Denodo views store it - 2009-07-11 for a DATE
+                    column, 20090711 for a YYYYMMDD string.
+
+Edit the file in Notepad and SAVE IT. Within a second the next login sees the
+new list and the next query uses the new date. Do not restart the API, do not
+close anyone's session - there is nothing else to do.
+
+Nothing else moved: the Denodo URL, the user, the password and the port are
+startup settings and still need run-denodo.bat to be stopped and started.
+
+If you mistype something - a date in the wrong format, a broken line - the
+edit is REFUSED and the app keeps running on the values it already had. The
+application log says what was wrong and which values are still in force.
+Correct the file and save it again.
 
 If something fails
 ------------------

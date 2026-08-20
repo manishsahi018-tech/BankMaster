@@ -102,7 +102,7 @@ public class MockAccountRepository implements AccountRepository {
     /** Mock: DEVUSER may enquire on 0127; other users have no stusrbrn row. */
     @Override
     public List<String> enquiryAllowedBranches(String userId) {
-        return "DEVUSER".equals(userId == null ? "" : userId.trim())
+        return "DEVUSER".equalsIgnoreCase(userId == null ? "" : userId.trim())
                 ? List.of("0127") : List.of();
     }
 

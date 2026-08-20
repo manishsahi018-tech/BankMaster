@@ -227,7 +227,7 @@ public class JdbcAccountRepository implements AccountRepository {
                            Branchcode1, Branchcode2, Branchcode3, Branchcode4, Branchcode5
                     FROM   stusrbrn
                     WHERE  BankingDate = :bankingDate
-                      AND  userId = :userId
+                      AND  UPPER(userId) = UPPER(:userId)
                     """,
                     Map.of("bankingDate", bankingDate.bankingDate(),
                             "userId", trim(userId)),

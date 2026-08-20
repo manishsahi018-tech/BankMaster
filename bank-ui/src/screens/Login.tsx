@@ -1,7 +1,9 @@
 // Legacy frmLogin (staticData.frm) — the LOGON WINDOW. Faithful behaviors:
-// Enter on User Id moves focus to Password (staticData.frm:803), user id is
-// upcased (:811), password rejects non-ASCII chars (errNoArabicCharacters,
-// :791), and after a 000 response the client still applies the legacy
+// Enter on User Id moves focus to Password (staticData.frm:803) and password
+// rejects non-ASCII chars (errNoArabicCharacters, :791). The legacy client
+// also upcased the user id (:811) and capped both field lengths — dropped
+// here: the id goes up as typed and the API normalises it. After a 000
+// response the client still applies the legacy
 // "insufficient privileges" gate (:474 — must hold one of ~00 ~01 ~02 ~4
 // ~6 ~3 ~99 ~8). The branch-match gate (:490) is dropped: the web client
 // has no local statdata.ini branch; the branch comes from the profile.
@@ -29,7 +31,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
     setBusy(true)
     setError(null)
     api
-      .login(userId.trim().toUpperCase(), password)
+      .login(userId.trim(), password)
       .then(async (r) => {
         if (r.status !== '000' || !r.session) {
           setError(r.message)
@@ -87,18 +89,16 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
             <input
               type="text"
               value={userId}
-              maxLength={20}
               autoFocus
               autoComplete="username"
               onChange={(e) => setUserId(e.target.value)}
-              onBlur={() => setUserId((u) => u.toUpperCase())}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && userId.trim()) {
                   e.preventDefault()
                   passwordRef.current?.focus()
                 }
               }}
-              className="w-full rounded-lg border border-edge-strong bg-surface px-3.5 py-2.5 text-sm uppercase shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              className="w-full rounded-lg border border-edge-strong bg-surface px-3.5 py-2.5 text-sm shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             />
           </label>
 
@@ -108,7 +108,6 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
               ref={passwordRef}
               type="password"
               value={password}
-              maxLength={16}
               autoComplete="current-password"
               onChange={(e) => {
                 // Legacy rejects chars > 127 in the password field.
