@@ -109,7 +109,7 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
             SELECT shortName, address1, address2, language
             FROM   crd0data
             WHERE  BankingDate = :bankingDate
-              AND  accNo = :custNo
+              AND  custNo = :custNo
             """;
 
     private static final String ACCOUNT_SQL = """
@@ -226,18 +226,21 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
     }
 
     /**
-     * {@code actualToBmCust(&inBuf->accNo[5])} then a 6-char key into crd0data.
+     * {@code actualToBmCust(&inBuf->accNo[5])}, then the customer into crd0data.
      *
-     * <p>Two things to know about this query. First, the KEY is the 6-char
-     * PACKED BM customer {@link BmForms#bmCust} produces, because that is what
-     * {@code actualToBmCust(&inBuf->accNo[5])} hands the C. Other archival views
-     * carry the 14-char actual account form (DENODO-VIEWS.md:150) and it was
-     * tempting to assume crd0data followed suit, but guessing a key from a
-     * neighbouring view's convention is how the BankingDate and accounts-key
-     * mistakes happened; the legacy read is the specification. Below 1,000,000
-     * the packing is just the last six digits, so a view keyed either way would
-     * agree there and only diverge on high customers — which is exactly the kind
-     * of bug that surfaces months later, on a subset of accounts.
+     * <p>Two things to know about this query. First, the KEY is
+     * {@code crd0data.custNo} holding the plain 7-digit customer — the column
+     * the archival view actually carries (crd0data.ts: custNo, string, size 7).
+     * This read was originally written as {@code accNo = :custNo} bound to the
+     * 6-char PACKED form {@link BmForms#bmCust} produces, because that is what
+     * {@code actualToBmCust(&inBuf->accNo[5])} hands the C, on the rule that the
+     * legacy read is the specification rather than a neighbouring view's
+     * convention. The rule was right about the LOGIC and wrong about the column:
+     * the view has no {@code accNo}, so the query could only ever throw. Below
+     * 1,000,000 the packed and actual forms differ only by a leading zero, so
+     * the two keyings would have agreed on low customers and diverged on high
+     * ones — the kind of bug that surfaces months later, on a subset of
+     * accounts, had the column name not made it fail loudly first.
      *
      * <p>Second, {@code custAddress} is address1 CONCATENATED with address2.
      * The C copies 60 bytes out of {@code crdRec.address1}, which is only 30
@@ -246,16 +249,14 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
      * slide left of where every legacy printout puts it.
      *
      * @return {@code null} when the customer has no row — the legacy's
-     *         NOMAINACC case, NOT the missing-view case. {@link BmForms#bmCust}
-     *         returning six blanks for an unpackable customer lands here too,
-     *         which is the same give-up the C makes.
+     *         NOMAINACC case, NOT the missing-view case.
      * @throws NotAvailableException when the view itself cannot be read
      */
     private Customer customer(String actualAcc) {
         List<Customer> rows;
         try {
             rows = jdbc.query(CUSTOMER_SQL,
-                    new MapSqlParameterSource("custNo", bmCustomerOf(actualAcc))
+                    new MapSqlParameterSource("custNo", customerOf(actualAcc).trim())
                             .addValue("bankingDate", bankingDate.bankingDate()),
                     (rs, i) -> new Customer(
                             scrub(rs.getString("shortName")),
@@ -540,11 +541,6 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
      */
     private static String customerOf(String actualAcc) {
         return actualAcc.length() >= 12 ? actualAcc.substring(5, 12) : actualAcc;
-    }
-
-    /** The same customer, packed to the 6-char BM form crd0data is keyed on. */
-    private static String bmCustomerOf(String actualAcc) {
-        return BmForms.bmCust(customerOf(actualAcc));
     }
 
     /** The views store the 14-char actual form; convert a 13-char BM argument. */

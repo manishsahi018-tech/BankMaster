@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useToast } from './Toast.tsx'
+import { BackArrow } from './legacyForm.tsx'
 
 // Shared layout for the legacy MSFlexGrid screens (account grid, histories,
 // cheque book / standing order / stop cheque grids). Each legacy grid form is
@@ -47,6 +48,16 @@ interface GridScreenProps {
   /** Appends the next server page (App's appendPage). */
   onMore?: () => void
 }
+
+
+/**
+ * "Return" always means one step back to the screen that opened this one — the
+ * convention every detail and history screen follows (profile pages say
+ * Previous Page, grids say Exit). So the back arrow is attached HERE, by that
+ * label, rather than repeated at eleven call sites where it could be forgotten
+ * on the twelfth.
+ */
+const isBack = (label: string) => label === 'Return'
 
 const btnKinds = {
   primary:
@@ -262,8 +273,11 @@ export default function GridScreen({
                 disabled={btn.disabled}
                 title={btn.title}
                 onClick={() => btn.onClick?.({ row: selectedRow, rows, notify })}
-                className={`${btnKinds[btn.kind ?? 'secondary']} ${btn.alignEnd ? 'ml-auto' : ''}`}
+                className={`${btnKinds[btn.kind ?? 'secondary']} ${
+                  btn.alignEnd ? 'ml-auto' : ''
+                } ${isBack(btn.label) ? 'inline-flex items-center gap-2' : ''}`}
               >
+                {isBack(btn.label) && <BackArrow />}
                 {btn.label}
               </button>
             ))}

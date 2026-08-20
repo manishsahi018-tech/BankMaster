@@ -17,8 +17,17 @@ import {
 } from '../components/legacyForm.tsx'
 
 // Mirrors legacy frmJuristicMain.frm — page 1 of the juristic customer profile,
-// field for field. The legacy variants (Diplomats / Non-Resident / Public-Corp)
-// differ by category, not layout.
+// field for field, and — through `variant` — its two siblings
+// frmJuristicDiplomats and frmJuristicNonResident.
+//
+// The three forms share 145 of their controls; each variant adds ONE
+// registration block and its own heading, which is why they are one component
+// with a variant rather than three files:
+//   diplomats    Diplomatic Card / Passport / Visa numbers with their dates
+//                (frmJuristicDiplomats: txtDiplomaticCardNo, txtPPNo, txtVisaNo)
+//   nonResident  Contract No with its dates (frmJuristicNonResident: txtContractNo)
+// Which one opens is decided by sub category, not by anything on the customer
+// record itself — see screenSet.ts.
 //
 // Differs from the individual forms: four registration rows (C.R. / Licence /
 // SAMA Auth / Approver) of which only C.R. carries an issued-at; a company-name
@@ -33,8 +42,18 @@ import {
 // write path and out of scope. Flip to false to restore it.
 const ENQUIRY_ONLY = true
 
+/** The three juristic forms, keyed as screenSet.ts names them. */
+export type JuristicVariant = 'main' | 'diplomats' | 'nonResident'
+
+const HEADINGS: Record<JuristicVariant, { kicker: string; title: string }> = {
+  main: { kicker: 'Juristic Customer', title: 'Customer Profile' },
+  diplomats: { kicker: 'Juristic — Diplomatic', title: 'Resident Juristic Customer' },
+  nonResident: { kicker: 'Juristic — Non-Resident', title: 'Non-Resident Juristic Customer' },
+}
+
 export default function JuristicMain({
   profile,
+  variant = 'main',
   historyAsOf,
   onAccounts,
   onOwners,
@@ -43,6 +62,7 @@ export default function JuristicMain({
   onBack,
 }: {
   profile: GridRow
+  variant?: JuristicVariant
   historyAsOf?: string
   onAccounts: () => void
   onOwners: () => void
@@ -63,10 +83,24 @@ export default function JuristicMain({
   }
   const appRow: IdRowData = byType('A') ?? { idNo: profile.approvalRefNo }
   // Only the C.R. row has an issued-at, so it renders as its own table.
+  // cbjuristic.c:3097-3168 keys every registration document by idType:
+  // C commercial registration, L licence, S SAMA authority, P passport,
+  // D diplomatic card, V visa, T contract, A approval reference.
+  const variantRows =
+    variant === 'diplomats'
+      ? [
+          { label: 'Diplomatic Card No', row: byType('D') ?? { idNo: profile.diplomaticCardNo } },
+          { label: 'PP Number', row: byType('P') ?? { idNo: profile.passportNo } },
+          { label: 'Visa Number', row: byType('V') ?? { idNo: profile.visaNo } },
+        ]
+      : variant === 'nonResident'
+        ? [{ label: 'Contract No', row: byType('T') ?? { idNo: profile.contractNo } }]
+        : []
   const otherRows = [
     { label: 'License No', row: byType('L') ?? { idNo: profile.licenseNo } },
     { label: 'SAMA Auth No', row: byType('S') ?? { idNo: profile.samaAuthNo } },
     { label: 'Approver No.', row: appRow },
+    ...variantRows,
   ]
 
   // Date of Establishment reuses the DOB columns — cbjuristic.c:3212-3214
@@ -80,9 +114,11 @@ export default function JuristicMain({
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">
-            Juristic Customer
+            {HEADINGS[variant].kicker}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">Customer Profile</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
+            {HEADINGS[variant].title}
+          </h1>
           <p className="mt-1 text-sm text-muted">
             Page 1 of 2 — registration, company and contact information.
           </p>

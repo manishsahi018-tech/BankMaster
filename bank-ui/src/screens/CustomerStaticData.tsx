@@ -103,12 +103,14 @@ export default function CustomerStaticData({
   onAccounts,
   onCards,
   onMerchant,
+  onSadadTransactions,
   onDeletedAcctStatement,
 }: {
   onSearch?: (criteria: SearchCriteria) => void
   onAccounts?: (custNo: string | null, accNo?: string, cardNo?: string) => void
   onCards?: (params: Record<string, string>) => void
   onMerchant?: () => void
+  onSadadTransactions?: () => void
   onDeletedAcctStatement?: () => void
 }) {
   const [form, setForm] = useState(initialForm)
@@ -341,13 +343,20 @@ export default function CustomerStaticData({
     else if (f.cardNumber) onCards?.({ cardNo: f.cardNumber })
   }
 
-  // cmdBillEnq_Click only proceeds with a customer no or account no.
+  // cmdBillEnq_Click only proceeds with a customer no or account no — but the
+  // form it opens (frmBillEnquiry, "Get Bill Details") asks the SADAD network
+  // for a bill's LIVE status over Tuxedo (UTBLENQ/SADBILLENQ). No archival view
+  // carries that, so the enquiry cannot run here and saying so beats a button
+  // that validates its input and then does nothing.
   const handleBillEnquiry = () => {
     if (form.customerNo.trim() === '' && form.accountNo.trim() === '') {
       setError('Utility Bill Enquiry needs a customer number or account number.')
       return
     }
-    setError('')
+    setError(
+      'Live bill status comes from the SADAD network, which this archival enquiry has no '
+        + 'connection to. Use SADAD Transactions for payments the branch has already made.',
+    )
   }
 
   return (
@@ -642,6 +651,22 @@ export default function CustomerStaticData({
                       className={secondaryBtn}
                     >
                       Utility Bill Enquiry
+                    </button>
+                    {/* Deliberately DORMANT, like the button above it: the
+                        legacy reaches frmSadadMain — and through it the SADAD
+                        transaction enquiry — from cmdBillEnq_Click
+                        (frmCustomerSearch.frm:971), and that button is
+                        Visible=0 in VER 4.0.5. The screen behind this one is
+                        built and its stsadadlog source is real, so flipping
+                        SHOW_DORMANT_FACILITIES turns it on; it stays off while
+                        the legacy keeps it off. */}
+                    <button
+                      type="button"
+                      onClick={() => onSadadTransactions?.()}
+                      title="Payments the branch has made through SADAD"
+                      className={secondaryBtn}
+                    >
+                      SADAD Transactions
                     </button>
                     <button
                       type="button"

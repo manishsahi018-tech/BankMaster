@@ -8,7 +8,7 @@ import {
   Field,
   Segmented,
   DateTriple,
-  StatusChips,
+  CheckBoxGroup,
   DocTable,
   AuditCards,
   isFirst,
@@ -133,7 +133,7 @@ export default function IndividualSaudi({
             <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-soft">
               Special Status
             </p>
-            <StatusChips
+            <CheckBoxGroup
               flags={[
                 { label: 'Blind / Illiterate', on: flag(1) },
                 { label: 'Veiled Woman', on: flag(2) },

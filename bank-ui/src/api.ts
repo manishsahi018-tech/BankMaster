@@ -325,11 +325,25 @@ export const api = {
 
   cardDetail: (cardNo: string) => get<GridRow>(`/api/cards/${cardNo}`, 'open this card'),
 
+  /** stcardlog snapshot — Card Update History's View Detail (service 25 rt '01'). */
+  cardSnapshot: (cardNo: string, dateTime: string, branchCode: string, userId: string) =>
+    get<GridRow>(`/api/cards/${cardNo}/snapshot/${dateTime}`, 'open the card as that update left it', {
+      branchCode,
+      userId,
+    }),
+
   cardUpdateHistory: (cardNo: string, page = 0) =>
     get<Paged<GridRow>>(`/api/cards/${cardNo}/update-history`, 'load the card update history', { page: String(page) }),
 
   /** Card/PIN lifecycle — completed records only, max 50. */
   cardTrackingHistory: (cardNo: string) => get<GridRow[]>(`/api/cards/${cardNo}/history`, 'load the card and PIN history'),
+
+  /** stsadadlog history — legacy frmSadadTransEnq (QUERY-SPECS §19). */
+  sadadTransactions: (params: Record<string, string>, page = 0) =>
+    get<Paged<GridRow>>('/api/sadad/transactions', 'fetch the SADAD transactions', {
+      ...params,
+      page: String(page),
+    }),
 
   sarieTransfers: (accNo: string, params: Record<string, string>, page = 0) =>
     get<Paged<GridRow>>(`/api/accounts/${accNo}/transfers`, 'fetch the transfers', { ...params, page: String(page) }),

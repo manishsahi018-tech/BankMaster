@@ -128,6 +128,21 @@ public class MockCardRepository implements CardRepository {
     }
 
     @Override
+    public Optional<CardDetail> snapshot(String cardNo, String branchCode, String userId, String dateTime) {
+        // The card as that log row left it. Seeded off the row key so the same
+        // row always yields the same snapshot, and deliberately made to DIFFER
+        // from the live detail — a history view that echoes the current record
+        // would hide the very bug it exists to catch.
+        String key = cardNo + branchCode + userId + dateTime;
+        return detail(cardNo).map(d -> new CardDetail(
+                d.cardNo(), d.custNo(), d.custName(), d.custCategory(),
+                String.valueOf(DemoData.pick(key, 20, 9) + 1),
+                branchCode.isBlank() ? d.deliveryBranchCode() : branchCode,
+                d.cardType(), d.nameOnTheCard(), d.bmAccNo(), d.coreAccNo(),
+                "", DemoData.pick(key, 21, 2) == 0 ? "U" : "N"));
+    }
+
+    @Override
     public List<CardUpdateHistoryEntry> updateHistory(String cardNo) {
         DemoData.Customer c = ownerOf(cardNo).orElse(DemoData.CUSTOMERS.get(0));
         int count = 2 + DemoData.pick(cardNo, 20, 5); // 2-6

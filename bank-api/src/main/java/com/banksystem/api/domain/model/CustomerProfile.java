@@ -117,6 +117,12 @@ public record CustomerProfile(
         /** stcusttab fallbacks; stidtab rows 'L' and 'A' are preferred. */
         String licenseNo,
         String approvalRefNo,
+        /** frmJuristicNonResident's Contract No — stidtab idType 'T' is
+         *  preferred, this column is the fallback (cbjuristic.c:3152). */
+        String contractNo,
+        /** frmJuristicDiplomats' Diplomatic Card No — stidtab idType 'D'
+         *  preferred, this column the fallback (cbjuristic.c:3134). */
+        String diplomaticCardNo,
         List<IdDocument> idDocuments,
         OpenUpdateInfo openUpdate) {
 
@@ -147,6 +153,7 @@ public record CustomerProfile(
                 aOrgName2, eOrgName2, orgAlphaSearchCode, purposeOfAccount,
                 govtShareHoldingPerc, saudiShareHoldingPerc, foreignShareHoldingPerc,
                 crIssueDateType, licenseNo, approvalRefNo,
+                contractNo, diplomaticCardNo,
                 idDocuments, openUpdate);
     }
 
@@ -173,6 +180,7 @@ public record CustomerProfile(
                 aOrgName2, eOrgName2, orgAlphaSearchCode, purposeOfAccount,
                 govtShareHoldingPerc, saudiShareHoldingPerc, foreignShareHoldingPerc,
                 crIssueDateType, licenseNo, approvalRefNo,
+                contractNo, diplomaticCardNo,
                 docs, audit);
     }
 }

@@ -101,7 +101,7 @@ export default function IndividualOthers({
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">Customer Profile</h1>
           <p className="mt-1 text-sm text-muted">
-            Page 1 of 2 — identity, personal and contact information.
+            Page 1 of 3 — identity, personal and contact information.
           </p>
         </div>
         <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
@@ -337,7 +337,10 @@ export default function IndividualOthers({
           {/* cmdNext — frmIndividualOthers has one and so does the Saudi form;
               it was the only profile here without its page 2. */}
           <NextPageButton onClick={() => onNextPage?.()} />
-          <button type="button" onClick={onBack} className={`${btnKinds.danger} ml-auto`}>
+          {/* No ml-auto here: NextPageButton already carries one, and TWO auto
+              margins in a flex row split the free space between them — which
+              left Next Page stranded mid-row instead of beside Cancel. */}
+          <button type="button" onClick={onBack} className={btnKinds.danger}>
             Cancel
           </button>
         </div>

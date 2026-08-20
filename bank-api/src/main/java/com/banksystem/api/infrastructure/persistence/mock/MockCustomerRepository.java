@@ -177,6 +177,7 @@ public class MockCustomerRepository implements CustomerRepository {
                     "01", "", "01", "", "01", "4261827", "", "37948",
                     "52551", "20060531000000", "0", "",
                     "", "", "", "", "", "", "", "0", "", "",
+                    "", "",
                     List.of(
                             new IdDocument("I", "1009326404", "القطيف", "0", "",
                                     "14140128", "19930717", "14340402", "20130212", ""),
@@ -199,6 +200,7 @@ public class MockCustomerRepository implements CustomerRepository {
                     "01", "220", "01", "", "01", "4614501", "", "",
                     "54302", "20190812103000", "1", "V4471209",
                     "", "", "", "", "", "", "", "0", "", "",
+                    "", "",
                     List.of(
                             new IdDocument("Q", "1004458821", "الرياض", "0", "1",
                                     "14250310", "20040429", "14480515", "20261125", ""),
@@ -227,6 +229,7 @@ public class MockCustomerRepository implements CustomerRepository {
                     "التجارية", "Trading Establishment", "ALNOOR",
                     "Commercial trading operations and imports", "000", "100", "000",
                     "0", "L-4030-2211", "AP-330219",
+                    "", "",
                     List.of(
                             new IdDocument("C", "4030099812", "جدة", "0", "",
                                     "14150601", "19941104", "14200601", "19991011", ""),
@@ -308,6 +311,7 @@ public class MockCustomerRepository implements CustomerRepository {
                 t.aOrgName2(), t.eOrgName2(), t.orgAlphaSearchCode(), t.purposeOfAccount(),
                 t.govtShareHoldingPerc(), t.saudiShareHoldingPerc(), t.foreignShareHoldingPerc(),
                 t.crIssueDateType(), t.licenseNo(), t.approvalRefNo(),
+                t.contractNo(), t.diplomaticCardNo(),
                 List.of(new IdDocument(c.idType(), c.idNo(), t.idIssuedAt(), t.idDateType(), "",
                         t.idIssueDateH(), t.idIssueDateG(), t.idExpiryDateH(), t.idExpiryDateG(), "")),
                 new OpenUpdateInfo(c.openDate(), c.branchCode(), "MIGRATION", "MIGRATION",
@@ -468,7 +472,7 @@ public class MockCustomerRepository implements CustomerRepository {
 
     @Override
     public java.util.Map<String, String> acctInfo(String custNo) {
-        return java.util.Map.ofEntries(
+        java.util.Map<String, String> base = java.util.Map.ofEntries(
                 java.util.Map.entry("education", "0003"),
                 java.util.Map.entry("profession", "0006"),
                 java.util.Map.entry("position", "0005"),
@@ -504,6 +508,53 @@ public class MockCustomerRepository implements CustomerRepository {
                 java.util.Map.entry("otherAcStmtFreq", "03"),
                 java.util.Map.entry("otherAcChequeBook", "0"),
                 java.util.Map.entry("otherAcStatus", "00"));
+        java.util.Map<String, String> all = new java.util.LinkedHashMap<>(base);
+        // frmIndividualOthers2 ("Customers Maintenance Page 2 - For Other
+        // Individuals"). Seeded for an expatriate, since that is the profile the
+        // page belongs to: an abroad address and a home-country ID that the
+        // Saudi-national page has no frame for.
+        all.put("department", "قسم الخزينة");
+        // Six positional flags: rented house, own house, company accommodation,
+        // rented car, own car, company transport.
+        all.put("ownerShip", "010010");
+        all.put("singleJointAcc", "S");
+        all.put("excludeFromAtmFees", "0");
+        all.put("excludeFromMinBalFees", "0");
+        all.put("pkgStmtFreqOverride", "0");
+        all.put("interGroupAccNo", "");
+        all.put("specialRefNo", "");
+        // stidtab 'M' — home country id.
+        all.put("homeCountryId", "A1234567");
+        all.put("homeCountryIdDateType", "1");
+        all.put("homeCountryIdIssueDateG", "20030315");
+        all.put("homeCountryIdExpiryDateG", "20130314");
+        // stidtab 'S' — SAMA authorisation; its date is the ID's ISSUE date.
+        all.put("samaAuthNo", "");
+        all.put("samaAuthDateType", "1");
+        // stidtab 'A' — approval document + approver name.
+        all.put("approvalRefNo", "");
+        all.put("appDateType", "1");
+        all.put("appRefName", "");
+        // staddrtab addressType '01' — the abroad/home-country address.
+        all.put("homeAddress1", "ش 30 مارس 58");
+        all.put("homeAddress2", "");
+        all.put("homePoBox", "0");
+        all.put("homeCityName", "قنا");
+        all.put("homeZipCode", "0");
+        all.put("homeCountry", "019");
+        all.put("homeTelOffAreaCode", "");
+        all.put("homeTelOffNo", "");
+        all.put("homeTelOffExt", "");
+        all.put("homeTelHomeAreaCode", "");
+        all.put("homeTelHomeNo", "0966580998");
+        all.put("homeTelHomeExt", "");
+        all.put("homeFaxAreaCode", "");
+        all.put("homeFaxNo", "");
+        all.put("homeFaxExt", "");
+        all.put("homeMobileNo", "");
+        all.put("homePagerNo", "");
+        all.put("homeEmail", "");
+        return java.util.Map.copyOf(all);
     }
 
     @Override

@@ -72,15 +72,22 @@ public class JdbcTransferRepository implements TransferRepository {
      * moved into both the Arabic and English slots — so there is nothing to pick
      * between and no custType branch, just the one column.
      *
-     * <p>This one CANNOT ride along as a correlated subquery beside
-     * {@link #STCUSTTAB_NAME}, because crd0data is keyed the way the legacy keys
-     * it: the 6-char PACKED BM customer that {@code actualToBmCust} produces
-     * ({@link BmForms#bmCust}). Below 1,000,000 that is just the last six digits,
-     * but from there to 6,199,999 the leading two digits collapse into a single
-     * letter — arithmetic no SUBSTR expresses, and the kind of number-form
-     * conversion this port deliberately keeps in Java rather than in SQL text.
-     * So it runs as its own point read, after the main query, only when the
-     * stcusttab name came back empty.
+     * <p>Keyed on {@code custNo}, the plain 7-digit customer, because that is
+     * what the ARCHIVAL view carries (crd0data.ts: {@code custNo}, string, size
+     * 7 — from BM archival Version 9.xlsx). The C keys its ISAM record on the
+     * 6-char PACKED form {@code actualToBmCust} builds, and this read was
+     * written to match it — {@code accNo = :bmCustNo} — on the rule that the
+     * legacy read is the specification. That rule holds for logic; it does not
+     * override the delivered schema for a COLUMN NAME. The view has no
+     * {@code accNo} at all, so the read did not degrade — it threw
+     * BadSqlGrammarException, and since it runs unguarded after the main query
+     * (see {@link #crdShortName}) it took the whole transfer-detail enquiry down
+     * with it. See DENODO-VIEWS.md for the reversed decision.
+     *
+     * <p>It still cannot ride along as a correlated subquery beside
+     * {@link #STCUSTTAB_NAME}: it needs {@link BmForms#custFromActualAcc}, and
+     * running it only when the stcusttab name came back empty is what makes it
+     * a FALLBACK rather than a second name source.
      *
      * <p>Which is also CLOSER to the C than the subquery form was: getCustName
      * falls back on the stcusttab ROW being absent, and an empty name is very
@@ -91,7 +98,7 @@ public class JdbcTransferRepository implements TransferRepository {
             SELECT shortName
             FROM   crd0data
             WHERE  BankingDate = :bankingDate
-              AND  accNo = :bmCustNo
+              AND  custNo = :custNo
             """;
 
     /** stcusttab alone; {@link #crdShortName} supplies getCustName's other half. */
@@ -403,26 +410,42 @@ public class JdbcTransferRepository implements TransferRepository {
     }
 
     /**
-     * getCustName's crd0data branch — the 6-char PACKED BM customer, exactly as
-     * {@code actualToBmCust(&accNo[5])} builds it. See {@link #CRD0DATA_NAME}
-     * for why this is a separate read rather than part of the main query.
+     * getCustName's crd0data branch — the customer embedded in the account, as
+     * {@code actualToBmCust(&accNo[5])} reads it, but left in the 7-digit actual
+     * form the view is keyed on. See {@link #CRD0DATA_NAME} for why this is a
+     * separate read rather than part of the main query, and why the key is
+     * custNo rather than the packed form the C uses.
+     *
+     * <p>A failure here is a MISSING NAME, not a failed enquiry. Everything the
+     * operator came for has already been read; this only fills one chip on the
+     * detail screen. So the read is guarded exactly as
+     * {@link #hasPendingSwiftUpdate} is — unguarded, it turned a name lookup
+     * into a 500 on a screen whose data was sitting in {@code rows.get(0)}, and
+     * the legacy simply leaves the name blank when its crd0data read fails
+     * (cbothers.c:8210-8231).
      *
      * @param actualAcc 14-char actual account; its customer is chars 5..11
-     * @return the crd0data short name, or "" when there is no row either
+     * @return the crd0data short name, or "" when there is no row or no view
      */
     private String crdShortName(String actualAcc) {
-        String bmCustNo = BmForms.bmCust(BmForms.custFromActualAcc(actualAcc));
-        if (bmCustNo.isBlank()) {
-            // bmCust returns six blanks for a customer it cannot pack — the same
-            // give-up the C's actualToBmCust does. No key, no lookup.
+        String custNo = BmForms.custFromActualAcc(actualAcc).trim();
+        if (custNo.isEmpty()) {
+            // No customer in the account number — no key, no lookup. The same
+            // give-up the C's actualToBmCust makes on an unusable customer.
             return "";
         }
-        List<String> names = jdbc.queryForList(
-                CRD0DATA_NAME,
-                new MapSqlParameterSource("bmCustNo", bmCustNo)
-                        .addValue("bankingDate", bankingDate.bankingDate()),
-                String.class);
-        return names.isEmpty() ? "" : scrub(names.get(0));
+        try {
+            List<String> names = jdbc.queryForList(
+                    CRD0DATA_NAME,
+                    new MapSqlParameterSource("custNo", custNo)
+                            .addValue("bankingDate", bankingDate.bankingDate()),
+                    String.class);
+            return names.isEmpty() ? "" : scrub(names.get(0));
+        } catch (DataAccessException e) {
+            log.warn("crd0data name lookup unavailable ({}); leaving the name blank for customer {}",
+                    e.getMostSpecificCause().getMessage(), custNo);
+            return "";
+        }
     }
 
     // ------------------------------------------------------------------

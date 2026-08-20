@@ -89,13 +89,35 @@ final class DemoData {
             new Customer("0415742", "Q", "1004458821", "6641150", "24", "0533120988",
                     "", "", "", "",
                     "Ahmed", "Khalid", "", "Al-Otaibi",
-                    "Ahmed K. Al-Otaibi", "0001", "01", "02", "",
+                    // Sub category 04, "Expatriate with valid Iqama" — matches this
+                    // fixture's Iqama ID type and routes to the Others
+                    // profile. It carried "02" (Saudi with special
+                    // circumstance), which getScreenSetNo sends to the SAUDI
+                    // form; the old idType-based routing hid the mismatch.
+                    "Ahmed K. Al-Otaibi", "0001", "01", "04", "",
                     "الرياض", "61128", "11565", "20040119", 2),
+            // Sub category 10 = an establishment, which getScreenSetNo maps to
+            // screen set 3 (frmJuristicMain). It used to carry "01", an
+            // INDIVIDUAL sub category that the legacy rule answers '-1' for —
+            // harmless while the port routed on main category alone, but it
+            // would have refused to open once the real rule went in.
             new Customer("0417003", "C", "4030099812", "6607744", "", "0505512240",
                     "", "", "", "",
                     "", "", "", "",
-                    "Al Noor Trading Est.", "0127", "02", "01", "4030099812",
+                    "Al Noor Trading Est.", "0127", "02", "10", "4030099812",
                     "جدة", "9921", "21423", "20011115", 3),
+            // Sub category 39 → screen set 5, frmJuristicDiplomats.
+            new Customer("0417050", "D", "3014778220", "6601180", "", "0533771902",
+                    "", "", "", "",
+                    "", "", "", "",
+                    "Embassy of Malaysia", "0127", "02", "39", "3014778220",
+                    "الرياض", "94301", "11693", "19960212", 2),
+            // Sub category 45 → screen set 6, frmJuristicNonResident.
+            new Customer("0417061", "T", "7002119045", "6604412", "", "0556230118",
+                    "", "", "", "",
+                    "", "", "", "",
+                    "Gulf Marine Contracting Co.", "0127", "02", "45", "7002119045",
+                    "الخبر", "31952", "34411", "20050803", 4),
             new Customer("0418220", "I", "1023456789", "6672310", "", "0561140277",
                     "نورة", "عبدالله", "محمد", "الشمري",
                     "Noura", "Abdullah", "Mohammed", "Al-Shammari",

@@ -1,4 +1,5 @@
 import { SectionCard, Field, ReadOnlyInput } from '../components/fields.tsx'
+import { BackArrow } from '../components/legacyForm.tsx'
 import type { Customer } from '../types.ts'
 
 // Mirrors legacy frmDocuments.frm ("Essential Documents") as a READ-ONLY
@@ -141,11 +142,15 @@ export default function EssentialDocuments({
       </SectionCard>
 
       <div className="mt-5 flex items-center gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
+        {/* This screen builds its own footer rather than going through
+            DetailScreen, so it carries the back arrow itself — the shared
+            renderers attach it by label and never see this button. */}
         <button
           type="button"
           onClick={onReturn}
-          className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong"
         >
+          <BackArrow />
           Return
         </button>
       </div>

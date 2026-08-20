@@ -212,16 +212,12 @@ export default function TransactionInquiry({
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">Transaction Enquiry</h1>
       </div>
 
-      {unavailable ? (
-        <SourceBanner tone="missing" title="No source connected — this enquiry cannot run">
+      {/* Only the cannot-fetch case gets a banner. The screen no longer carries a
+          standing "demo data" caveat: it is served from thd0data, gld0data and
+          crd0data (legacy service 11) against the archival database. */}
+      {unavailable && (
+        <SourceBanner title="No source connected — this enquiry cannot run">
           <p>{unavailable}</p>
-        </SourceBanner>
-      ) : (
-        <SourceBanner title="Demo data — no database is connected">
-          <p>
-            Rows below are generated. Against a real archival database this enquiry is served
-            from thd0data, gld0data and crd0data (legacy service 11).
-          </p>
         </SourceBanner>
       )}
 

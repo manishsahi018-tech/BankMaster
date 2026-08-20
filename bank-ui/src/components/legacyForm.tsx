@@ -148,25 +148,39 @@ export function DateTriple({ value }: { value: unknown }) {
   )
 }
 
-/** Pill chips for the six special-status flags. */
-export function StatusChips({ flags }: { flags: { label: string; on: boolean }[] }) {
+/**
+ * A row of read-only CHECK-BOXES — the legacy's packed flag groups (special
+ * status on frmIndividualSaudi, ownership on the page-2 forms).
+ *
+ * Square boxes with a tick, not pills with a round check: the source control is
+ * a VB6 check-box group, and a round mark in a pill reads as a RADIO — i.e. as
+ * "pick one" where the form means "tick any". Unticked boxes stay visible, so
+ * the group shows what was NOT selected, which is half of what a flag row says.
+ */
+export function CheckBoxGroup({ flags }: { flags: { label: string; on: boolean }[] }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-x-6 gap-y-2.5">
       {flags.map(({ label, on }) => (
         <span
           key={label}
-          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium ${
-            on ? 'border-primary bg-primary-soft text-primary-ink' : 'border-edge-strong bg-surface text-muted'
+          className={`inline-flex items-center gap-2 text-sm ${
+            on ? 'font-medium text-ink' : 'text-muted'
           }`}
         >
           <span
             aria-hidden
-            className={`flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
+            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border ${
               on ? 'border-primary bg-primary' : 'border-edge-strong bg-surface'
             }`}
           >
             {on && (
-              <svg viewBox="0 0 12 12" fill="none" stroke="white" strokeWidth="2.5" className="h-2.5 w-2.5">
+              <svg
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="white"
+                strokeWidth="2.5"
+                className="h-2.5 w-2.5"
+              >
                 <path d="M2.5 6.5 5 9l4.5-5.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             )}
@@ -326,6 +340,46 @@ export const btnKinds = {
     'rounded-lg border border-danger/30 bg-surface px-4 py-2.5 text-sm font-medium text-danger shadow-xs transition-colors hover:bg-danger-soft',
   disabled:
     'rounded-lg border border-edge bg-surface-muted px-4 py-2.5 text-sm font-medium text-muted-soft shadow-xs cursor-not-allowed',
+}
+
+/**
+ * The leading arrow on every backward action — Previous Page on the profile
+ * forms, Return on the detail and history screens.
+ *
+ * One definition, and it is the FORWARD chevron rotated, so the back and next
+ * arrows can never drift out of step with each other.
+ */
+export function BackArrow() {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden className="h-4 w-4 rotate-180">
+      <path
+        fillRule="evenodd"
+        d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z"
+        clipRule="evenodd"
+      />
+    </svg>
+  )
+}
+
+/**
+ * The primary BACKWARD action, paired with {@link NextPageButton}.
+ *
+ * Same weight as Next Page rather than a quiet secondary: on the legacy forms
+ * the two page buttons sit side by side as equals — a multi-page profile is
+ * walked in both directions, and on the last page Previous is the only way on.
+ * The arrow is the Next chevron rotated, so the pair can never drift apart.
+ */
+export function PrevPageButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+    >
+      <BackArrow />
+      Previous Page
+    </button>
+  )
 }
 
 /** The primary forward action, with the design's trailing arrow. */

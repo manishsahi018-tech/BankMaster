@@ -36,7 +36,11 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("002", "Bahrain"),
                     new CodeEntry("003", "Kuwait"),
                     new CodeEntry("004", "UAE"),
-                    new CodeEntry("005", "Qatar"))),
+                    new CodeEntry("005", "Qatar"),
+                    // The demo "other individual" is an Egyptian expatriate, so
+                    // his home-country address resolves to a name rather than a
+                    // bare code on the Others page 2.
+                    new CodeEntry("019", "Egypt"))),
             Map.entry("businessType", List.of(
                     new CodeEntry("001", "Government"),
                     new CodeEntry("002", "Private Sector"),

@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
@@ -197,12 +198,14 @@ class TransferPagingSqlTest {
     }
 
     /**
-     * A customer of 1,234,567 packs to "C34567" — the leading "12" collapses to a
-     * letter. No SUBSTR produces that, which is the whole reason the crd0data
-     * read is a separate query rather than a correlated subquery.
+     * A customer above 1,000,000, where the legacy PACKED form and the actual
+     * form diverge: 1,234,567 packs to "C34567", but crd0data is keyed on
+     * {@code custNo} holding the actual 1234567 (crd0data.ts, size 7). An
+     * account at this height is what tells the two keyings apart — below a
+     * million they differ only by a leading zero.
      */
     private static final String HIGH_CUST_ACC = "01008123456700";
-    private static final String PACKED_KEY = "C34567";
+    private static final String CUSTOMER_KEY = "1234567";
 
     @Test
     void theMainQueryAsksStcusttabOnly() {
@@ -214,13 +217,14 @@ class TransferPagingSqlTest {
                 sql.capture(), any(SqlParameterSource.class), any(RowMapper.class));
 
         assertThat(sql.getValue())
-                .as("crd0data is keyed on a PACKED customer, so it cannot ride along here")
+                .as("crd0data is getCustName's FALLBACK — it runs only when stcusttab "
+                        + "returned no name, so it stays a separate read")
                 .contains("stcusttab")
                 .doesNotContain("crd0data");
     }
 
     @Test
-    void aBlankStcusttabNameFallsBackToCrd0dataOnThePackedKey() {
+    void aBlankStcusttabNameFallsBackToCrd0dataOnTheCustomerKey() {
         when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
                 .thenReturn(List.of(transactionDetail(HIGH_CUST_ACC, "")));
         when(jdbc.queryForList(anyString(), any(SqlParameterSource.class), eq(String.class)))
@@ -239,12 +243,34 @@ class TransferPagingSqlTest {
         org.mockito.Mockito.verify(jdbc)
                 .queryForList(sql.capture(), params.capture(), eq(String.class));
 
-        assertThat(sql.getValue()).contains("crd0data").contains(":bmCustNo");
-        assertThat(params.getValue().getValue("bmCustNo"))
-                .as("actualToBmCust packs 1234567 to C34567 — SUBSTR(accNo, 6, 7) would have "
-                        + "bound 1234567 and SUBSTR(accNo, 7, 6) would have bound 234567, and "
-                        + "both would miss every customer at or above 1,000,000")
-                .isEqualTo(PACKED_KEY);
+        assertThat(sql.getValue())
+                .as("the view has no accNo column at all — keying on it did not miss rows, "
+                        + "it threw BadSqlGrammarException and took the enquiry down")
+                .contains("crd0data")
+                .contains("custNo = :custNo")
+                .doesNotContain("accNo");
+        assertThat(params.getValue().getValue("custNo"))
+                .as("crd0data.custNo is the 7-digit actual customer (workbook size 7), not the "
+                        + "6-char packed C34567 the legacy ISAM key carries")
+                .isEqualTo(CUSTOMER_KEY);
+    }
+
+    @Test
+    void anUnreadableCrd0dataCostsTheNameAndNothingElse() {
+        when(jdbc.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
+                .thenReturn(List.of(transferDetail(HIGH_CUST_ACC, "")));
+        when(jdbc.queryForList(anyString(), any(SqlParameterSource.class), eq(String.class)))
+                .thenThrow(new BadSqlGrammarException(
+                        "crd0data", "SELECT shortName FROM crd0data",
+                        new java.sql.SQLException("View 'crd0data' not found")));
+
+        assertThat(repo.transferDetail("SR00000001", "20250101"))
+                .as("the transfer itself has already been read; a name lookup that cannot run "
+                        + "must cost the name, not the whole enquiry — unguarded, this surfaced "
+                        + "as \"Could not open this transfer\" on every drill-down")
+                .get()
+                .extracting(TransferDetail::custName)
+                .isEqualTo("");
     }
 
     @Test
@@ -278,9 +304,9 @@ class TransferPagingSqlTest {
                 ArgumentCaptor.forClass(SqlParameterSource.class);
         org.mockito.Mockito.verify(jdbc)
                 .queryForList(anyString(), params.capture(), eq(String.class));
-        assertThat(params.getValue().getValue("bmCustNo"))
-                .as("keyed off the row's crAccNo, packed the same way")
-                .isEqualTo(PACKED_KEY);
+        assertThat(params.getValue().getValue("custNo"))
+                .as("keyed off the row's crAccNo, the same way")
+                .isEqualTo(CUSTOMER_KEY);
     }
 
     private static TransactionDetail transactionDetail(String accNo, String custName) {

@@ -21,6 +21,18 @@ public interface CardRepository {
 
     Optional<CardDetail> detail(String cardNo);
 
+    /**
+     * The card as one stcardlog row recorded it — the legacy's View Detail on
+     * Card Update History (service 25 requestType '01', cbbranch2.c).
+     *
+     * <p>Keyed exactly as the C keys it: the log's own branch, user and
+     * timestamp identify the ROW, and the card number identifies the card
+     * (frmCardUpdateHistory.frm:346). The same trio is what the grid shows in
+     * its first three columns, so the operator selects a row and the key comes
+     * straight off it.
+     */
+    Optional<CardDetail> snapshot(String cardNo, String branchCode, String userId, String dateTime);
+
     List<CardUpdateHistoryEntry> updateHistory(String cardNo);
 
     /** Completed lifecycle records only (bmUpdateStatus '9'), max 50. */

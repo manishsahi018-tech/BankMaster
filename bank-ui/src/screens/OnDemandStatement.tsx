@@ -251,16 +251,12 @@ export default function OnDemandStatement({
         </h1>
       </div>
 
-      {unavailable ? (
-        <SourceBanner tone="missing" title="No source connected — this statement cannot be produced">
+      {/* Only the cannot-fetch case gets a banner. The screen no longer carries a
+          standing "demo data" caveat: it is served from thd0data, gld0data and
+          crd0data (legacy service 07) against the archival database. */}
+      {unavailable && (
+        <SourceBanner title="No source connected — this statement cannot be produced">
           <p>{unavailable}</p>
-        </SourceBanner>
-      ) : (
-        <SourceBanner title="Demo data — no database is connected">
-          <p>
-            Figures below are generated. Against a real archival database this statement is
-            served from thd0data, gld0data and crd0data (legacy service 07).
-          </p>
         </SourceBanner>
       )}
 

@@ -93,7 +93,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                    lastUpdateUser, lastUpdateDateTime, vipCode, visaNo,
                    aOrgName2, eOrgName2, orgAlphaSearchCode, purposeOfAccount,
                    govtShareHoldingPerc, saudiShareHoldingPerc, foreignShareHoldingPerc,
-                   crIssueDateType, licenseNo, approvalRefNo
+                   crIssueDateType, licenseNo, approvalRefNo,
+                   contractNo, diplomaticCardNo
             FROM   stcusttab
             WHERE  BankingDate = :bankingDate
               AND  custNo = :custNo
@@ -170,7 +171,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                    lastUpdateUser, lastUpdateDateTime, vipCode, visaNo,
                    aOrgName2, eOrgName2, orgAlphaSearchCode, purposeOfAccount,
                    govtShareHoldingPerc, saudiShareHoldingPerc, foreignShareHoldingPerc,
-                   crIssueDateType, licenseNo, approvalRefNo
+                   crIssueDateType, licenseNo, approvalRefNo,
+                   contractNo, diplomaticCardNo
             FROM   stcustlog
             WHERE  BankingDate = :bankingDate
               AND  custNo = :custNo
@@ -199,7 +201,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
             "lastUpdateUser", "lastUpdateDateTime", "vipCode", "visaNo",
             "aOrgName2", "eOrgName2", "orgAlphaSearchCode", "purposeOfAccount",
             "govtShareHoldingPerc", "saudiShareHoldingPerc", "foreignShareHoldingPerc",
-            "crIssueDateType", "licenseNo", "approvalRefNo"};
+            "crIssueDateType", "licenseNo", "approvalRefNo",
+            "contractNo", "diplomaticCardNo"};
 
     /** Raw column values keyed by label — the as-of path overlays
      *  stidlog/staddrlog values into this map before the record is built. */
@@ -262,6 +265,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 m.get("govtShareHoldingPerc"), m.get("saudiShareHoldingPerc"),
                 m.get("foreignShareHoldingPerc"), m.get("crIssueDateType"),
                 m.get("licenseNo"), m.get("approvalRefNo"),
+                m.get("contractNo"), m.get("diplomaticCardNo"),
                 // filled by the point read; the as-of path leaves them empty
                 List.of(), OpenUpdateInfo.empty());
     }
@@ -1046,12 +1050,22 @@ public class JdbcCustomerRepository implements CustomerRepository {
         // branchCode / createdUserId / createdDateTime are selected only to key
         // acctFacilityRows — the same three the juristic caller seeds it with
         // (cbjuristic.c:3304-3313) — and are not returned.
+        // The Others profile carries a page BETWEEN these two — frmIndividualOthers2,
+        // "Customers Maintenance Page 2 - For Other Individuals" — whose fields come
+        // from the same customer row plus two side reads (see homeAddress/idRows
+        // below). They ride on this call rather than a third endpoint because the C
+        // builds the whole reply in ONE pass (processIndividualOthersDetails,
+        // cbothers.c:2860-3200) and the Saudi page 2 already asks for the overlap;
+        // splitting it would mean two round trips for one legacy screen. The Saudi
+        // screen simply renders fewer of the keys.
         List<Map<String, String>> rows = jdbc.query("""
                 SELECT educationCode, professionCode, positionCode, monthlyIncome,
                        segmentation, employerName, employerPoBox, employerCity,
                        employerZipCode, packageAcc, signatureNature, custAdviceFlag,
                        updatedForSama, relationshipManager, generalMemo, marketingMemo,
-                       accFreezingGracePeriod,
+                       accFreezingGracePeriod, department, ownerShip, singleJointAcc,
+                       excludeFromAtmFees, excludeFromMinBalFees, pkgStmtFreqOverride,
+                       interGroupAccNo, specialRefNo,
                        branchCode, createdUserId, createdDateTime
                 FROM   stcusttab
                 WHERE  BankingDate = :bankingDate
@@ -1078,6 +1092,19 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     d.put("generalMemo", trim(rs.getString("generalMemo")));
                     d.put("marketingMemo", trim(rs.getString("marketingMemo")));
                     d.put("freezingGracePeriod", trim(rs.getString("accFreezingGracePeriod")));
+                    // frmIndividualOthers2 additions. ownerShip is SIX flags packed
+                    // into one string — rented house / own house / company
+                    // accommodation / rented car / own car / company transport, read
+                    // by position (globalFunctions.bas:6455-6485) — so it is passed
+                    // through raw and split in the UI, where the six labels live.
+                    d.put("department", trim(rs.getString("department")));
+                    d.put("ownerShip", trim(rs.getString("ownerShip")));
+                    d.put("singleJointAcc", trim(rs.getString("singleJointAcc")));
+                    d.put("excludeFromAtmFees", trim(rs.getString("excludeFromAtmFees")));
+                    d.put("excludeFromMinBalFees", trim(rs.getString("excludeFromMinBalFees")));
+                    d.put("pkgStmtFreqOverride", trim(rs.getString("pkgStmtFreqOverride")));
+                    d.put("interGroupAccNo", trim(rs.getString("interGroupAccNo")));
+                    d.put("specialRefNo", trim(rs.getString("specialRefNo")));
                     String[] f = acctFacilityRows(rs.getString("branchCode"),
                             rs.getString("createdUserId"), rs.getString("createdDateTime"));
                     d.put("currentAcFlag", f[0]);
@@ -1096,7 +1123,130 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     d.put("otherAcStatus", f[13]);
                     return d;
                 });
+        if (rows.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> info = new LinkedHashMap<>(rows.get(0));
+        info.putAll(homeCountryAddress(custNo));
+        info.putAll(identityBlocks(custNo));
+        return info;
+    }
+
+    /**
+     * The "Home Country Address" frame on frmIndividualOthers2 — staddrtab's
+     * addressType '01' row.
+     *
+     * <p>The C walks the customer's staddrtab rows and keeps exactly two:
+     * '00' is the main/local address (already on page 1 of the profile) and
+     * '01' is the "customer abroad/home address" that fills this frame; every
+     * other addressType is skipped outright (cbothers.c:3112-3164). So this is
+     * one point read on '01' rather than a join — an expatriate with no abroad
+     * address simply has no such row, and the frame comes back empty, which is
+     * what the legacy shows too.
+     */
+    private Map<String, String> homeCountryAddress(String custNo) {
+        List<Map<String, String>> rows = jdbc.query("""
+                SELECT address1, address2, poBox, cityName, zipCode, country,
+                       telOffAreaCode, telOffNo, telOffExt,
+                       telHomeAreaCode, telHomeNo, telHomeExt,
+                       faxAreaCode, faxNo, faxExt, mobileNo, pagerNo, eMail
+                FROM   staddrtab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  addressType = '01'
+                FETCH FIRST 1 ROWS ONLY
+                """,
+                Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
+                (rs, i) -> {
+                    Map<String, String> d = new LinkedHashMap<>();
+                    d.put("homeAddress1", trim(rs.getString("address1")));
+                    d.put("homeAddress2", trim(rs.getString("address2")));
+                    d.put("homePoBox", trim(rs.getString("poBox")));
+                    d.put("homeCityName", trim(rs.getString("cityName")));
+                    d.put("homeZipCode", trim(rs.getString("zipCode")));
+                    d.put("homeCountry", trim(rs.getString("country")));
+                    d.put("homeTelOffAreaCode", trim(rs.getString("telOffAreaCode")));
+                    d.put("homeTelOffNo", trim(rs.getString("telOffNo")));
+                    d.put("homeTelOffExt", trim(rs.getString("telOffExt")));
+                    d.put("homeTelHomeAreaCode", trim(rs.getString("telHomeAreaCode")));
+                    d.put("homeTelHomeNo", trim(rs.getString("telHomeNo")));
+                    d.put("homeTelHomeExt", trim(rs.getString("telHomeExt")));
+                    d.put("homeFaxAreaCode", trim(rs.getString("faxAreaCode")));
+                    d.put("homeFaxNo", trim(rs.getString("faxNo")));
+                    d.put("homeFaxExt", trim(rs.getString("faxExt")));
+                    d.put("homeMobileNo", trim(rs.getString("mobileNo")));
+                    d.put("homePagerNo", trim(rs.getString("pagerNo")));
+                    d.put("homeEmail", trim(rs.getString("eMail")));
+                    return d;
+                });
         return rows.isEmpty() ? Map.of() : rows.get(0);
+    }
+
+    /**
+     * The Home Country ID, SAMA authorisation and approval-document frames.
+     *
+     * <p>All three are stidtab ID ROWS, not customer columns — the C loops the
+     * customer's stidtab rows and switches on idType (cbothers.c:3025-3060):
+     * <ul>
+     *   <li>{@code 'M'} home country id → number, date type, issue and expiry</li>
+     *   <li>{@code 'S'} SAMA authorisation → number, date type, and the ISSUE
+     *       date as the approval date (there is no separate approval-date
+     *       column; the C reads idIssueDateH/G)</li>
+     *   <li>{@code 'A'} approval document → number, date type, issue, expiry,
+     *       and {@code idRefName} as the approver's name</li>
+     * </ul>
+     * stcusttab also carries {@code homeCountryId}, {@code samaAuthNo} and
+     * {@code approvalRefNo}, and taking them from there was the obvious
+     * shortcut — but those are single denormalised copies with NO dates beside
+     * them, and the dates are half of each frame. The ID rows are the C's
+     * source, so they are the source here.
+     *
+     * <p>Both date calendars are returned as stored (H = Hijri, G = Gregorian);
+     * {@code *DateType} says which one the operator entered ('0' Hijri), exactly
+     * as the form's radio pair reports it.
+     */
+    private Map<String, String> identityBlocks(String custNo) {
+        Map<String, String> out = new LinkedHashMap<>();
+        jdbc.query("""
+                SELECT idType, idNo, idDateType, idIssueDateH, idIssueDateG,
+                       idExpiryDateH, idExpiryDateG, idRefName
+                FROM   stidtab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  idType IN ('M', 'S', 'A')
+                """,
+                Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
+                (rs, i) -> {
+                    String type = trim(rs.getString("idType"));
+                    switch (type) {
+                        case "M" -> {
+                            out.put("homeCountryId", trim(rs.getString("idNo")));
+                            out.put("homeCountryIdDateType", trim(rs.getString("idDateType")));
+                            out.put("homeCountryIdIssueDateH", trim(rs.getString("idIssueDateH")));
+                            out.put("homeCountryIdIssueDateG", trim(rs.getString("idIssueDateG")));
+                            out.put("homeCountryIdExpiryDateH", trim(rs.getString("idExpiryDateH")));
+                            out.put("homeCountryIdExpiryDateG", trim(rs.getString("idExpiryDateG")));
+                        }
+                        case "S" -> {
+                            out.put("samaAuthNo", trim(rs.getString("idNo")));
+                            out.put("samaAuthDateType", trim(rs.getString("idDateType")));
+                            out.put("samaAuthDateH", trim(rs.getString("idIssueDateH")));
+                            out.put("samaAuthDateG", trim(rs.getString("idIssueDateG")));
+                        }
+                        case "A" -> {
+                            out.put("approvalRefNo", trim(rs.getString("idNo")));
+                            out.put("appDateType", trim(rs.getString("idDateType")));
+                            out.put("appIssueDateH", trim(rs.getString("idIssueDateH")));
+                            out.put("appIssueDateG", trim(rs.getString("idIssueDateG")));
+                            out.put("appExpiryDateH", trim(rs.getString("idExpiryDateH")));
+                            out.put("appExpiryDateG", trim(rs.getString("idExpiryDateG")));
+                            out.put("appRefName", trim(rs.getString("idRefName")));
+                        }
+                        default -> { }
+                    }
+                    return null;
+                });
+        return out;
     }
 
     @Override

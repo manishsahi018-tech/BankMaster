@@ -9,6 +9,7 @@ import TopNav from './components/TopNav.tsx'
 import Login from './screens/Login.tsx'
 import { session, signOut } from './session.ts'
 import { useCodes } from './codes.ts'
+import { profileScreenFor } from './screenSet.ts'
 import { useRequestPending } from './pending.ts'
 import CustomerStaticData from './screens/CustomerStaticData.tsx'
 import EnquirySelect from './screens/EnquirySelect.tsx'
@@ -40,6 +41,7 @@ import JuristicMain from './screens/JuristicMain.tsx'
 import JuristicAccountInfo from './screens/JuristicAccountInfo.tsx'
 import IndividualOthers from './screens/IndividualOthers.tsx'
 import IndividualOthersAcctInfo from './screens/IndividualOthersAcctInfo.tsx'
+import IndividualOthersPage2 from './screens/IndividualOthersPage2.tsx'
 import HeirsProxy from './screens/HeirsProxy.tsx'
 import JointHolders from './screens/JointHolders.tsx'
 import References from './screens/References.tsx'
@@ -48,6 +50,7 @@ import MerchantStatement from './screens/MerchantStatement.tsx'
 import HistoricalStatement from './screens/HistoricalStatement.tsx'
 import OnDemandStatement from './screens/OnDemandStatement.tsx'
 import TransactionInquiry from './screens/TransactionInquiry.tsx'
+import SadadTransEnquiry from './screens/SadadTransEnquiry.tsx'
 
 interface ScreenState {
   name: string
@@ -262,6 +265,7 @@ export default function App() {
           // cmdMerchant opens frmMerchantStmt directly — no search or customer
           // context is carried across; the merchant number is keyed there.
           onMerchant={() => go('merchant')}
+          onSadadTransactions={() => go('sadadTransactions')}
           onDeletedAcctStatement={() => go('deletedAcctStatement')}
           onAccounts={(custNo, accNo, cardNo) => {
             if (!custNo && !accNo && !cardNo) {
@@ -318,22 +322,22 @@ export default function App() {
           onMore={appendPage('searchRows', (p) => api.searchCustomers(screen.criteria!.params, p))}
           onBack={() => setScreen({ name: 'search' })}
           onEnquiry={(row) => {
-            // loadCorrespondingForm: main category 01 = individual (Saudi
-            // nationals with idType 'I' open the editable Saudi profile,
-            // others the read-only Others profile); anything else = juristic.
-            if (row.mainCategoryCode !== '01') {
-              goFetch('juristic', { customer: row, historyAsOf: undefined }, async () => ({
-                profile: await api.customerProfile(row.custNo),
-              }))
-            } else if (row.idType === 'I') {
-              goFetch('detail', { customer: row, historyAsOf: undefined }, async () => ({
-                profile: await api.customerProfile(row.custNo),
-              }))
-            } else {
-              goFetch('individualOthers', { customer: row, historyAsOf: undefined }, async () => ({
-                profile: await api.customerProfile(row.custNo),
-              }))
+            // getScreenSetNo (globalFunctions.bas:4810) decides the form from
+            // main + sub category, and frmEnquirySelect.frm:643-646 refuses to
+            // open anything when it answers '-1'. Ported literally in
+            // screenSet.ts — this used to guess from idType, which the legacy
+            // never reads here.
+            const screen = profileScreenFor(row.mainCategoryCode, row.subCategoryCode)
+            if (!screen) {
+              toast.warn(
+                `No profile screen for main category ${row.mainCategoryCode || '—'} ` +
+                  `and sub category ${row.subCategoryCode || '—'}.`,
+              )
+              return
             }
+            goFetch(screen, { customer: row, historyAsOf: undefined }, async () => ({
+              profile: await api.customerProfile(row.custNo),
+            }))
           }}
           onHistory={(row) =>
             goFetch('custHistory', { customer: row }, async () => {
@@ -388,12 +392,21 @@ export default function App() {
         />
       )}
 
-      {screen.name === 'juristic' && screen.profile && (
+      {(screen.name === 'juristic'
+        || screen.name === 'juristicDiplomats'
+        || screen.name === 'juristicNonResident') && screen.profile && (
         <JuristicMain
           profile={screen.profile}
+          variant={
+            screen.name === 'juristicDiplomats'
+              ? 'diplomats'
+              : screen.name === 'juristicNonResident'
+                ? 'nonResident'
+                : 'main'
+          }
           historyAsOf={screen.historyAsOf}
           onNextPage={() =>
-            goFetch('juristic2', {}, async () => ({
+            goFetch('juristic2', { from: screen.name }, async () => ({
               juristicInfo: await api.juristicAccountInfo(customer!.custNo),
             }))
           }
@@ -404,13 +417,13 @@ export default function App() {
             })
           }
           onOwners={() =>
-            goFetch('owners', { partyFrom: 'juristic' }, async () => {
+            goFetch('owners', { partyFrom: screen.name }, async () => {
               const _r = await api.owners(customer!.custNo)
               return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
             })
           }
           onReferences={() =>
-            goFetch('references', { partyFrom: 'juristic' }, async () => {
+            goFetch('references', { partyFrom: screen.name }, async () => {
               const _r = await api.references(customer!.custNo)
               return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
             })
@@ -423,7 +436,7 @@ export default function App() {
         <JuristicAccountInfo
           profile={screen.profile}
           info={screen.juristicInfo}
-          onPrevPage={() => go('juristic')}
+          onPrevPage={() => go(screen.from ?? 'juristic')}
           // cmdSignatory loads frmJuristicSignatory BY CUSTOMER NUMBER, not by
           // account (frmJuristicAccountInfo.frm:2270) — a juristic customer's
           // signatories span its accounts.
@@ -512,6 +525,7 @@ export default function App() {
         <IndividualSaudiAcctInfo
           customer={customer}
           acctInfo={screen.acctInfo}
+          historyAsOf={screen.historyAsOf}
           onPrevPage={() => go('detail')}
           onDocuments={() =>
             // Reset docsFrom rather than relying on its default — the juristic
@@ -524,18 +538,40 @@ export default function App() {
         />
       )}
 
+      {/* The Others profile is THREE pages in the legacy, not two:
+          frmIndividualOthers → frmIndividualOthers2 → frmIndividualOthersAcctInfo
+          (frmIndividualOthers.frm:3822, frmIndividualOthers2.frm:2473-2493).
+          'others3' carries the account-details page that 'others2' used to hold;
+          both read the same acct-info payload, so stepping between them is a
+          plain go() with no second fetch. */}
       {screen.name === 'others2' && screen.acctInfo && (
+        <IndividualOthersPage2
+          customer={customer}
+          acctInfo={screen.acctInfo}
+          historyAsOf={screen.historyAsOf}
+          onPrevPage={() => go('individualOthers')}
+          onNextPage={() => go('others3')}
+          onCancel={() => setScreen({ name: 'search' })}
+        />
+      )}
+
+      {screen.name === 'others3' && screen.acctInfo && (
         <IndividualOthersAcctInfo
           customer={customer}
           acctInfo={screen.acctInfo}
-          onPrevPage={() => go('individualOthers')}
+          historyAsOf={screen.historyAsOf}
+          onPrevPage={() => go('others2')}
           onDocuments={() =>
-            goFetch('documents', { docsFrom: 'others2' }, async () => ({
+            goFetch('documents', { docsFrom: 'others3' }, async () => ({
               documents: await api.requiredDocuments(customer!.custNo),
             }))
           }
           onCancel={() => setScreen({ name: 'search' })}
         />
+      )}
+
+      {screen.name === 'sadadTransactions' && (
+        <SadadTransEnquiry onExit={() => setScreen({ name: 'search' })} />
       )}
 
       {screen.name === 'documents' && screen.documents && (
@@ -818,7 +854,13 @@ export default function App() {
       )}
 
       {screen.name === 'cardDetail' && screen.detail && (
-        <CardDetail detail={screen.detail} onReturn={() => go('cards')} />
+        <CardDetail
+          detail={screen.detail}
+          historyAsOf={screen.historyAsOf}
+          // A snapshot was opened FROM the update history, so Return goes back
+          // there rather than to the card grid the live detail came from.
+          onReturn={() => go(screen.historyAsOf ? 'cardUpdateHistory' : 'cards')}
+        />
       )}
 
       {screen.name === 'cardHistory' && (
@@ -831,6 +873,21 @@ export default function App() {
           rows={screen.gridRows ?? []}
           hasMore={screen.hasMore ?? false}
           onMore={appendPage('gridRows', (p) => api.cardUpdateHistory(screen.card ?? '', p))}
+          onViewDetail={(row) => {
+            const dt = asOfKey(row.dateTime)
+            if (!dt) {
+              toast.warn(NO_TIMESTAMP)
+              return
+            }
+            goFetch('cardDetail', { historyAsOf: dt }, async () => ({
+              detail: await api.cardSnapshot(
+                screen.card ?? '',
+                dt,
+                String(row.branchCode ?? ''),
+                String(row.userId ?? ''),
+              ),
+            }))
+          }}
           onExit={() => go('cards')}
         />
       )}

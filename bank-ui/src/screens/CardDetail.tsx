@@ -1,13 +1,26 @@
 import DetailScreen from '../components/DetailScreen.tsx'
+import HistoryBanner from '../components/HistoryBanner.tsx'
 import type { GridRow } from '../components/GridScreen.tsx'
 import { maskCardNo } from '../schema/helpers.ts'
 import { codeLabel } from '../codes.ts'
 
 // Mirrors legacy frmCardDetails.frm — stcardtab point read (QUERY-SPECS §14).
 
-export default function CardDetail({ detail, onReturn }: { detail: GridRow; onReturn: () => void }) {
+export default function CardDetail({
+  detail,
+  historyAsOf,
+  onReturn,
+}: {
+  detail: GridRow
+  /** set when opened from Card Update History — the legacy's cardHistoryAction,
+   *  which shows the record as one update left it and disables further drill-in
+   *  (frmCardUpdateHistory.frm:376). */
+  historyAsOf?: string
+  onReturn: () => void
+}) {
   return (
     <DetailScreen
+      banner={<HistoryBanner asOf={historyAsOf} />}
       kicker="Cards"
       title="Card Maintenance"
       chips={[
