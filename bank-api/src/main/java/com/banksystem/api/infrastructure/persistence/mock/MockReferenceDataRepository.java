@@ -114,6 +114,17 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("0127", "SWAIDI"),
                     new CodeEntry("0128", "MUTANABI"),
                     new CodeEntry("0191", "OLAYA"))),
+            // stchqtab column descriptions: chequeType 1 personal / 2
+            // corporate; requestStatus 1 Requested … 9 Rejected by branch.
+            Map.entry("chequeType", List.of(
+                    new CodeEntry("1", "Personal"),
+                    new CodeEntry("2", "Corporate"))),
+            Map.entry("chequeBookStatus", List.of(
+                    new CodeEntry("1", "Requested"),
+                    new CodeEntry("2", "Produced"),
+                    new CodeEntry("3", "Received by Branch"),
+                    new CodeEntry("4", "Issued to customer"),
+                    new CodeEntry("9", "Rejected by branch"))),
             Map.entry("cardStatus", List.of(
                     new CodeEntry("0", "Inactive"),
                     new CodeEntry("1", "Active"),

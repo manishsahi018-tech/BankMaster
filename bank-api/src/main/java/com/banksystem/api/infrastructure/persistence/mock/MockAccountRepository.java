@@ -161,8 +161,12 @@ public class MockAccountRepository implements AccountRepository {
                     DemoData.pick(accNo, 700 + i, 3) == 0 ? "2" : "1",
                     String.format("%02d", books),
                     DemoData.dateBack(90 + i * (120 + DemoData.pick(accNo, 800 + i, 200))),
-                    // 3 = issued to customer, 1 = requested, 4 = rejected
-                    List.of("3", "3", "1", "4").get(DemoData.pick(accNo, 900 + i, 4)),
+                    // stchqtab requestStatus: 1 Requested, 2 Produced,
+                    // 3 Received by Branch, 4 Issued to customer, 9 Rejected by
+                    // branch. The old list called 4 "rejected" and never issued
+                    // a book at all, so the grid could not show its commonest
+                    // state.
+                    List.of("4", "4", "3", "1", "9").get(DemoData.pick(accNo, 900 + i, 5)),
                     String.format("%08d", from),
                     String.format("%08d", from + books * 50 - 1)));
         }

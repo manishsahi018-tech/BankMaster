@@ -254,6 +254,18 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
         sets.put("intApplication", ctltabSet("intApplication", "IA"));
         // Fixed value domains documented on stcardtab.ts (cardStatus /
         // requestStatus) — no stctltab recType carries them.
+        // stchqtab's own column descriptions enumerate both domains — the
+        // same source the cardStatus / currency sets were transcribed from,
+        // and there is no stctltab record type for either.
+        sets.put("chequeType", List.of(
+                new CodeEntry("1", "Personal"),
+                new CodeEntry("2", "Corporate")));
+        sets.put("chequeBookStatus", List.of(
+                new CodeEntry("1", "Requested"),
+                new CodeEntry("2", "Produced"),
+                new CodeEntry("3", "Received by Branch"),
+                new CodeEntry("4", "Issued to customer"),
+                new CodeEntry("9", "Rejected by branch")));
         sets.put("cardStatus", List.of(
                 new CodeEntry("0", "Requested"),
                 new CodeEntry("1", "Open"),
