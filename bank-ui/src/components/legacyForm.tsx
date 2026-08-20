@@ -362,6 +362,23 @@ export function BackArrow() {
 }
 
 /**
+ * The magnifier on every "Enquiry" action — the button that opens the selected
+ * row's detail. Same path the search screen's own Enquiry button carried
+ * inline; promoted here so the grids and that button cannot drift apart.
+ */
+export function SearchIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden className="h-4 w-4">
+      <path
+        fillRule="evenodd"
+        d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z"
+        clipRule="evenodd"
+      />
+    </svg>
+  )
+}
+
+/**
  * The primary BACKWARD action, paired with {@link NextPageButton}.
  *
  * Same weight as Next Page rather than a quiet secondary: on the legacy forms

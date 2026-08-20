@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useToast } from './Toast.tsx'
-import { BackArrow } from './legacyForm.tsx'
+import { BackArrow, SearchIcon } from './legacyForm.tsx'
 
 // Shared layout for the legacy MSFlexGrid screens (account grid, histories,
 // cheque book / standing order / stop cheque grids). Each legacy grid form is
@@ -51,13 +51,15 @@ interface GridScreenProps {
 
 
 /**
- * "Return" always means one step back to the screen that opened this one — the
- * convention every detail and history screen follows (profile pages say
- * Previous Page, grids say Exit). So the back arrow is attached HERE, by that
- * label, rather than repeated at eleven call sites where it could be forgotten
- * on the twelfth.
+ * Buttons the shared renderers decorate, by label.
+ *
+ * "Return" and "Previous Page" always mean one step back, and "Enquiry" always
+ * means open the selected row — fixed vocabulary across every grid and detail
+ * screen. Attaching the icons here rather than at ~17 call sites is what keeps
+ * the eighteenth from being the one that forgets.
  */
-const isBack = (label: string) => label === 'Return'
+const isBack = (label: string) => label === 'Return' || label === 'Previous Page'
+const isEnquiry = (label: string) => label === 'Enquiry'
 
 const btnKinds = {
   primary:
@@ -275,9 +277,10 @@ export default function GridScreen({
                 onClick={() => btn.onClick?.({ row: selectedRow, rows, notify })}
                 className={`${btnKinds[btn.kind ?? 'secondary']} ${
                   btn.alignEnd ? 'ml-auto' : ''
-                } ${isBack(btn.label) ? 'inline-flex items-center gap-2' : ''}`}
+                } ${isBack(btn.label) || isEnquiry(btn.label) ? 'inline-flex items-center gap-2' : ''}`}
               >
                 {isBack(btn.label) && <BackArrow />}
+                {isEnquiry(btn.label) && <SearchIcon />}
                 {btn.label}
               </button>
             ))}

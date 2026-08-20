@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { SectionCard, Field, ReadOnlyInput } from './fields.tsx'
-import { BackArrow } from './legacyForm.tsx'
+import { BackArrow, SearchIcon } from './legacyForm.tsx'
 
 // Shared layout for read-only detail screens (stop cheque, standing order,
 // card, transaction, transfer, signatory details). Each legacy detail form
@@ -31,13 +31,15 @@ export interface DetailButton {
 
 
 /**
- * "Return" always means one step back to the screen that opened this one — the
- * convention every detail and history screen follows (profile pages say
- * Previous Page, grids say Exit). So the back arrow is attached HERE, by that
- * label, rather than repeated at eleven call sites where it could be forgotten
- * on the twelfth.
+ * Buttons the shared renderers decorate, by label.
+ *
+ * "Return" and "Previous Page" always mean one step back, and "Enquiry" always
+ * means open the selected row — fixed vocabulary across every grid and detail
+ * screen. Attaching the icons here rather than at ~17 call sites is what keeps
+ * the eighteenth from being the one that forgets.
  */
-const isBack = (label: string) => label === 'Return'
+const isBack = (label: string) => label === 'Return' || label === 'Previous Page'
+const isEnquiry = (label: string) => label === 'Enquiry'
 
 const btnKinds = {
   primary:
@@ -119,9 +121,10 @@ export default function DetailScreen({
               onClick={btn.onClick}
               className={`${btnKinds[btn.kind ?? 'secondary']} ${
                 btn.kind === 'danger' ? 'ml-auto' : ''
-              } ${isBack(btn.label) ? 'inline-flex items-center gap-2' : ''}`}
+              } ${isBack(btn.label) || isEnquiry(btn.label) ? 'inline-flex items-center gap-2' : ''}`}
             >
               {isBack(btn.label) && <BackArrow />}
+              {isEnquiry(btn.label) && <SearchIcon />}
               {btn.label}
             </button>
           ))}
