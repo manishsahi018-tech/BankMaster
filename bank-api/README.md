@@ -72,6 +72,31 @@ hardcoded or committed.
    — reports both connections, the resolved BankingDate and the stcusttab
    row count.
 
+### The error reference
+
+An unexpected failure never sends its stack trace to the browser. `ApiExceptionHandler`
+mints a six-character reference (`SecureRandom` over `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`
+— no vowels, no `0/O` or `1/I`, so it survives being read aloud), returns it to the
+SPA as the `reference` property of the `ProblemDetail`, and logs the exception
+against it:
+
+```
+ERROR c.b.a.p.rest.ApiExceptionHandler : [KQ7MTX] Unhandled
+CannotGetJdbcConnectionException on GET /api/customers/0415741/accounts
+```
+
+That log is `logs/bank-api.log` (relative to the working directory), rolling at
+20MB and keeping 30 days. **Archives are deliberately not gzipped** — Windows has
+no `zgrep`, and an archive the help desk cannot search is the same as no log at
+all — so `findstr /S KQ7MTX logs\*` finds a reference wherever it landed.
+
+Two limits worth knowing. Only the `RuntimeException` catch-all (HTTP 500) mints a
+server reference; 4xx and 501 carry ported business messages and deliberately have
+none. And when the request never reached the API, `clientReference()` in
+`bank-ui/src/api.ts` mints one with the same alphabet that exists **only** in the
+browser console — a reference that yields no server hit means "look in DevTools",
+not "the log is broken". Nothing in the code distinguishes the two on sight.
+
 Still pending on this path: real authentication (login still uses the
 in-memory `MockAuthenticator` demo users — LDAP decision open), the
 `bkd0data`/`ccarrblk` schema gap (blocked-amount screen degrades

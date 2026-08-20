@@ -1,6 +1,69 @@
 server:
   port: 8085
 
+# ---------------------------------------------------------------------------
+# APPLICATION LOG. This is the file the help desk searches.
+#
+# When a request fails unexpectedly the operator is shown a six-character
+# reference and asked to quote it (ApiExceptionHandler). The same reference is
+# written HERE against the stack trace:
+#
+#   ERROR c.b.a.p.rest.ApiExceptionHandler : [KQ7MTX] Unhandled
+#       BadSqlGrammarException on GET /api/accounts/01008041574100
+#
+# so support answers "what happened to KQ7MTX" with:
+#
+#   Windows:  findstr KQ7MTX logs\bank-api.log
+#   Unix:     grep KQ7MTX logs/bank-api.log
+#
+# Without a file the reference is unverifiable: Boot logs to the console only
+# by default, and run-denodo.bat does not redirect it, so the evidence lived in
+# a console window and died with it.
+#
+# Console output is UNCHANGED — this adds a file, it does not replace the
+# window. Relative paths resolve against the working directory the API is
+# started from (deploy\ for run-denodo.bat), same as the SQL log.
+#
+# NOTE: request URIs carry customer, account and card numbers, and logged
+# values can carry customer names, so this file holds bank data. It wants the
+# same handling as the SQL audit log: off shared paths, and not kept longer
+# than the diagnosis needs. Unlike that log it is ON by default, because a
+# support reference nobody can look up is worse than no reference at all.
+# ---------------------------------------------------------------------------
+logging:
+  file:
+    name: ${BANK_LOG_FILE:logs/bank-api.log}
+  charset:
+    # The console keeps the platform default (a Windows console cannot render
+    # Arabic anyway); the FILE is pinned to UTF-8 so Arabic customer names
+    # written into a log line survive being read back on another machine.
+    file: UTF-8
+  logback:
+    rollingpolicy:
+      # Rolls to logs/bank-api.log.2026-08-20.0, keeping max-history DAYS of
+      # them with total-size-cap as the hard ceiling, whichever bites first.
+      #
+      # NOT .gz — Boot's default pattern compresses, and a compressed archive
+      # defeats the one job this file has. Windows has no zgrep, so a help desk
+      # asked about a reference from three days ago would have to expand an
+      # archive by hand before it could search. Uncompressed, ONE command finds
+      # a reference wherever it landed:
+      #
+      #   Windows:  findstr /S KQ7MTX logs\*
+      #   Unix:     grep -r KQ7MTX logs/
+      #
+      # The cost is disk, and it is small: this application logs startup plus
+      # faults, not traffic, so a branch PC produces a few MB a month and never
+      # approaches the cap.
+      file-name-pattern: ${LOG_FILE}.%d{yyyy-MM-dd}.%i
+      max-file-size: ${BANK_LOG_MAX_SIZE:20MB}
+      max-history: ${BANK_LOG_MAX_HISTORY:30}
+      total-size-cap: ${BANK_LOG_TOTAL_CAP:500MB}
+      # Apply the retention rules at startup too, not only when a roll happens:
+      # a PC that is shut down every evening rolls rarely, so without this an
+      # old archive is never cleaned up.
+      clean-history-on-start: true
+
 # Authentication (ported from the LoanOriginationSystem auth slice): the SPA
 # sends the password AES-encrypted; the API verifies it via an Active Directory
 # bind (bank.ldap.*), then gates on the allow-list below, then issues an HS256
