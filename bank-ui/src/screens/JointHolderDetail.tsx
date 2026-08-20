@@ -233,20 +233,20 @@ export default function JointHolderDetail({
         <SectionCard title="Employment & Income">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Education">
-              <RoCombo value={d.educationCode} />
+              <RoCombo value={codeLabel('education', d.educationCode) || d.educationCode} />
             </Field>
             <Field label="Profession">
-              <RoCombo value={d.professionCode} />
+              <RoCombo value={codeLabel('profession', d.professionCode) || d.professionCode} />
             </Field>
             <Field label="Position">
-              <RoCombo value={d.positionCode} />
+              <RoCombo value={codeLabel('position', d.positionCode) || d.positionCode} />
             </Field>
             <Field label="Monthly Income">
-              <RoCombo value={d.monthlyIncome} />
+              <RoCombo value={codeLabel('monthlyIncome', d.monthlyIncome) || d.monthlyIncome} />
             </Field>
             <Field label="Segmentation">
               {/* `segmenation` — the view's own spelling. */}
-              <RoCombo value={d.segmenation} />
+              <RoCombo value={codeLabel('segmentation', d.segmenation) || d.segmenation} />
             </Field>
           </div>
 

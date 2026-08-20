@@ -28,6 +28,54 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("S", "Single"),
                     new CodeEntry("W", "Widowed"),
                     new CodeEntry("D", "Divorced"))),
+            // stctltab record types TT / ED / PR / PO / MI / SG / DT — the
+            // combos the legacy read from its local Access database. Codes here
+            // follow the profile fixtures (education 0003, profession 0006,
+            // position 0005, income 0003, segmentation 1).
+            Map.entry("title", List.of(
+                    new CodeEntry("01", "Mr."),
+                    new CodeEntry("02", "Mrs."),
+                    new CodeEntry("03", "Miss"),
+                    new CodeEntry("04", "Dr."),
+                    new CodeEntry("05", "Sheikh"),
+                    new CodeEntry("06", "Eng."),
+                    new CodeEntry("07", "Prof."),
+                    new CodeEntry("08", "M/S"))),
+            Map.entry("education", List.of(
+                    new CodeEntry("0001", "Primary"),
+                    new CodeEntry("0002", "Secondary"),
+                    new CodeEntry("0003", "Diploma"),
+                    new CodeEntry("0004", "Bachelors"),
+                    new CodeEntry("0005", "Post Graduate"))),
+            Map.entry("profession", List.of(
+                    new CodeEntry("0001", "Government"),
+                    new CodeEntry("0002", "Private sector"),
+                    new CodeEntry("0006", "ANB Staff"),
+                    new CodeEntry("0007", "Business Owner"))),
+            Map.entry("position", List.of(
+                    new CodeEntry("0001", "Manager"),
+                    new CodeEntry("0002", "Supervisor"),
+                    new CodeEntry("0005", "Others"))),
+            Map.entry("monthlyIncome", List.of(
+                    new CodeEntry("0001", "Below 3000"),
+                    new CodeEntry("0002", "3001-5000"),
+                    new CodeEntry("0003", "5001-10000"),
+                    new CodeEntry("0004", "Above 10000"))),
+            Map.entry("segmentation", List.of(
+                    new CodeEntry("0", "NONE"),
+                    new CodeEntry("1", "High Networth"),
+                    new CodeEntry("2", "Affluent"),
+                    new CodeEntry("3", "Mass"))),
+            // Names transcribed from the legacy screenshots — the same seven
+            // EssentialDocuments carried locally, so mock and denodo agree.
+            Map.entry("documentType", List.of(
+                    new CodeEntry("001", "Signature of a/c holder"),
+                    new CodeEntry("002", "Thump Imprint/Personal Stamp"),
+                    new CodeEntry("008", "Personal Id card of a/c holder"),
+                    new CodeEntry("009", "Family regn book of a/c holder"),
+                    new CodeEntry("025", "Valid passport copy"),
+                    new CodeEntry("051", "A/C opening agreement"),
+                    new CodeEntry("074", "Family Record"))),
             Map.entry("language", List.of(
                     new CodeEntry("0", "Arabic"),
                     new CodeEntry("1", "English"))),

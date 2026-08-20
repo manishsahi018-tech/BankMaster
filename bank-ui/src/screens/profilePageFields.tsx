@@ -255,19 +255,19 @@ export function EmploymentAndIncome({ a }: { a: Record<string, string> }) {
     <SectionCard title="Customer Details">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Education">
-          <RoCombo value={a.education} />
+          <RoCombo value={codeLabel('education', a.education) || a.education} />
         </Field>
         <Field label="Profession">
-          <RoCombo value={a.profession} />
+          <RoCombo value={codeLabel('profession', a.profession) || a.profession} />
         </Field>
         <Field label="Position">
-          <RoCombo value={a.position} />
+          <RoCombo value={codeLabel('position', a.position) || a.position} />
         </Field>
         <Field label="Monthly Income">
-          <RoCombo value={a.monthlyIncome} />
+          <RoCombo value={codeLabel('monthlyIncome', a.monthlyIncome) || a.monthlyIncome} />
         </Field>
         <Field label="Segmentation">
-          <RoCombo value={a.segmentation} />
+          <RoCombo value={codeLabel('segmentation', a.segmentation) || a.segmentation} />
         </Field>
         <Field label="Marketing Memo" className="lg:col-span-2">
           <RoText value={a.marketingMemo} />

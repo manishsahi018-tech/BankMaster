@@ -169,6 +169,21 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
     private Map<String, List<CodeEntry>> load() {
         Map<String, List<CodeEntry>> sets = new LinkedHashMap<>();
         sets.put("idType", ctltabSet("idType", "ID"));
+        // The combos the legacy filled from titleinfo / educationinfo and
+        // friends in the branch PC's LOCAL Access database. stctltab carries
+        // them all under its own record types — the workbook documents
+        // TT/ED/PR/PO/MI/SG/DT on stctltab.RecordType — so the lists are
+        // archival after all and only the lookup was local. Rendered as
+        // "<code>-<description>", which is the form the legacy combos show
+        // (cmbTitle.AddItem rs("titlecode") & "-" & rs("englishname"),
+        // frmIndividualSaudi.frm:6346).
+        sets.put("title", ctltabSet("title", "TT"));
+        sets.put("education", ctltabSet("education", "ED"));
+        sets.put("profession", ctltabSet("profession", "PR"));
+        sets.put("position", ctltabSet("position", "PO"));
+        sets.put("monthlyIncome", ctltabSet("monthlyIncome", "MI"));
+        sets.put("segmentation", ctltabSet("segmentation", "SG"));
+        sets.put("documentType", ctltabSet("documentType", "DT"));
         // Legacy stcusttab domains (stlayout.h struct customerInfo):
         // sexCode '0'-Male/'1'-Female (:1435) and marritalStatus
         // '0'-Married/'1'-Single/'2'-Others (:1437). The archival view keeps

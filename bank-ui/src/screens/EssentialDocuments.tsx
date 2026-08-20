@@ -1,4 +1,5 @@
 import { SectionCard, Field, ReadOnlyInput } from '../components/fields.tsx'
+import { codeLabel } from '../codes.ts'
 import { BackArrow } from '../components/legacyForm.tsx'
 import type { Customer } from '../types.ts'
 
@@ -21,7 +22,11 @@ import type { Customer } from '../types.ts'
 // cover the mock's fixture codes exactly, which is why mock mode always looked
 // complete and real stctltabDC data shows bare codes like 028, 030, 032.
 //
-// Fill this from the office Access DB's documentinfo table when it is to hand.
+// Now the FALLBACK rather than the only source: stctltab carries document type
+// names under record type 'DT' (the workbook's own RecordType list), served as
+// the `documentType` code set. That is what fills 028, 030, 032 and the rest on
+// a real deployment; these seven stay for mock mode and for a deployment whose
+// stctltab has no 'DT' rows.
 const DOCUMENT_NAMES: Record<string, string> = {
   '001': 'Signature of a/c holder',
   '002': 'Thump Imprint/Personal Stamp',
@@ -36,8 +41,11 @@ const DOCUMENT_NAMES: Record<string, string> = {
 // rendered as "<code>-Not defined in local" (frmDocuments.frm:347). Saying so
 // beats a naked number, which reads as a broken screen rather than a name this
 // deployment cannot resolve.
-const docLabel = (code: string) =>
-  DOCUMENT_NAMES[code] ? `${code} — ${DOCUMENT_NAMES[code]}` : `${code} — Not defined in local`
+const docLabel = (code: string) => {
+  const fromCodes = codeLabel('documentType', code)
+  if (fromCodes && fromCodes !== code) return fromCodes
+  return DOCUMENT_NAMES[code] ? `${code} — ${DOCUMENT_NAMES[code]}` : `${code} — Not defined in local`
+}
 
 /**
  * One of the two lists. Read-only: rows are not selectable, because the legacy
