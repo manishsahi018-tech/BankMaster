@@ -1,7 +1,11 @@
 import { SectionCard } from '../components/fields.tsx'
 import type { GridRow } from '../components/GridScreen.tsx'
 import { formatDate, maskCardNo } from '../schema/helpers.ts'
-import { BackArrow } from '../components/legacyForm.tsx'
+import {
+  BackArrow,
+  EventGrid,
+  type HistoryEvent,
+} from '../components/legacyForm.tsx'
 
 // Mirrors legacy frmCardHistory.frm ("Card / Pin History") — stcardlog
 // completed lifecycle records (QUERY-SPECS §15).
@@ -18,20 +22,7 @@ import { BackArrow } from '../components/legacyForm.tsx'
 // The action vocabulary and which grid each row lands in are the form's own
 // (frmCardHistory.frm:250-770).
 
-interface Event {
-  date: unknown
-  time: unknown
-  action: string
-  user: unknown
-}
-
 const has = (v: unknown) => String(v ?? '').trim() !== ''
-
-/** stcardlog times are HHMMSS; the legacy formats them with colons. */
-const formatTime = (v: unknown) => {
-  const s = String(v ?? '').trim()
-  return /^\d{6}$/.test(s) ? `${s.slice(0, 2)}:${s.slice(2, 4)}:${s.slice(4, 6)}` : s
-}
 
 /**
  * The legacy splits a 14-char YYYYMMDDHH24MISS stamp into its halves
@@ -71,9 +62,9 @@ const APPROVED_ACTION: Record<string, string> = {
 }
 
 /** Card and PIN event rows for every fetched record, in the form's order. */
-function buildEvents(entries: GridRow[]): { card: Event[]; pin: Event[] } {
-  const card: Event[] = []
-  const pin: Event[] = []
+function buildEvents(entries: GridRow[]): { card: HistoryEvent[]; pin: HistoryEvent[] } {
+  const card: HistoryEvent[] = []
+  const pin: HistoryEvent[] = []
 
   for (const e of entries) {
     const type = String(e.requestType ?? '').trim()
@@ -82,7 +73,7 @@ function buildEvents(entries: GridRow[]): { card: Event[]; pin: Event[] } {
 
     // The request row. Type '3' is a PIN request and is the one that goes to
     // the PIN grid alone; '0' opens both.
-    const row: Event = {
+    const row: HistoryEvent = {
       date: stampDate(e.requestDateTime),
       time: stampTime(e.requestDateTime),
       action: requested,
@@ -95,7 +86,7 @@ function buildEvents(entries: GridRow[]): { card: Event[]; pin: Event[] } {
     // Then its outcome: a rejection carries its reason, an approval the
     // supervisor who gave it.
     if (rejected) {
-      const reject: Event = {
+      const reject: HistoryEvent = {
         date: e.rejectedDate,
         time: e.rejectedTime,
         action: `Rejected( ${String(e.rejectedReason ?? '').trim()})`,
@@ -103,7 +94,7 @@ function buildEvents(entries: GridRow[]): { card: Event[]; pin: Event[] } {
       }
       card.push(reject)
     } else if (APPROVED_ACTION[type]) {
-      const approve: Event = {
+      const approve: HistoryEvent = {
         date: stampDate(e.lastUpdateDateTime),
         time: stampTime(e.lastUpdateDateTime),
         action: APPROVED_ACTION[type],
@@ -178,46 +169,10 @@ function buildEvents(entries: GridRow[]): { card: Event[]; pin: Event[] } {
   return { card, pin }
 }
 
-function HistoryGrid({ title, rows }: { title: string; rows: Event[] }) {
+function HistoryGrid({ title, rows }: { title: string; rows: HistoryEvent[] }) {
   return (
     <SectionCard title={title}>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[26rem] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-edge bg-surface-muted text-left">
-              {['Date', 'Time', 'Action', 'User Id'].map((h) => (
-                <th
-                  key={h}
-                  className="whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted"
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-3 py-8 text-center text-muted-soft">
-                  No records.
-                </td>
-              </tr>
-            )}
-            {rows.map((r, i) => (
-              <tr key={i} className="border-b border-edge-soft last:border-b-0 odd:bg-surface even:bg-surface-muted/40">
-                <td className="whitespace-nowrap px-3 py-2 tabular-nums text-ink-soft">
-                  {formatDate(r.date)}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2 tabular-nums text-ink-soft">
-                  {formatTime(r.time)}
-                </td>
-                <td className="px-3 py-2 font-medium text-ink">{r.action}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-ink-soft">{String(r.user ?? '')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <EventGrid rows={rows} dateFormat={formatDate} />
     </SectionCard>
   )
 }

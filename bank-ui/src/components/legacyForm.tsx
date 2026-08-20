@@ -342,6 +342,82 @@ export const btnKinds = {
     'rounded-lg border border-edge bg-surface-muted px-4 py-2.5 text-sm font-medium text-muted-soft shadow-xs cursor-not-allowed',
 }
 
+/** One row of a legacy history grid: Date | Time | Action | User Id. */
+export interface HistoryEvent {
+  date: unknown
+  time: unknown
+  action: string
+  user: unknown
+}
+
+/** HHMMSS as the legacy's formatTime renders it. */
+export const formatHhmmss = (v: unknown) => {
+  const s = String(v ?? '').trim()
+  return /^\d{6}$/.test(s) ? `${s.slice(0, 2)}:${s.slice(2, 4)}:${s.slice(4, 6)}` : s
+}
+
+/**
+ * The event grid both history forms are built from — frmCardHistory's two and
+ * frmChequeBookHistory's one. Four columns, one row per lifecycle event, in the
+ * order the record produced them.
+ *
+ * Shared because the two forms fill their grids the same way and with an
+ * overlapping vocabulary (Produced, Received By Branch, Issued to customer),
+ * and because the port had drifted into showing each as labelled sections
+ * instead — which reads fine for one record and hides every other.
+ */
+export function EventGrid({
+  rows,
+  dateFormat,
+}: {
+  rows: HistoryEvent[]
+  /** how a raw archival date is rendered — the caller's schema helper */
+  dateFormat: (v: unknown) => string
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[26rem] border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-edge bg-surface-muted text-left">
+            {['Date', 'Time', 'Action', 'User Id'].map((h) => (
+              <th
+                key={h}
+                className="whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted"
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={4} className="px-3 py-8 text-center text-muted-soft">
+                No records.
+              </td>
+            </tr>
+          )}
+          {rows.map((r, i) => (
+            <tr
+              key={i}
+              className="border-b border-edge-soft last:border-b-0 odd:bg-surface even:bg-surface-muted/40"
+            >
+              <td className="whitespace-nowrap px-3 py-2 tabular-nums text-ink-soft">
+                {dateFormat(r.date)}
+              </td>
+              <td className="whitespace-nowrap px-3 py-2 tabular-nums text-ink-soft">
+                {formatHhmmss(r.time)}
+              </td>
+              <td className="px-3 py-2 font-medium text-ink">{r.action}</td>
+              <td className="whitespace-nowrap px-3 py-2 text-ink-soft">{String(r.user ?? '')}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 /**
  * The leading arrow on every backward action — Previous Page on the profile
  * forms, Return on the detail and history screens.
