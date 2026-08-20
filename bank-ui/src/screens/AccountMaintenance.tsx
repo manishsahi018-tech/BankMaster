@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Field, ReadOnlyInput, SectionCard } from '../components/fields.tsx'
 import HistoryBanner from '../components/HistoryBanner.tsx'
 import { codeLabel } from '../codes.ts'
@@ -27,34 +26,19 @@ const BLANK = {
   lastUpdateCsd: '', supervisorApproved: '',
 }
 
-// Enquiry-only build: write actions hidden, and the Dormant / Statement Day
-// toggles disabled — values still display, they just can't be changed.
+// READ-ONLY. This is an enquiry application: nothing on this screen ever saved
+// — there is no submit and no API to call — so every value renders as a value.
 //
-// The text and code-set fields are NOT gated by this flag: they are
-// ReadOnlyInput outright. Nothing on this screen ever saved — there is no
-// submit and no API to call — so an editable box only ever offered an edit
-// that evaporated on navigation. Flipping this flag back to false therefore
-// restores the two toggles but NOT the fields; a real maintenance mode needs
-// them swapped back to TextInput along with the save path that never existed.
-const ENQUIRY_ONLY = true
-
-const YesNo = ({ value, onChange }: { value: string; onChange?: (opt: string) => void }) => (
-  <div className="inline-flex rounded-lg border border-edge-strong bg-surface p-0.5 shadow-xs">
-    {['Yes', 'No'].map((opt) => (
-      <button
-        key={opt}
-        type="button"
-        disabled={ENQUIRY_ONLY}
-        onClick={() => onChange?.(opt)}
-        className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-          value === opt ? 'bg-primary text-white shadow-sm' : 'text-muted hover:bg-surface-muted'
-        }`}
-      >
-        {opt}
-      </button>
-    ))}
-  </div>
-)
+// Dormant and Statement Day used to be segmented toggles rendered disabled.
+// Disabled is not the same as read-only: they still drew as controls, still lit
+// up on hover, and still read to an operator as something that ought to be
+// clickable and merely isn't right now. They are ReadOnlyInput like every other
+// field now, so the screen makes one consistent promise instead of two.
+//
+// The legacy frmAccct also carried Supervisor Comments / Create / Approve /
+// Reject. Those are maintenance actions with no counterpart here and are gone
+// rather than hidden behind a flag; restoring them means building the save path
+// that never existed, not flipping a boolean.
 
 export default function AccountMaintenance({
   account,
@@ -75,9 +59,10 @@ export default function AccountMaintenance({
   onSignatories: () => void
   onCards: () => void
 }) {
-  const [data, setData] = useState({ ...BLANK, ...(account?.maintenance ?? {}) })
-
-  const set = (key: keyof typeof BLANK) => (value: string) => setData((d) => ({ ...d, [key]: value }))
+  // Derived, not state: nothing can change it, and a useState initializer would
+  // pin the FIRST account/snapshot it was mounted with if this screen is ever
+  // re-rendered with new props instead of remounted.
+  const data = { ...BLANK, ...(account?.maintenance ?? {}) }
 
   const labelCls = 'mb-1.5 block text-sm font-medium text-ink-soft'
   const roCls =
@@ -141,10 +126,9 @@ export default function AccountMaintenance({
                   account", not "Transfer". */}
               <ReadOnlyInput id="intApp" value={codeLabel('intApplication', data.intApplication)} />
             </Field>
-            <div>
-              <span className={labelCls}>Dormant</span>
-              <YesNo value={data.dormant} onChange={set('dormant')} />
-            </div>
+            <Field label="Dormant" htmlFor="dormant">
+              <ReadOnlyInput id="dormant" value={data.dormant} />
+            </Field>
             <Field label="Stmt. Frequency" htmlFor="stmtFreq">
               {/* Read-only, and resolved through /api/codes rather than a
                   hard-coded option list. It was an editable Select whose
@@ -154,24 +138,9 @@ export default function AccountMaintenance({
                   has seven values, and 01 is Non-automatic, not Monthly). */}
               <ReadOnlyInput id="stmtFreq" value={codeLabel('stmtFreq', data.stmtFrequency)} />
             </Field>
-            <div>
-              <span className={labelCls}>Statement Day</span>
-              <div className="inline-flex rounded-lg border border-edge-strong bg-surface p-0.5 shadow-xs">
-                {['Br.Stmt.Day', 'Month End'].map((opt) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    disabled={ENQUIRY_ONLY}
-                    onClick={() => set('statementDay')(opt)}
-                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                      data.statementDay === opt ? 'bg-primary text-white shadow-sm' : 'text-muted hover:bg-surface-muted'
-                    }`}
-                  >
-                    {opt}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <Field label="Statement Day" htmlFor="stmtDay">
+              <ReadOnlyInput id="stmtDay" value={data.statementDay} />
+            </Field>
             <Field label="Account Status" htmlFor="accStatus">
               <ReadOnlyInput id="accStatus" value={codeLabel('accStatus', data.accountStatus)} />
             </Field>
@@ -268,23 +237,9 @@ export default function AccountMaintenance({
         </SectionCard>
 
         <div className="rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
-          {/* One wrapping row, not two: with the write actions hidden for
-              enquiry-only users the first row held Signatory by itself, which
-              read as a separate group it is not. */}
+          {/* One wrapping row: every button here NAVIGATES. Nothing on this bar
+              writes, so there is no second group to separate it from. */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* Hidden for enquiry-only (write actions: create / approve / reject / supervisor). */}
-            {!ENQUIRY_ONLY &&
-              ['Supervisor Comments', 'Create', 'Approve', 'Reject'].map((label) => (
-                <button
-                  key={label}
-                  type="button"
-                  disabled
-                  title="Available in create / supervisor mode only"
-                  className="cursor-not-allowed rounded-lg border border-edge bg-surface-muted px-4 py-2.5 text-sm font-medium text-muted-soft shadow-xs"
-                >
-                  {label}
-                </button>
-              ))}
             <button
               type="button"
               onClick={onSignatories}
