@@ -11,7 +11,10 @@ const COLUMNS = [
   column(pyd0data, 'chequeNo', { label: 'Cheque Number' }),
   column(pyd0data, 'amount'),
   column(pyd0data, 'dateStop', { label: 'Date Stopped' }),
-  column(pyd0data, 'payeeName'),
+  // "Details" is the legacy grid's own header for this column
+  // (frmStopChequeGrid.frm rowTitle(3)); the detail form calls the same value
+  // "Reason". Both beat the workbook's column name, which reads as a payee.
+  column(pyd0data, 'payeeName', { label: 'Details' }),
   column(pyd0data, 'chequeFrom', { label: 'From Cheque Number' }),
 ]
 
