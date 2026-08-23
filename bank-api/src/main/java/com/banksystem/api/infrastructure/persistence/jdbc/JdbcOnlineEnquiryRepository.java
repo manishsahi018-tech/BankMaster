@@ -4,11 +4,14 @@ import com.banksystem.api.application.NotAvailableException;
 import com.banksystem.api.domain.model.BmForms;
 import com.banksystem.api.domain.model.OnlineStatementPage;
 import com.banksystem.api.domain.model.OnlineTransaction;
+import com.banksystem.api.domain.model.UiLanguage;
 import com.banksystem.api.domain.repository.OnlineEnquiryRepository;
+import com.banksystem.api.infrastructure.language.RequestLanguage;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -112,25 +115,32 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
               AND  custNo = :custNo
             """;
 
-    private static final String ACCOUNT_SQL = """
+    /**
+     * One rendering per language: stctltabBD carries the branch name in both,
+     * and the statement header shows it to the operator.
+     */
+    private static final Map<UiLanguage, String> ACCOUNT_SQL = UiLanguage.localise("""
             SELECT g.bookBal, g.branchCode,
-                   (SELECT COALESCE(NULLIF(TRIM(b.englishName), ''), b.arabicName)
+                   (SELECT {name:b}
                     FROM   stctltabBD b
                     WHERE  b.BankingDate = :bankingDate
                       AND  b.branchCode = g.branchCode) AS branchName
             FROM   gld0data g
             WHERE  g.BankingDate = :bankingDate
               AND  g.accNo = :accNo
-            """;
+            """);
 
     private final NamedParameterJdbcTemplate jdbc;
     private final BankingDateProvider bankingDate;
+    private final RequestLanguage requestLanguage;
 
     public JdbcOnlineEnquiryRepository(
             @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
-            BankingDateProvider bankingDate) {
+            BankingDateProvider bankingDate,
+            RequestLanguage requestLanguage) {
         this.jdbc = jdbc;
         this.bankingDate = bankingDate;
+        this.requestLanguage = requestLanguage;
     }
 
     @Override
@@ -274,7 +284,7 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
 
     /** gld0data supplies the balance the B/F walks back from, plus the branch. */
     private Account account(String actualAcc) {
-        List<Account> rows = jdbc.query(ACCOUNT_SQL,
+        List<Account> rows = jdbc.query(ACCOUNT_SQL.get(requestLanguage.current()),
                 new MapSqlParameterSource("accNo", actualAcc)
                         .addValue("bankingDate", bankingDate.bankingDate()),
                 (rs, i) -> new Account(

@@ -1,0 +1,268 @@
+// Hand-written Arabic, layered over the generated ./legacy-ar.ts.
+//
+// Two kinds of entry live here:
+//
+//  1. OVERRIDES of the legacy table, where the extraction picked a rendering
+//     that is wrong for this app. Each one says why — the legacy reused one
+//     English caption across forms that meant different things (its "Details"
+//     button on the returned-mail form was captioned "reason for return"), and
+//     the extractor's most-frequent rule cannot know which sense we want.
+//
+//  2. Strings the legacy never had: the revamp's own chrome (theme picker,
+//     pager, locale switcher) and the explanatory copy the VB6 forms had no
+//     room for.
+//
+// Keys are normalised English — lower-cased, whitespace-collapsed, trailing
+// punctuation dropped — exactly as normaliseKey() in ./index.ts produces them.
+// A key may carry a context prefix ('grid|action') for a word that needs two
+// renderings; the caller then asks for t('grid|Action').
+
+const AR_EXTRA: Record<string, string> = {
+  // ---- Overrides of the generated table -----------------------------------
+  // Legacy: 'سبب الاعاده' — that is frmReturnedMail's "reason for return",
+  // not the Details button every grid carries (frmCustUpdateHistory shows
+  // 'التفاصيل', which is the sense we want).
+  details: 'التفاصيل',
+  // Legacy: 'خروج' (Exit) — the VB6 Cancel buttons were captioned "leave".
+  // Our Cancel dismisses a dialog without leaving the screen.
+  cancel: 'إلغاء',
+  // Legacy: 'نعم' (Yes) — fine on a confirm prompt, wrong on the About
+  // dialog's dismiss button.
+  ok: 'موافق',
+  // Legacy: 'مساعدة' (Help) — that was the MDI menu item. This is the dialog.
+  about: 'حول البرنامج',
+  // Legacy: 'سبب الايقاف' — specifically a stop-cheque reason.
+  reason: 'السبب',
+  // Legacy: 'اللغه' — the legacy's own spelling; 'اللغة' is the correct one.
+  language: 'اللغة',
+
+  // ---- Application shell ---------------------------------------------------
+  'static data management': 'إدارة البيانات الثابتة',
+  'core banking system': 'النظام المصرفي الأساسي',
+  'static data management for cbs': 'إدارة البيانات الثابتة للنظام المصرفي',
+  'version {version}': 'الإصدار {version}',
+  'this software used to manage atm cards': 'يُستخدم هذا البرنامج لإدارة بطاقات الصراف الآلي.',
+  'copyright © arab national bank, riyadh': 'حقوق النشر © البنك العربي الوطني، الرياض',
+  'close about dialog': 'إغلاق نافذة حول البرنامج',
+  'sign out': 'تسجيل الخروج',
+
+  // Theme picker — no legacy counterpart; the VB6 client had one fixed look.
+  theme: 'المظهر',
+  'choose theme': 'اختر المظهر',
+  mode: 'الوضع',
+  light: 'فاتح',
+  dark: 'داكن',
+  'accent color': 'لون التمييز',
+  sapphire: 'ياقوتي',
+  emerald: 'زمردي',
+  violet: 'بنفسجي',
+  rose: 'وردي',
+  amber: 'كهرماني',
+  teal: 'فيروزي',
+
+  // Locale switcher — the revamp's frmChangeScreenLang.
+  'choose language': 'اختر اللغة',
+  'change the screen language': 'تغيير لغة الشاشة',
+
+  // ---- Logon window --------------------------------------------------------
+  login: 'دخول',
+  'logon window': 'شاشة الدخول',
+  'logging on': 'جاري الدخول…',
+  'ver {version} — enquiry': 'إصدار {version} — استعلام',
+  'please enter user id and password': 'الرجاء إدخال هوية المستخدم وكلمة السر',
+  'you are not authorised to use this application': 'غير مصرح لك باستخدام هذا التطبيق',
+
+  // ---- Shared grid / detail chrome ----------------------------------------
+  'no records found': 'لا توجد سجلات.',
+  'showing {from}–{to} of {total}': 'عرض {from}–{to} من {total}',
+  'page {page} of {pages}': 'صفحة {page} من {pages}',
+  'not available at your authority level': 'غير متاح لمستوى صلاحيتك',
+  select: 'اختر…',
+  dismiss: 'إغلاق',
+
+  // ---- Customer search (frmCustomerSearch) --------------------------------
+  'customer lookup': 'البحث عن العميل',
+  'search by one identifier — entering an identifier clears the other criteria, as in the legacy system':
+    'ابحث بمعرّف واحد — إدخال معرّف يمسح بقية المعايير، كما في النظام السابق.',
+  'look up a customer and maintain their static profile information':
+    'ابحث عن عميل واعرض بياناته الثابتة.',
+  'contact details': 'بيانات الاتصال',
+  'customer names': 'أسماء العميل',
+  classification: 'التصنيف',
+  'categorisation used for reporting and branch assignment':
+    'التصنيف المستخدم في التقارير وتحديد الفرع.',
+  reset: 'مسح',
+  'enquiries & services': 'الاستفسارات والخدمات',
+  'historical statement — deleted a/c': 'كشف حساب قديم — حساب محذوف',
+  'historical statement for deleted accounts': 'كشف حساب قديم للحسابات المحذوفة',
+  'name search': 'البحث بالاسم',
+  'free-text customer name search': 'بحث حر باسم العميل',
+  'sadad transactions': 'حركات سداد',
+  'payments the branch has made through sadad': 'المدفوعات التي نفذها الفرع عبر سداد',
+  'pension enquiry — prefills from id / account number':
+    'استفسار التقاعد — يُعبأ من رقم الهوية أو رقم الحساب',
+  'returned mail handling': 'معالجة البريد المسترجع',
+  'customer opened through phone': 'عملاء فُتحوا عبر الهاتف',
+  'status of customers opened through phone': 'حالة العملاء الذين فُتحت حساباتهم عبر الهاتف',
+  'needs a customer number or account number': 'يتطلب رقم عميل أو رقم حساب',
+  'opens the account grid': 'يفتح قائمة الحسابات',
+  'opens the card grid': 'يفتح قائمة البطاقات',
+  'enter a customer no, account no or card number first':
+    'أدخل رقم العميل أو رقم الحساب أو رقم البطاقة أولاً',
+  'merchant statement facilities': 'خدمات كشف حساب البائع',
+  'requires merchant statement authority (~81)': 'يتطلب صلاحية كشف حساب البائع (‎~81‎)',
+
+  // Search-field placeholders. Most need no entry of their own — a
+  // placeholder reading "Account number" normalises to the same key as the
+  // "Account No" label above it and takes the same Arabic.
+  'e.g. {example}': 'مثال: {example}',
+  'national id / passport': 'رقم الهوية / جواز السفر',
+  'home phone': 'هاتف المنزل',
+  ext: 'تحويلة',
+  'for corporate customers': 'للعملاء من الشركات',
+  'select main category': 'اختر التصنيف الرئيسي',
+  'select sub category': 'اختر التصنيف الفرعي',
+  'select branch': 'اختر الفرع',
+
+  // Search validation — errInvalidSearchCriteria and friends had no Arabic in
+  // the tables we extracted, so they are translated here.
+  'main category should be selected first before selecting sub category':
+    'يجب اختيار التصنيف الرئيسي قبل اختيار التصنيف الفرعي',
+  'invalid search criteria..please review': 'معايير بحث غير صالحة.. الرجاء المراجعة',
+  'please enter at least one search criterion before searching':
+    'الرجاء إدخال معيار بحث واحد على الأقل',
+  'utility bill enquiry needs a customer number or account number':
+    'استفسار فواتير الخدمات يتطلب رقم عميل أو رقم حساب.',
+  'live bill status comes from the sadad network, which this archival enquiry has no connection to. use sadad transactions for payments the branch has already made':
+    'حالة الفاتورة الحالية تأتي من شبكة سداد، وهذه الشاشة الأرشيفية غير متصلة بها. استخدم "حركات سداد" للمدفوعات التي نفذها الفرع بالفعل.',
+
+  // ---- Account grid (frmAccount) ------------------------------------------
+  'no accounts found for this customer': 'لا توجد حسابات لهذا العميل.',
+  'empty row selected — please select an account': 'لم يتم اختيار سجل — الرجاء اختيار حساب.',
+  'not authorized to access the account details of enquiry restricted branch':
+    'غير مصرح لك بالاطلاع على تفاصيل حسابات فرع مقيّد الاستفسار',
+  'transaction inquiry': 'استفسار عن حركة',
+  'transaction type enquiry': 'استفسار حركة',
+
+  // ---- Sweep of the remaining screens ------------------------------------
+  // None of these had a counterpart in the legacy caption tables: they are
+  // either headings the VB6 form had no room for, or explanatory copy this
+  // build wrote itself.
+
+  // Search results (frmEnquirySelect)
+  'select the match to continue': 'اختر السجل المطابق للمتابعة.',
+
+  // Customer profile — frmIndividualSaudi / frmIndividualOthers / frmJuristicMain
+  'customer profile': 'ملف العميل',
+  'individual — saudi national': 'فرد — سعودي',
+  'page 1 of 2 — identity, personal and contact information':
+    'صفحة 1 من 2 — الهوية والبيانات الشخصية وبيانات الاتصال.',
+  'page 2 of 2 — employment, fees, account facilities and signature':
+    'صفحة 2 من 2 — العمل والرسوم وخدمات الحساب والتوقيع.',
+  registration: 'التسجيل',
+  'personal details': 'البيانات الشخصية',
+  'address & contact': 'العنوان وبيانات الاتصال',
+  'address line 1': 'العنوان سطر 1',
+  'address line 2': 'العنوان سطر 2',
+  'phone (office)': 'هاتف العمل',
+  'phone (residence)': 'هاتف المنزل',
+  'family regn no': 'رقم دفتر العائلة',
+  'alternative br. code': 'رمز الفرع البديل',
+  'special status': 'حالة خاصة',
+  'blind / illiterate': 'كفيف / أمي',
+  'resident / non-resident': 'مقيم / غير مقيم',
+  'single / joint a/c': 'حساب مفرد / مشترك',
+  'identity documents': 'مستندات الهوية',
+  document: 'المستند',
+  number: 'الرقم',
+  calendar: 'التقويم',
+  'issue and expiry dates follow the selected calendar (h = hijri, g = gregorian)':
+    'تواريخ الإصدار والانتهاء تتبع التقويم المختار (هـ = هجري، م = ميلادي).',
+  'accounts to open': 'الحسابات المطلوب فتحها',
+  'package, fees & memos': 'المزايا والرسوم والملاحظات',
+  'com. accomodation': 'سكن توفره الشركة',
+  'cust. advice flag': 'إشعار العميل',
+  'cust. updated for sama': 'تحديث بيانات العميل لساما',
+  'exclude from — atm fees': 'استثناء من — رسوم الصراف',
+  'exclude from — minimum balance fees': 'استثناء من — رسوم الحد الأدنى للرصيد',
+
+  // Account maintenance (frmAccct)
+  'acc. status': 'حالة الحساب',
+  'status & statements': 'الحالة وكشوف الحساب',
+  'stmt. freq': 'دورية كشف الحساب',
+  'interest, limits & references': 'الفوائد والحدود والمراجع',
+  'open / update details': 'تفاصيل الفتح والتعديل',
+  'amendment audit': 'سجل التعديلات',
+  'last update csd': 'تاريخ آخر تعديل في CSD',
+  'supervisor approved': 'موافقة المشرف',
+  'written by the system, not by this screen': 'يكتبها النظام، لا هذه الشاشة.',
+  'audit trail — populated by the system': 'سجل تدقيق — يعبئه النظام.',
+
+  // Cards (frmCardGrid / frmCardDetails / frmCardHistory)
+  cards: 'البطاقات',
+  'card detail': 'تفاصيل البطاقة',
+  'card / pin history': 'تاريخ البطاقة والرقم السري',
+  'update history': 'تاريخ التعديلات',
+  'card & delivery': 'البطاقة والتسليم',
+  'pin status': 'حالة الرقم السري',
+  'el.chip': 'الشريحة الإلكترونية',
+  '12 or 16 digits, or s1 + 6': '12 أو 16 رقماً، أو S1 + 6',
+  "captured when the customer is created and held on the pending record, not on the customer master — so the marks below are the form's defaults, not this customer's card. cards actually issued are on card info":
+    'تُلتقط عند إنشاء العميل وتُحفظ في السجل المعلق، لا في ملف العميل الرئيسي — لذا فالعلامات أدناه هي القيم الافتراضية للنموذج، لا بطاقة هذا العميل. البطاقات الصادرة فعلاً تظهر في شاشة معلومات البطاقة.',
+
+  // Statements (frmHistStmt / OnlineStmt / frmMerchantStmt)
+  'from date (month / year)': 'من تاريخ (شهر / سنة)',
+  'to date (month / year)': 'إلى تاريخ (شهر / سنة)',
+  'from year': 'من سنة',
+  'to year': 'إلى سنة',
+  'generate statement': 'إصدار كشف الحساب',
+  'demo data — no acquiring system connected': 'بيانات تجريبية — لا يوجد اتصال بنظام المدفوعات',
+  'these statements are generated by {repo}, which stands in for the acquiring/pos system the legacy reaches over its own {ini} host:port. there is no merchant view in denodo and no merchant table in the archival schema, so every figure below is synthetic':
+    'تُنشأ هذه الكشوف بواسطة {repo}، الذي ينوب عن نظام المدفوعات ونقاط البيع الذي يتصل به النظام السابق عبر {ini}. لا توجد شاشة للبائع في Denodo ولا جدول للبائع في مخطط الأرشيف، لذا فكل رقم أدناه اصطناعي.',
+
+  // Card detail (frmCardDetails)
+  'customer category': 'تصنيف العميل',
+  'delivery branch': 'فرع التسليم',
+  'new / update': 'جديد / تعديل',
+  'sequence no': 'الرقم التسلسلي',
+
+  // Account maintenance
+  opened: 'تاريخ الفتح',
+
+  // Search results — Arabic does not pluralise by suffix, so both forms are
+  // whole phrases with the count as a placeholder.
+  '{count} match': '{count} نتيجة',
+  '{count} matches': '{count} نتيجة',
+  'the search resulted in several matches — please select one':
+    'أسفر البحث عن أكثر من نتيجة — الرجاء اختيار واحدة.',
+
+  // Merchant statement
+  'legacy frmmerchantstmt — authority ~81. served by the acquiring/pos system, not by the customer-static-data host':
+    'الشاشة السابقة frmMerchantStmt — صلاحية ‎~81‎. يخدمها نظام المدفوعات ونقاط البيع، لا مضيف بيانات العملاء الثابتة.',
+
+  // Customer-number chips. The number is a Latin run, so it is a placeholder
+  // rather than text sitting beside the translated word.
+  'customer {custno}': 'العميل {custNo}',
+  'customer {custno} · joint {jointno}': 'العميل {custNo} · مشترك {jointNo}',
+  'customer {custno} · owner {ownerno}': 'العميل {custNo} · مالك {ownerNo}',
+  'customer {custno} · heir {partyno}': 'العميل {custNo} · وارث {partyNo}',
+  'customer {custno} · reference {partyno}': 'العميل {custNo} · مرجع {partyNo}',
+  'read-only enquiry — identity, proxy and address':
+    'استعلام للقراءة فقط — الهوية والوكالة والعنوان.',
+  'read-only enquiry — identity, required-for and address':
+    'استعلام للقراءة فقط — الهوية وسبب المرجعية والعنوان.',
+
+  'a/c {accno}': 'حساب {accNo}',
+
+  // Chrome the shared components ask for.
+  'fetching from server': 'جاري الجلب من الخادم…',
+  'please wait a moment': 'الرجاء الانتظار لحظة…',
+  'previous month': 'الشهر السابق',
+  'next month': 'الشهر التالي',
+  month: 'الشهر',
+  year: 'السنة',
+  'history — this is the record as of {asof}, not the live profile':
+    'أرشيف — هذا هو السجل كما كان في {asOf}، وليس الملف الحالي.',
+}
+
+export default AR_EXTRA

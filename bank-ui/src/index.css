@@ -25,11 +25,14 @@
   --color-warn-soft: var(--warn-soft);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  --font-sans: var(--app-font);
 }
 
 :root {
+  /* Body face. Latin default; :root:lang(ar) below swaps in an Arabic stack. */
+  --app-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
   /* Accent — Sapphire (default) */
   --primary: #1d4ed8;
   --primary-strong: #1e40af;
@@ -99,6 +102,39 @@
 :root[data-mode="dark"][data-accent="amber"]   { --primary: #d97706; --primary-strong: #b45309; --primary-ink: #fcd34d; }
 :root[data-mode="dark"][data-accent="teal"]    { --primary: #14b8a6; --primary-strong: #0d9488; --primary-ink: #5eead4; }
 
+/* ---------------------------------------------------------------------------
+   Arabic. locale.ts sets lang="ar" dir="rtl" on <html>; everything below keys
+   off those two attributes, so no component needs to know which way the page
+   runs.
+
+   The face is a SYSTEM stack, not a webfont: this bundle is packaged into the
+   API jar and served on the bank's intranet, where a request to a font CDN
+   does not resolve. Segoe UI carries a complete Arabic set on the Windows
+   workstations this runs on; the rest are fallbacks for other platforms.
+   --------------------------------------------------------------------------- */
+:root:lang(ar) {
+  --app-font: "Segoe UI", Tahoma, "Noto Sans Arabic", "Dubai", "Geeza Pro",
+    "Arabic Typesetting", Arial, sans-serif;
+}
+
+/* Arabic glyphs sit lower and need more room between lines than Latin at the
+   same size, and the numerals stay Western (the legacy screens show
+   "01008026168200" and "27/01/2001" unchanged), so nothing here touches
+   font-feature-settings or numeral shaping. */
+:lang(ar) {
+  line-height: 1.7;
+}
+
+/* Identifiers and amounts are Latin runs inside Arabic text. Without an
+   explicit direction the bidi algorithm reorders a value like "01-Individual"
+   or a hyphenated account range when it sits next to Arabic, so anything that
+   is a code, a number or a date is pinned LTR at the point it is rendered. */
+.ltr-value {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+}
+
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -137,7 +173,7 @@ body {
     display: block;
     position: absolute;
     top: 0;
-    left: 0;
+    inset-inline-start: 0;
     width: 100%;
     padding: 0;
     color: #000;
@@ -160,7 +196,7 @@ body {
   .print-sheet th,
   .print-sheet td {
     padding: 2pt 4pt;
-    text-align: left;
+    text-align: start;
     white-space: nowrap;
   }
   .print-sheet th {
@@ -168,7 +204,7 @@ body {
     font-weight: 700;
   }
   .print-sheet .right {
-    text-align: right;
+    text-align: end;
   }
   /* Closing rule + Total line, as in cmdPrint_Click's String(160, "-") block. */
   .print-sheet tfoot td {

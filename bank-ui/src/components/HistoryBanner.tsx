@@ -1,4 +1,5 @@
 import { formatTimestamp } from '../schema/helpers.ts'
+import { useT } from '../i18n/index.ts'
 
 /**
  * History-mode marker — the legacy forms show an lblHistory label when
@@ -6,6 +7,7 @@ import { formatTimestamp } from '../schema/helpers.ts'
  * Rendered under the screen title when a snapshot is being displayed.
  */
 export default function HistoryBanner({ asOf }: { asOf?: string }) {
+  const { t } = useT()
   if (!asOf) return null
   return (
     <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-warn/40 bg-warn-soft px-4 py-3 text-sm text-warn">
@@ -16,7 +18,11 @@ export default function HistoryBanner({ asOf }: { asOf?: string }) {
           clipRule="evenodd"
         />
       </svg>
-      History — this is the record as of {formatTimestamp(asOf)}, not the live profile.
+      {/* The timestamp is a Latin/numeric run; the placeholder keeps it out of
+          the translated sentence so bidi cannot reorder it. */}
+      {t('History — this is the record as of {asOf}, not the live profile.', {
+        asOf: formatTimestamp(asOf),
+      })}
     </div>
   )
 }

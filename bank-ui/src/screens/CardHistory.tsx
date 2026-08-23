@@ -7,6 +7,7 @@ import {
   type HistoryEvent,
 } from '../components/legacyForm.tsx'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmCardHistory.frm ("Card / Pin History") — stcardlog
 // completed lifecycle records (QUERY-SPECS §15).
 //
@@ -191,8 +192,8 @@ export default function CardHistory({
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">Cards</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">Card / Pin History</h1>
+          <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{t('Cards')}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{t('Card / Pin History')}</h1>
           <p className="mt-1 text-sm text-muted">
             {entries.length} completed {entries.length === 1 ? 'request' : 'requests'}.
           </p>
@@ -215,7 +216,7 @@ export default function CardHistory({
           className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong"
         >
           <BackArrow />
-          Return to Card Details
+          {t('Return to Card Details')}
         </button>
       </div>
     </main>

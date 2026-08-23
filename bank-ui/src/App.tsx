@@ -4,12 +4,17 @@ import type { GridRow } from './components/GridScreen.tsx'
 import ProcessingOverlay from './components/ProcessingOverlay.tsx'
 import { useToast } from './components/Toast.tsx'
 import { api } from './api.ts'
-import type { BlockedAmountBreakup as Breakup, CardSearchResult } from './api.ts'
+import type {
+  BlockedAmountBreakup as Breakup,
+  CardSearchResult,
+  EssentialDocumentsPayload,
+} from './api.ts'
 import TopNav from './components/TopNav.tsx'
 import Login from './screens/Login.tsx'
 import { session, signOut } from './session.ts'
 import { useCodes } from './codes.ts'
-import { profileScreenFor } from './screenSet.ts'
+import { useLocale } from './i18n/locale.ts'
+import { profileScreenFor, partyPanelsFor } from './screenSet.ts'
 import { useRequestPending } from './pending.ts'
 import CustomerStaticData from './screens/CustomerStaticData.tsx'
 import EnquirySelect from './screens/EnquirySelect.tsx'
@@ -104,8 +109,8 @@ interface ScreenState {
   byCustomer?: boolean
   /** individual page 2 attributes (frmIndividualSaudiAcctInfo) */
   acctInfo?: Record<string, string>
-  /** required document codes for the customer's SAMA sub-category */
-  documents?: string[]
+  /** frmDocuments payload — required + supplied document codes and Others */
+  documents?: EssentialDocumentsPayload
 }
 
 /**
@@ -125,6 +130,16 @@ function asOfKey(value: unknown): string | null {
   return s === '' || s === 'undefined' || s === 'null' ? null : s
 }
 
+/**
+ * frmDocuments' fetch. All three page-2 screens open the same form, and each
+ * can be showing either the live customer record or an stcustlog snapshot, so
+ * the as-of key of the screen that opened it decides which read runs — the
+ * legacy's custHistoryAction path is fed from custLogRec, not custTabRec
+ * (cbothers.c:3703-3704).
+ */
+const fetchDocuments = (custNo: string, asOf?: string) =>
+  asOf ? api.documentsAsOf(custNo, asOf) : api.documents(custNo)
+
 const NO_TIMESTAMP =
   'This history row carries no timestamp, so the record behind it cannot be opened.'
 
@@ -143,6 +158,10 @@ export default function App() {
   // /api/codes is loaded in the background; re-render here when it lands so
   // every screen below swaps its raw codes for "<code>-<description>" labels.
   useCodes()
+  // One subscription at the top is enough to re-label the whole tree when the
+  // operator switches language — t() reads the locale at call time, so every
+  // screen below re-renders with the new one without subscribing itself.
+  useLocale()
 
   // Any error raised by the fetch helpers surfaces as a top-center toast that
   // hides itself after 7s (replaces the old inline banner). Clearing the state
@@ -158,6 +177,9 @@ export default function App() {
   const customer: Customer | null = screen.customer
     ? { ...screen.customer, name: screen.customer.shortName || screen.customer.custNo }
     : null
+  // Which related-party panels this customer's sub category reaches —
+  // the legacy's Next Page branching, see partyPanelsFor.
+  const parties = partyPanelsFor(customer?.mainCategoryCode, customer?.subCategoryCode)
 
   const go = (name: string, extra: Partial<ScreenState> = {}) =>
     setScreen((s) => ({ ...s, ...extra, name }))
@@ -375,23 +397,23 @@ export default function App() {
               page: 0,
             }))
           }
-          onHeirs={() =>
-            goFetch('heirs', { partyFrom: 'detail' }, async () => {
-              const _r = await api.heirs(customer!.custNo)
-              return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
-            })
+          onHeirs={
+            parties.heirs
+              ? () =>
+                  goFetch('heirs', { partyFrom: 'detail' }, async () => {
+                    const _r = await api.heirs(customer!.custNo)
+                    return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
+                  })
+              : undefined
           }
-          onReferences={() =>
-            goFetch('references', { partyFrom: 'detail' }, async () => {
-              const _r = await api.references(customer!.custNo)
-              return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
-            })
-          }
-          onJointHolders={() =>
-            goFetch('jointHolders', { partyFrom: 'detail' }, async () => {
-              const _r = await api.jointHolders(customer!.custNo)
-              return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
-            })
+          onReferences={
+            parties.references
+              ? () =>
+                  goFetch('references', { partyFrom: 'detail' }, async () => {
+                    const _r = await api.references(customer!.custNo)
+                    return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
+                  })
+              : undefined
           }
           onBack={() => setScreen({ name: 'search' })}
         />
@@ -427,12 +449,6 @@ export default function App() {
               return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
             })
           }
-          onReferences={() =>
-            goFetch('references', { partyFrom: screen.name }, async () => {
-              const _r = await api.references(customer!.custNo)
-              return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
-            })
-          }
           onBack={() => go('results')}
         />
       )}
@@ -459,7 +475,7 @@ export default function App() {
           }
           onDocuments={() =>
             goFetch('documents', { docsFrom: 'juristic2' }, async () => ({
-              documents: await api.requiredDocuments(customer!.custNo),
+              documents: await fetchDocuments(customer!.custNo, screen.historyAsOf),
             }))
           }
           onCancel={() => setScreen({ name: 'search' })}
@@ -488,23 +504,23 @@ export default function App() {
               acctInfo: await api.customerAcctInfo(customer!.custNo),
             }))
           }
-          onHeirs={() =>
-            goFetch('heirs', { partyFrom: 'individualOthers' }, async () => {
-              const _r = await api.heirs(customer!.custNo)
-              return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
-            })
+          onHeirs={
+            parties.heirs
+              ? () =>
+                  goFetch('heirs', { partyFrom: 'individualOthers' }, async () => {
+                    const _r = await api.heirs(customer!.custNo)
+                    return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
+                  })
+              : undefined
           }
-          onReferences={() =>
-            goFetch('references', { partyFrom: 'individualOthers' }, async () => {
-              const _r = await api.references(customer!.custNo)
-              return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
-            })
-          }
-          onJointHolders={() =>
-            goFetch('jointHolders', { partyFrom: 'individualOthers' }, async () => {
-              const _r = await api.jointHolders(customer!.custNo)
-              return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
-            })
+          onReferences={
+            parties.references
+              ? () =>
+                  goFetch('references', { partyFrom: 'individualOthers' }, async () => {
+                    const _r = await api.references(customer!.custNo)
+                    return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
+                  })
+              : undefined
           }
           onBack={() => go('results')}
         />
@@ -580,7 +596,7 @@ export default function App() {
             // Reset docsFrom rather than relying on its default — the juristic
             // page 2 sets it, and `go` would carry that value into here.
             goFetch('documents', { docsFrom: 'detail2' }, async () => ({
-              documents: await api.requiredDocuments(customer!.custNo),
+              documents: await fetchDocuments(customer!.custNo, screen.historyAsOf),
             }))
           }
           onCancel={() => setScreen({ name: 'search' })}
@@ -612,7 +628,7 @@ export default function App() {
           onPrevPage={() => go('others2')}
           onDocuments={() =>
             goFetch('documents', { docsFrom: 'others3' }, async () => ({
-              documents: await api.requiredDocuments(customer!.custNo),
+              documents: await fetchDocuments(customer!.custNo, screen.historyAsOf),
             }))
           }
           onCancel={() => setScreen({ name: 'search' })}
@@ -651,6 +667,7 @@ export default function App() {
         <EssentialDocuments
           customer={customer}
           documents={screen.documents}
+          historyAsOf={screen.historyAsOf}
           // Both page-2 screens open Documents, so Return has to go back to
           // whichever one did rather than always to the individual's.
           onReturn={() => go(screen.docsFrom ?? 'detail2')}

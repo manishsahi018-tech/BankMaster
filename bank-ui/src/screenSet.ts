@@ -95,3 +95,41 @@ export function profileScreenFor(
 ): ProfileScreen | null {
   return SCREEN_FOR[getScreenSetNo(mainCategoryCode, subCategoryCode)] ?? null
 }
+
+/**
+ * Which related-party panels a customer's sub category reaches.
+ *
+ * The legacy has no buttons for these. They are Next Page destinations chosen
+ * by sub category inside cmdNextPage_Click / cmdNext_Click, so a customer of
+ * the wrong sub category can never see them:
+ *
+ *   65  frmIndividualSaudi.frm:5920  doHeirSearch      -> frmIndividualHeirs
+ *   02  frmIndividualSaudi.frm:5881  doReferenceSearch -> frmIndividualSaudi2
+ *   63  frmIndividualOthers.frm:3829 doReferenceSearch -> frmIndividualSaudi2
+ *                                                         (the Saudi page 2,
+ *                                                          not the Others one)
+ *   anything else                                      -> the acct-info page
+ *
+ * Joint holders are absent on purpose. frmIndividualJoint is in the project
+ * (statdata.vbp:69) and doJointSearch exists (search.bas:701), but no form in
+ * the source shows the one or calls the other — it is a renamed frmCustomer3
+ * (its grid still reads frmCustomer3Caption) whose entry point was cut. Nothing
+ * in the legacy reaches it, so nothing here does either.
+ *
+ * The juristic forms have no related-party page at all: all three
+ * cmdNextPage_Click handlers go straight to frmJuristicAccountInfo.
+ */
+export type PartyPanels = { heirs: boolean; references: boolean }
+
+export function partyPanelsFor(
+  mainCategoryCode?: string,
+  subCategoryCode?: string,
+): PartyPanels {
+  const screen = profileScreenFor(mainCategoryCode, subCategoryCode)
+  const individual = screen === 'detail' || screen === 'individualOthers'
+  const sub = (subCategoryCode ?? '').trim()
+  return {
+    heirs: individual && sub === '65',
+    references: individual && (sub === '02' || sub === '63'),
+  }
+}

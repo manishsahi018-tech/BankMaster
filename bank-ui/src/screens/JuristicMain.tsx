@@ -16,6 +16,7 @@ import {
   type IdRowData,
 } from '../components/legacyForm.tsx'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmJuristicMain.frm — page 1 of the juristic customer profile,
 // field for field, and — through `variant` — its two siblings
 // frmJuristicDiplomats and frmJuristicNonResident.
@@ -57,7 +58,6 @@ export default function JuristicMain({
   historyAsOf,
   onAccounts,
   onOwners,
-  onReferences,
   onNextPage,
   onBack,
 }: {
@@ -66,7 +66,6 @@ export default function JuristicMain({
   historyAsOf?: string
   onAccounts: () => void
   onOwners: () => void
-  onReferences: () => void
   onNextPage: () => void
   onBack: () => void
 }) {
@@ -120,11 +119,11 @@ export default function JuristicMain({
             {HEADINGS[variant].title}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Page 1 of 2 — registration, company and contact information.
+            {t('Page 1 of 2 — registration, company and contact information.')}
           </p>
         </div>
         <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
-          Customer {profile.custNo}
+          {t('Customer {custNo}', { custNo: profile.custNo })}
         </span>
       </div>
 
@@ -182,16 +181,16 @@ export default function JuristicMain({
               <span />
               {['First Name', '2nd Name', 'Short Name'].map((h) => (
                 <span key={h} className="text-xs font-semibold uppercase tracking-wide text-muted-soft">
-                  {h}
+                  {t(h)}
                 </span>
               ))}
 
-              <span className="self-center text-sm font-medium text-ink-soft">Arabic</span>
-              <RoText value={profile.aOrgName1} dir="rtl" className="text-right" />
-              <RoText value={profile.aOrgName2} dir="rtl" className="text-right" />
-              <RoText value={profile.aOrgShortName} dir="rtl" className="text-right" />
+              <span className="self-center text-sm font-medium text-ink-soft">{t('Arabic')}</span>
+              <RoText value={profile.aOrgName1} dir="rtl" className="text-end" />
+              <RoText value={profile.aOrgName2} dir="rtl" className="text-end" />
+              <RoText value={profile.aOrgShortName} dir="rtl" className="text-end" />
 
-              <span className="self-center text-sm font-medium text-ink-soft">English</span>
+              <span className="self-center text-sm font-medium text-ink-soft">{t('English')}</span>
               <RoText value={profile.eOrgName1} />
               <RoText value={profile.eOrgName2} />
               <RoText value={profile.eOrgShortName} />
@@ -333,27 +332,29 @@ export default function JuristicMain({
 
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
           <button type="button" onClick={onAccounts} className={btnKinds.secondary}>
-            Account
+            {t('Account')}
           </button>
           <button type="button" onClick={onOwners} className={btnKinds.secondary}>
-            Owner / Management
+            {t('Owner / Management')}
           </button>
-          <button type="button" onClick={onReferences} className={btnKinds.secondary}>
-            References
-          </button>
+          {/* No References here. The juristic forms have no related-party page:
+              all three cmdNextPage_Click handlers go straight to
+              frmJuristicAccountInfo (frmJuristicMain.frm:3520 and the same in
+              Diplomats / NonResident), and stcreftab is only ever read for the
+              two individual sub categories. */}
           {!ENQUIRY_ONLY && (
             <button
               type="button"
               disabled
-              title="Available during supervisor approval only"
+              title={t('Available during supervisor approval only')}
               className={btnKinds.disabled}
             >
-              Supervisor Comments
+              {t('Supervisor Comments')}
             </button>
           )}
           <NextPageButton onClick={onNextPage} />
           <button type="button" onClick={onBack} className={btnKinds.danger}>
-            Cancel
+            {t('Cancel')}
           </button>
         </div>
       </div>

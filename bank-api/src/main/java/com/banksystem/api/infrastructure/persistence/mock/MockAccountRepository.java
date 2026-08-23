@@ -11,7 +11,9 @@ import com.banksystem.api.domain.model.ChequeBookRequest;
 import com.banksystem.api.domain.model.SamaStatusEntry;
 import com.banksystem.api.domain.model.StandingOrder;
 import com.banksystem.api.domain.model.StopCheque;
+import com.banksystem.api.domain.model.UiLanguage;
 import com.banksystem.api.domain.repository.AccountRepository;
+import com.banksystem.api.infrastructure.language.RequestLanguage;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
@@ -34,15 +36,41 @@ import java.util.Optional;
 @Repository
 public class MockAccountRepository implements AccountRepository {
 
-    /** Ledger codes and their descriptions, as stctltab would carry them. */
-    private static final List<String[]> LEDGERS = List.of(
-            new String[] {"008", "تحت الطلب - قطاع خاص مقيــم"},
-            new String[] {"012", "حساب توفير - أفراد"},
-            new String[] {"031", "وديعة لأجل - قطاع خاص"},
-            new String[] {"108", "حساب تحت الطلب - شركات"});
+    private final RequestLanguage requestLanguage;
 
+    public MockAccountRepository(RequestLanguage requestLanguage) {
+        this.requestLanguage = requestLanguage;
+    }
+
+    /**
+     * Ledger codes and their descriptions, as stctltabMM would carry them —
+     * {@code {code, english, arabic}}.
+     *
+     * <p>These used to be Arabic-only, which meant an ENGLISH session read
+     * Arabic ledger names here while every other lookup read English. The
+     * archival view holds both names and JdbcAccountRepository now selects the
+     * one the request asked for, so the fixture carries both too.
+     */
+    private static final List<String[]> LEDGERS = List.of(
+            new String[] {"008", "Current Account - Resident Private Sector", "تحت الطلب - قطاع خاص مقيم"},
+            new String[] {"012", "Savings Account - Individuals", "حساب توفير - أفراد"},
+            new String[] {"031", "Time Deposit - Private Sector", "وديعة لأجل - قطاع خاص"},
+            new String[] {"108", "Call Account - Corporates", "حساب تحت الطلب - شركات"});
+
+    /** Currency 01, both names — stctltabXC carries the pair under denodo. */
+    private static final String[] SAUDI_RIYAL = {"01", "Saudi Riyal", "ريال سعودي"};
+
+    /**
+     * BARE codes, as the archival path returns them
+     * (JdbcAccountRepository selects {@code CONCAT('0', accStatus)}). They used
+     * to carry the description baked in — "00-Open" — which quietly defeated
+     * the UI's codeLabel: the value never matched a code in the accStatus set,
+     * so the screen displayed the fixture string as-is. That was invisible
+     * while the fixture text happened to be the English label, and became
+     * visible the moment the set could answer in Arabic.
+     */
     private static final List<String> STATUSES =
-            List.of("00-Open", "00-Open", "00-Open", "04-No debits", "02-Dormant", "08-Enquiry restricted");
+            List.of("00", "00", "00", "04", "02", "08");
 
     @Override
     public List<AccountSummary> accountsForCustomer(String custNo) {
@@ -380,6 +408,7 @@ public class MockAccountRepository implements AccountRepository {
         DemoData.Customer c = DemoData.customerForAccount(accNo);
         AccountSummary a = summary(accNo);
         String[] ledger = DemoData.pick(accNo, 70, LEDGERS);
+        boolean arabic = requestLanguage.current() == UiLanguage.ARABIC;
         boolean dormant = "1".equals(a.dormantFlag());
         return Map.ofEntries(
                 Map.entry("customerNo", c.custNo()),
@@ -390,7 +419,14 @@ public class MockAccountRepository implements AccountRepository {
                 // Denodo path returns codes — and these particular labels were
                 // wrong anyway (01 is Non-automatic, not "None"; 02 is Daily).
                 Map.entry("accountStatus", a.accountStatus()),
-                Map.entry("samaStatus", dormant ? "03 - Blocked" : "00 - Open"),
+                // RAW code, like accountStatus above and like the archival
+                // path (JdbcAccountRepository selects samaAccStatus as it
+                // stands). The baked "00 - Open" here was a fixture label the
+                // screen could not resolve, so it showed English on an Arabic
+                // screen and hid the fact that the Denodo path shows a bare
+                // code. NOTE: samaAccStatus is still not run through a code
+                // set by either path — the screen renders whatever it is given.
+                Map.entry("samaStatus", dormant ? "03" : "00"),
                 Map.entry("dormant", dormant ? "Yes" : "No"),
                 Map.entry("stmtFrequency",
                         List.of("01", "02", "04", "05").get(DemoData.pick(accNo, 71, 4))),
@@ -401,9 +437,9 @@ public class MockAccountRepository implements AccountRepository {
                 Map.entry("creditLimit", a.creditLimit()),
                 Map.entry("branchCode", c.branchCode()),
                 Map.entry("ledgerCode", ledger[0]),
-                Map.entry("ledgerName", ledger[1]),
-                Map.entry("currencyCode", "01"),
-                Map.entry("currencyName", "Saudi Riyal"),
+                Map.entry("ledgerName", arabic ? ledger[2] : ledger[1]),
+                Map.entry("currencyCode", SAUDI_RIYAL[0]),
+                Map.entry("currencyName", arabic ? SAUDI_RIYAL[2] : SAUDI_RIYAL[1]),
                 Map.entry("subAccount", String.format("%02d", DemoData.subAccount(accNo))),
                 Map.entry("memoNote1", String.valueOf(30000 + DemoData.pick(accNo, 74, 9000))),
                 Map.entry("acOpenDate", c.openDate()),

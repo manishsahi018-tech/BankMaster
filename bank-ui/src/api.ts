@@ -6,11 +6,23 @@ import type { GridRow } from './components/GridScreen.tsx'
 import { getToken, setToken, signOut } from './session.ts'
 import { encryptPassword } from './pocCrypto.ts'
 import { beginRequest, endRequest } from './pending.ts'
+import { getLocale } from './i18n/locale.ts'
 
-/** Bearer header from the stored JWT (empty before login / for public calls). */
-function authHeaders(): Record<string, string> {
+/**
+ * The headers every call carries.
+ *
+ * <p>Accept-Language is not decoration: the archival reference tables are
+ * bilingual (stctltab and its overlays each hold an arabicName and an
+ * englishName), so the API has to be told which column to read. Spring turns
+ * the header into the request's locale and RequestLanguage reads it back —
+ * see UiLanguage on the Java side.
+ */
+function commonHeaders(): Record<string, string> {
   const token = getToken()
-  return token ? { Authorization: `Bearer ${token}` } : {}
+  return {
+    'Accept-Language': getLocale(),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
 }
 
 /**
@@ -233,7 +245,7 @@ async function send<T>(
 function get<T>(path: string, action: string, params?: Record<string, string>): Promise<T> {
   const entries = Object.entries(params ?? {}).filter(([, v]) => v !== '')
   const qs = entries.length ? `?${new URLSearchParams(entries)}` : ''
-  return request<T>(`${path}${qs}`, action, { headers: authHeaders() })
+  return request<T>(`${path}${qs}`, action, { headers: commonHeaders() })
 }
 
 function post<T>(path: string, action: string, body: unknown): Promise<T> {
@@ -242,7 +254,7 @@ function post<T>(path: string, action: string, body: unknown): Promise<T> {
     action,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      headers: { 'Content-Type': 'application/json', ...commonHeaders() },
       body: JSON.stringify(body),
     },
     // A failed login must not bounce through onUnauthorized — it IS the login.
@@ -501,9 +513,26 @@ export const api = {
   customerAcctInfo: (custNo: string) =>
     get<Record<string, string>>(`/api/customers/${custNo}/acct-info`, 'load the account information page'),
 
-  /** Required document codes for the customer's SAMA sub-category (stctltabDC). */
-  requiredDocuments: (custNo: string) =>
-    get<string[]>(`/api/customers/${custNo}/documents`, 'load the required documents'),
+  /** frmDocuments — required (stctltabDC) + supplied (stcusttab) document codes. */
+  documents: (custNo: string) =>
+    get<EssentialDocumentsPayload>(`/api/customers/${custNo}/documents`, 'load the essential documents'),
+
+  /** The same, as it stood at one stcustlog event (legacy history mode). */
+  documentsAsOf: (custNo: string, dateTime: string) =>
+    get<EssentialDocumentsPayload>(
+      `/api/customers/${custNo}/documents-asof/${dateTime}`,
+      'load the essential documents as they were on that date',
+    ),
+}
+
+/** frmDocuments payload — see EssentialDocuments.java. */
+export interface EssentialDocumentsPayload {
+  /** Codes the customer's SAMA sub-category requires (stctltabDC). */
+  required: string[]
+  /** Codes the customer supplied (stcusttab/stcustlog documentsSupplied). */
+  supplied: string[]
+  /** Free-text extra documents (documentOther). */
+  other: string
 }
 
 /** Blocked amount breakup — QUERY-SPECS.md §16. */

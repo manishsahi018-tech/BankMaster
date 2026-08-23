@@ -7,6 +7,7 @@ import { maskCardNo, maxLen } from '../schema/helpers.ts'
 import type { SearchCriteria } from '../types.ts'
 import { codeOptions } from '../codes.ts'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmCustomerSearch.frm (frmEnquiry) from CSD for CBS-CMS VER 4.0.5.
 // Combo values come from /api/codes (legacy samamaincategoryinfo /
 // samasubcategoryinfo / branchinfo tables) as "<code>-<name>"; the literals
@@ -364,13 +365,13 @@ export default function CustomerStaticData({
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">
-            Customer Service
+            {t('Customer Service')}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
-            Customer Static Data Maintenance
+            {t('Customer Static Data Maintenance')}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Look up a customer and maintain their static profile information.
+            {t('Look up a customer and maintain their static profile information.')}
           </p>
         </div>
       </div>
@@ -387,7 +388,7 @@ export default function CustomerStaticData({
                 <svg
                   viewBox="0 0 20 20"
                   fill="currentColor"
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft"
+                  className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft"
                 >
                   <path
                     fillRule="evenodd"
@@ -397,9 +398,10 @@ export default function CustomerStaticData({
                 </svg>
                 <TextInput
                   id="customerNo"
+                dir="ltr"
                   maxLength={MAX_LEN.customerNo}
-                  className="pl-9"
-                  placeholder="e.g. 100245"
+                  className="ps-9"
+                  placeholder={t('e.g. {example}', { example: '100245' })}
                   value={form.customerNo}
                   onChange={set('customerNo')}
                   autoFocus
@@ -409,8 +411,9 @@ export default function CustomerStaticData({
             <Field label="Account No" htmlFor="accountNo">
               <TextInput
                 id="accountNo"
+                dir="ltr"
                 maxLength={MAX_LEN.accountNo}
-                placeholder="Account number"
+                placeholder={t('Account number')}
                 value={form.accountNo}
                 onChange={set('accountNo')}
               />
@@ -418,6 +421,7 @@ export default function CustomerStaticData({
             <Field label="Card Number" htmlFor="cardNumber">
               <TextInput
                 id="cardNumber"
+                dir="ltr"
                 maxLength={MAX_LEN.cardNumber}
                 placeholder="•••• •••• •••• ••••"
                 value={form.cardNumber}
@@ -427,8 +431,9 @@ export default function CustomerStaticData({
             <Field label="ID Number" htmlFor="idNumber">
               <TextInput
                 id="idNumber"
+                dir="ltr"
                 maxLength={MAX_LEN.idNumber}
-                placeholder="National ID / Passport"
+                placeholder={t('National ID / Passport')}
                 value={form.idNumber}
                 onChange={set('idNumber')}
               />
@@ -442,17 +447,19 @@ export default function CustomerStaticData({
               <Field label="Home Phone No" htmlFor="homePhone" className="sm:col-span-2">
                 <TextInput
                   id="homePhone"
-                  placeholder="Home phone"
+                  dir="ltr"
+                  placeholder={t('Home phone')}
                   value={form.homePhone}
                   onChange={set('homePhone')}
                 />
               </Field>
               <Field label="Extn" htmlFor="extn">
-                <TextInput id="extn" placeholder="Ext." value={form.extn} onChange={set('extn')} />
+                <TextInput id="extn" dir="ltr" placeholder={t('Ext.')} value={form.extn} onChange={set('extn')} />
               </Field>
               <Field label="Mobile Number" htmlFor="mobile" className="sm:col-span-3">
                 <TextInput
                   id="mobile"
+                dir="ltr"
                   maxLength={MAX_LEN.mobile}
                   placeholder="+254 7XX XXX XXX"
                   value={form.mobile}
@@ -467,8 +474,9 @@ export default function CustomerStaticData({
               <Field label="First Name" htmlFor="firstName">
                 <TextInput
                   id="firstName"
+                  dir="auto"
                   maxLength={MAX_LEN.firstName}
-                  placeholder="First name"
+                  placeholder={t('First name')}
                   value={form.firstName}
                   onChange={set('firstName')}
                 />
@@ -476,8 +484,9 @@ export default function CustomerStaticData({
               <Field label="Second Name" htmlFor="secondName">
                 <TextInput
                   id="secondName"
+                  dir="auto"
                   maxLength={MAX_LEN.secondName}
-                  placeholder="Second name"
+                  placeholder={t('Second name')}
                   value={form.secondName}
                   onChange={set('secondName')}
                 />
@@ -485,8 +494,9 @@ export default function CustomerStaticData({
               <Field label="Last Name" htmlFor="lastName">
                 <TextInput
                   id="lastName"
+                  dir="auto"
                   maxLength={MAX_LEN.lastName}
-                  placeholder="Last name"
+                  placeholder={t('Last name')}
                   value={form.lastName}
                   onChange={set('lastName')}
                 />
@@ -494,8 +504,9 @@ export default function CustomerStaticData({
               <Field label="Company Regn No" htmlFor="companyRegnNo">
                 <TextInput
                   id="companyRegnNo"
+                dir="ltr"
                   maxLength={MAX_LEN.companyRegnNo}
-                  placeholder="For corporate customers"
+                  placeholder={t('For corporate customers')}
                   value={form.companyRegnNo}
                   onChange={set('companyRegnNo')}
                 />
@@ -542,7 +553,7 @@ export default function CustomerStaticData({
         <div className="grid gap-5 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
           <div>
             <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-soft">
-              Search
+              {t('Search')}
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <button
@@ -553,7 +564,7 @@ export default function CustomerStaticData({
                 <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                   <path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z" />
                 </svg>
-                Customer
+                {t('Customer')}
               </button>
 
               <button
@@ -567,7 +578,7 @@ export default function CustomerStaticData({
                 }
                 className={secondaryBtn}
               >
-                Account
+                {t('Account')}
               </button>
 
               <button
@@ -581,7 +592,7 @@ export default function CustomerStaticData({
                 }
                 className={secondaryBtn}
               >
-                ATM Cards
+                {t('ATM Cards')}
               </button>
 
               {/* cmdMerchant — gated on ~81 alone (search.bas:89/257/432,
@@ -598,7 +609,7 @@ export default function CustomerStaticData({
                 }
                 className={secondaryBtn}
               >
-                Merchant
+                {t('Merchant')}
               </button>
 
               <button
@@ -607,9 +618,9 @@ export default function CustomerStaticData({
                   setForm(initialForm)
                   setError('')
                 }}
-                className="ml-auto rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft shadow-xs transition-colors hover:bg-surface-muted"
+                className="ms-auto rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft shadow-xs transition-colors hover:bg-surface-muted"
               >
-                Reset
+                {t('Reset')}
               </button>
             </div>
           </div>
@@ -617,7 +628,7 @@ export default function CustomerStaticData({
           {SHOW_ENQUIRIES_SERVICES && (hasAuthority('~87') || SHOW_DORMANT_FACILITIES) && (
             <div className="border-t border-edge-soft pt-4">
               <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-soft">
-                Enquiries &amp; Services
+                {t('Enquiries & Services')}
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 {/* cmdHistoricalStmt: opens frmHistStmt with tag = "D" and
@@ -627,10 +638,10 @@ export default function CustomerStaticData({
                   <button
                     type="button"
                     onClick={onDeletedAcctStatement}
-                    title="Historical statement for deleted accounts"
+                    title={t('Historical statement for deleted accounts')}
                     className={secondaryBtn}
                   >
-                    Historical Statement — Deleted A/c
+                    {t('Historical Statement — Deleted A/c')}
                   </button>
                 )}
                 {SHOW_DORMANT_FACILITIES && (
@@ -638,19 +649,19 @@ export default function CustomerStaticData({
                     <button
                       type="button"
                       disabled={session.nameSearchAllowed !== '1'}
-                      title="Free-text customer name search"
+                      title={t('Free-text customer name search')}
                       className={secondaryBtn}
                     >
-                      Name Search
+                      {t('Name Search')}
                     </button>
                     <button
                       type="button"
                       disabled={enquiryOnlyUser}
                       onClick={handleBillEnquiry}
-                      title="Needs a customer number or account number"
+                      title={t('Needs a customer number or account number')}
                       className={secondaryBtn}
                     >
-                      Utility Bill Enquiry
+                      {t('Utility Bill Enquiry')}
                     </button>
                     {/* Deliberately DORMANT, like the button above it: the
                         legacy reaches frmSadadMain — and through it the SADAD
@@ -666,30 +677,30 @@ export default function CustomerStaticData({
                       title="Payments the branch has made through SADAD"
                       className={secondaryBtn}
                     >
-                      SADAD Transactions
+                      {t('SADAD Transactions')}
                     </button>
                     <button
                       type="button"
-                      title="Pension enquiry — prefills from ID / account number"
+                      title={t('Pension enquiry — prefills from ID / account number')}
                       className={secondaryBtn}
                     >
-                      Pension Enquiry
-                    </button>
-                    <button
-                      type="button"
-                      disabled={enquiryOnlyUser}
-                      title="Returned mail handling"
-                      className={secondaryBtn}
-                    >
-                      Returned Mail Handling
+                      {t('Pension Enquiry')}
                     </button>
                     <button
                       type="button"
                       disabled={enquiryOnlyUser}
-                      title="Status of customers opened through phone"
+                      title={t('Returned mail handling')}
                       className={secondaryBtn}
                     >
-                      Customer Opened Through Phone
+                      {t('Returned Mail Handling')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={enquiryOnlyUser}
+                      title={t('Status of customers opened through phone')}
+                      className={secondaryBtn}
+                    >
+                      {t('Customer Opened Through Phone')}
                     </button>
                   </>
                 )}

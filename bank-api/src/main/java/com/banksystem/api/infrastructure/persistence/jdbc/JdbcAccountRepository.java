@@ -1,5 +1,6 @@
 package com.banksystem.api.infrastructure.persistence.jdbc;
 
+import com.banksystem.api.infrastructure.language.RequestLanguage;
 import com.banksystem.api.domain.model.AccountSummary;
 import com.banksystem.api.domain.model.AcctUpdateHistoryEntry;
 import com.banksystem.api.domain.model.BlockedAmountBreakup;
@@ -108,12 +109,29 @@ public class JdbcAccountRepository implements AccountRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
     private final BankingDateProvider bankingDate;
+    private final RequestLanguage requestLanguage;
 
     public JdbcAccountRepository(
             @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
-            BankingDateProvider bankingDate) {
+            BankingDateProvider bankingDate,
+            RequestLanguage requestLanguage) {
         this.jdbc = jdbc;
         this.bankingDate = bankingDate;
+        this.requestLanguage = requestLanguage;
+    }
+
+    /**
+     * Resolves the {@code {name:alias}} placeholders below into the bilingual
+     * COALESCE for the language of the request being served.
+     *
+     * <p>stctltabXC and stctltabMM carry both an arabicName and an englishName
+     * for every currency and ledger, and these sub-selects used to prefer the
+     * ARABIC one unconditionally — so an English session read Arabic currency
+     * and ledger names on the account screens while every other lookup in the
+     * application read English.
+     */
+    private String localised(String sql) {
+        return requestLanguage.current().resolve(sql);
     }
 
     // ------------------------------------------------------------------
@@ -357,7 +375,7 @@ public class JdbcAccountRepository implements AccountRepository {
         // column values (the UI formats codes), except dormant which the
         // screen's Yes/No toggle needs as a word. Blank columns are omitted
         // so the screen keeps its current values for untouched fields.
-        List<Map<String, Object>> rows = jdbc.queryForList("""
+        List<Map<String, Object>> rows = jdbc.queryForList(localised("""
                 SELECT accStatus, samaAccStatus, accStatusChangeReason,
                        statementFreq, statementDay, inactiveAccFlag,
                        intApplication, crIntRate, drIntRate, payAccNo,
@@ -376,11 +394,11 @@ public class JdbcAccountRepository implements AccountRepository {
                         FROM stcusttab c
                         WHERE  c.BankingDate = :bankingDate
                           AND  c.custNo = SUBSTR(s.accNo, 6, 7)) AS customerName,
-                       (SELECT COALESCE(NULLIF(TRIM(x.arabicName), ''), x.englishName)
+                       (SELECT {name:x}
                         FROM stctltabXC x
                         WHERE  x.BankingDate = :bankingDate
                           AND  x.currCode = SUBSTR(s.accNo, 1, 2)) AS currencyName,
-                       (SELECT COALESCE(NULLIF(TRIM(m.arabicName), ''), m.englishName)
+                       (SELECT {name:m}
                         FROM stctltabMM m
                         WHERE  m.BankingDate = :bankingDate
                           AND  m.ledgerCode = SUBSTR(s.accNo, 3, 3)) AS ledgerName
@@ -389,7 +407,7 @@ public class JdbcAccountRepository implements AccountRepository {
                   AND  s.accNo = :accNo
                   AND  (s.datetime_bigdata = :dateTime OR s.datetime_bigdata = :dateTimeIso)
                 FETCH FIRST 1 ROWS ONLY
-                """,
+                """),
                 Map.of("bankingDate", bankingDate.bankingDate(),
                         "accNo", accNo, "dateTime", dateTime,
                         "dateTimeIso", BmForms.bmToIso(dateTime)));
@@ -454,7 +472,7 @@ public class JdbcAccountRepository implements AccountRepository {
         // supervisor comments — the service-33 update trail) are not part of the
         // current master and are left for the screen. Blank columns are omitted
         // so untouched fields keep their existing values.
-        List<Map<String, Object>> rows = jdbc.queryForList("""
+        List<Map<String, Object>> rows = jdbc.queryForList(localised("""
                 SELECT g.ledgerCode, g.accDesc, g.iban, g.branchCode,
                        g.accStatus, g.samaAccStatus, g.inactiveAccFlag,
                        g.statementFrequency, g.statementDay,
@@ -465,7 +483,7 @@ public class JdbcAccountRepository implements AccountRepository {
                        g.accOpenDate, g.lastTransDate, g.lastAmendmentDate,
                        -- Service 33 prefers the ENGLISH short name (cbbranch2.c:7478).
                        COALESCE(NULLIF(TRIM(c.eShortName), ''), c.aShortName) AS customerName,
-                       (SELECT COALESCE(NULLIF(TRIM(m.arabicName), ''), m.englishName)
+                       (SELECT {name:m}
                         FROM stctltabMM m
                         WHERE m.BankingDate = :bankingDate
                           AND m.ledgerCode = g.ledgerCode) AS ledgerName,
@@ -482,7 +500,7 @@ public class JdbcAccountRepository implements AccountRepository {
                        -- (this statement has no parameters).
                        SUBSTR(g.accNo, 1, 2) AS currencyCode,
                        SUBSTR(g.accNo, 13, 2) AS subAccount,
-                       (SELECT COALESCE(NULLIF(TRIM(x.arabicName), ''), x.englishName)
+                       (SELECT {name:x}
                         FROM stctltabXC x
                         WHERE x.BankingDate = :bankingDate
                           AND x.currCode = SUBSTR(g.accNo, 1, 2)) AS currencyName
@@ -493,7 +511,7 @@ public class JdbcAccountRepository implements AccountRepository {
                 WHERE  g.BankingDate = :bankingDate
                   AND  g.accNo = :accNo
                 FETCH FIRST 1 ROWS ONLY
-                """,
+                """),
                 // gld0data is keyed by the 14-char actual account (same as the
                 // blocked-amount header); actualAccOf converts a 13-char BM input
                 // defensively and passes a 14-char actual through.

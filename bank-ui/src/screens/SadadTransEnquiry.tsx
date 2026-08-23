@@ -7,6 +7,7 @@ import { Field, TextInput } from '../components/fields.tsx'
 import { api } from '../api.ts'
 import { formatAmount, formatTimestamp } from '../schema/helpers.ts'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmSadadTransEnq.frm ("SADAD Transaction enquiry"), reached in
 // the legacy through frmSadadMain from the customer search screen — which is why
 // it hangs off Customer Service here.
@@ -119,7 +120,7 @@ export default function SadadTransEnquiry({ onExit }: { onExit: () => void }) {
             disabled={fetching}
             className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong disabled:cursor-not-allowed disabled:bg-faint"
           >
-            {fetching ? 'Fetching…' : 'Go'}
+            {fetching ? t('Fetching…') : t('Go')}
           </button>
         </div>
       </div>

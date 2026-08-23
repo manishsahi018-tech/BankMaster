@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { SectionCard, Field, ReadOnlyInput } from './fields.tsx'
 import { BackArrow, SearchIcon } from './legacyForm.tsx'
+import { useT } from '../i18n/index.ts'
 
 // Shared layout for read-only detail screens (stop cheque, standing order,
 // card, transaction, transfer, signatory details). Each legacy detail form
@@ -41,6 +42,13 @@ export interface DetailButton {
 const isBack = (label: string) => label === 'Return' || label === 'Previous Page'
 const isEnquiry = (label: string) => label === 'Enquiry'
 
+/**
+ * As in GridScreen, the strings a detail screen configures are translated here
+ * so `label` can stay English and keep doubling as the icon dispatch key. The
+ * section titles and field labels below go through SectionCard and Field,
+ * which translate their own props.
+ */
+
 const btnKinds = {
   primary:
     'inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong',
@@ -67,12 +75,13 @@ export default function DetailScreen({
   sections: DetailSection[]
   buttons: DetailButton[]
 }) {
+  const { t } = useT()
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <div className="mb-6">
-        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{kicker}</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
+        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{t(kicker)}</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{t(title)}</h1>
+        {subtitle && <p className="mt-1 text-sm text-muted">{t(subtitle)}</p>}
       </div>
 
       {banner}
@@ -81,7 +90,7 @@ export default function DetailScreen({
         <div className="mb-5 flex flex-wrap items-center gap-x-8 gap-y-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
           {chips.map(({ label, value }) => (
             <div key={label}>
-              <p className="text-xs text-muted-soft">{label}</p>
+              <p className="text-xs text-muted-soft">{t(label)}</p>
               <p dir="auto" className="mt-0.5 text-sm font-semibold text-ink">
                 {value || '—'}
               </p>
@@ -120,12 +129,12 @@ export default function DetailScreen({
               type="button"
               onClick={btn.onClick}
               className={`${btnKinds[btn.kind ?? 'secondary']} ${
-                btn.kind === 'danger' ? 'ml-auto' : ''
+                btn.kind === 'danger' ? 'ms-auto' : ''
               } ${isBack(btn.label) || isEnquiry(btn.label) ? 'inline-flex items-center gap-2' : ''}`}
             >
               {isBack(btn.label) && <BackArrow />}
               {isEnquiry(btn.label) && <SearchIcon />}
-              {btn.label}
+              {t(btn.label)}
             </button>
           ))}
         </div>

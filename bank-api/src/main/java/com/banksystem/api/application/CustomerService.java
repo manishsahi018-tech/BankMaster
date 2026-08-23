@@ -4,6 +4,7 @@ import com.banksystem.api.domain.model.CustUpdateHistoryEntry;
 import com.banksystem.api.domain.model.CustomerProfile;
 import com.banksystem.api.domain.model.CustomerSearchCriteria;
 import com.banksystem.api.domain.model.CustomerSummary;
+import com.banksystem.api.domain.model.EssentialDocuments;
 import com.banksystem.api.domain.model.HeirEntry;
 import com.banksystem.api.domain.model.JointHolderDetail;
 import com.banksystem.api.domain.model.JointHolderEntry;
@@ -101,8 +102,10 @@ public class CustomerService {
         return customers.acctInfo(custNo);
     }
 
-    public java.util.List<String> requiredDocuments(String custNo) {
-        return customers.requiredDocuments(custNo);
+    /** frmDocuments — required + supplied documents. {@code asOfDateTime} null
+     *  reads the live customer record, otherwise the stcustlog snapshot. */
+    public EssentialDocuments documents(String custNo, String asOfDateTime) {
+        return customers.documents(custNo, asOfDateTime);
     }
 
     public PagedResult<CustUpdateHistoryEntry> updateHistory(String custNo, int page) {

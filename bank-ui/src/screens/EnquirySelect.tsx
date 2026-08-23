@@ -6,6 +6,7 @@ import { codeLabel } from '../codes.ts'
 import { PAGE_SIZE, Pager } from '../components/GridScreen.tsx'
 import { SearchIcon } from '../components/legacyForm.tsx'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmEnquirySelect.frm ("Enquiry Select Screen").
 // Column keys match the recvSearchMsg.details fields so the backend
 // response can be mapped straight onto rows later.
@@ -91,30 +92,35 @@ export default function EnquirySelect({
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="mb-6">
         <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">
-          Enquiry Select Screen
+          {t('Enquiry Select Screen')}
         </p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
-          Search Results
+          {t('Search Results')}
         </h1>
         <p className="mt-1 text-sm text-muted">
           {rows.length > 1
-            ? 'The search resulted in several matches — please select one.'
-            : 'Select the match to continue.'}
+            ? t('The search resulted in several matches — please select one.')
+            : t('Select the match to continue.')}
         </p>
       </div>
 
       <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
-        <span className="text-sm font-medium text-ink-soft">Search Criteria</span>
+        <span className="text-sm font-medium text-ink-soft">{t('Search Criteria')}</span>
         <span className="rounded-lg bg-primary-soft px-3 py-1.5 text-sm font-medium text-primary-ink">
-          {criteria.label}
+          {t(criteria.label)}
         </span>
         <input
           readOnly
           value={criteria.value}
           className="w-56 cursor-default rounded-lg border border-edge bg-surface-muted px-3 py-1.5 text-sm text-muted focus:outline-none"
         />
-        <span className="ml-auto text-xs text-muted-soft">
-          {rows.length} match{rows.length === 1 ? '' : 'es'}
+        <span className="ms-auto text-xs text-muted-soft">
+          {/* Two whole phrases rather than an English "-es" glued on: Arabic
+              does not pluralise by suffix, and the count is a Latin run that
+              has to stay out of the translated text. */}
+          {rows.length === 1
+            ? t('{count} match', { count: rows.length })
+            : t('{count} matches', { count: rows.length })}
           {incomplete && '+'}
         </span>
       </div>
@@ -134,13 +140,13 @@ export default function EnquirySelect({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] border-collapse text-sm">
             <thead>
-              <tr className="border-b border-edge bg-surface-muted text-left">
+              <tr className="border-b border-edge bg-surface-muted text-start">
                 {COLUMNS.map((col) => (
                   <th
                     key={col.key}
                     className="whitespace-nowrap px-3.5 py-3 text-xs font-semibold uppercase tracking-wide text-muted"
                   >
-                    {col.label}
+                    {t(col.label)}
                   </th>
                 ))}
               </tr>
@@ -149,7 +155,7 @@ export default function EnquirySelect({
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={COLUMNS.length} className="px-4 py-12 text-center text-muted-soft">
-                    No matches found.
+                    {t('No matches found.')}
                   </td>
                 </tr>
               )}
@@ -211,7 +217,7 @@ export default function EnquirySelect({
           className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
           <SearchIcon />
-          Enquiry
+          {t('Enquiry')}
         </button>
 
         {/* Hidden for enquiry-only (write actions: create / modify customer). */}
@@ -232,7 +238,7 @@ export default function EnquirySelect({
               }
               className={secondaryBtn}
             >
-              New Customer
+              {t('New Customer')}
             </button>
 
             <button
@@ -241,29 +247,29 @@ export default function EnquirySelect({
               title={hasAuthority('~01') ? undefined : 'Requires customer-update authority (~01)'}
               className={secondaryBtn}
             >
-              Update Customer
+              {t('Update Customer')}
             </button>
           </>
         )}
 
         <button type="button" onClick={handleHistory} className={secondaryBtn}>
-          Customer Update History
+          {t('Customer Update History')}
         </button>
 
         {SHOW_DORMANT_FACILITIES && (
           <>
-            <button type="button" className={secondaryBtn}>Telephone Pin</button>
-            <button type="button" className={secondaryBtn}>T-Pin History</button>
-            <button type="button" className={secondaryBtn}>Register E-Statement</button>
+            <button type="button" className={secondaryBtn}>{t('Telephone Pin')}</button>
+            <button type="button" className={secondaryBtn}>{t('T-Pin History')}</button>
+            <button type="button" className={secondaryBtn}>{t('Register E-Statement')}</button>
           </>
         )}
 
         <button
           type="button"
           onClick={onBack}
-          className="ml-auto rounded-lg border border-danger/30 bg-surface px-4 py-2.5 text-sm font-medium text-danger shadow-xs transition-colors hover:bg-danger-soft"
+          className="ms-auto rounded-lg border border-danger/30 bg-surface px-4 py-2.5 text-sm font-medium text-danger shadow-xs transition-colors hover:bg-danger-soft"
         >
-          Cancel
+          {t('Cancel')}
         </button>
       </div>
     </main>

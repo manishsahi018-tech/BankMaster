@@ -11,6 +11,7 @@ import {
   PackageFeesAndMemos,
 } from './profilePageFields.tsx'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmIndividualSaudiAcctInfo.frm ("Individual Saudi Customer
 // Account Details") — page 2 of the Individual Saudi profile — as a READ-ONLY
 // enquiry, served by api.customerAcctInfo.
@@ -55,20 +56,20 @@ export default function IndividualSaudiAcctInfo({
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">
-            Individual — Saudi National
+            {t('Individual — Saudi National')}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">Account Details</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{t('Account Details')}</h1>
           <p className="mt-1 text-sm text-muted">
-            Page 2 of 2 — employment, fees, account facilities and signature.
+            {t('Page 2 of 2 — employment, fees, account facilities and signature.')}
           </p>
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
-            Customer {customer?.custNo}
+            {t('Customer {custNo}', { custNo: customer?.custNo ?? '' })}
           </span>
           {(mainCategory || subCategory) && (
             <p className="text-xs text-muted">
-              <span className="font-medium text-ink-soft">Category</span> {mainCategory}
+              <span className="font-medium text-ink-soft">{t('Category')}</span> {mainCategory}
               {subCategory ? ` · ${subCategory}` : ''}
             </p>
           )}
@@ -93,10 +94,10 @@ export default function IndividualSaudiAcctInfo({
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
           <PrevPageButton onClick={onPrevPage} />
           <button type="button" onClick={onDocuments} className={btnKinds.secondary}>
-            Documents
+            {t('Documents')}
           </button>
-          <button type="button" onClick={onCancel} className={`${btnKinds.danger} ml-auto`}>
-            Cancel
+          <button type="button" onClick={onCancel} className={`${btnKinds.danger} ms-auto`}>
+            {t('Cancel')}
           </button>
         </div>
       </div>

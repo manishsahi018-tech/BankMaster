@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useToast } from './Toast.tsx'
 import { BackArrow, SearchIcon } from './legacyForm.tsx'
+import { useT } from '../i18n/index.ts'
 
 // Shared layout for the legacy MSFlexGrid screens (account grid, histories,
 // cheque book / standing order / stop cheque grids). Each legacy grid form is
@@ -61,6 +62,17 @@ interface GridScreenProps {
 const isBack = (label: string) => label === 'Return' || label === 'Previous Page'
 const isEnquiry = (label: string) => label === 'Enquiry'
 
+/**
+ * Every string a grid screen hands us is translated HERE, not by the ~30
+ * screens that configure one.
+ *
+ * That is what keeps the two rules above working. `label` doubles as the
+ * dispatch key — 'Return' picks up the back arrow, 'Enquiry' the magnifier —
+ * so a screen passing an already-translated label would silently lose its
+ * icon in Arabic. Translating at the point of render leaves the config in
+ * English, which is also the key the dictionary is written against.
+ */
+
 const btnKinds = {
   primary:
     'inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:bg-faint',
@@ -100,6 +112,7 @@ export function Pager({
   hasMore?: boolean
   onMore?: () => void
 }) {
+  const { t } = useT()
   const loadedPages = Math.ceil(total / PAGE_SIZE)
   const canFetchMore = hasMore && !!onMore
   if (loadedPages <= 1 && !canFetchMore) return null
@@ -123,19 +136,26 @@ export function Pager({
   return (
     <div className="flex items-center justify-between gap-3 border-t border-edge px-4 py-3">
       <span className="text-xs text-muted">
-        Showing {from}–{to} of {total}
+        {t('Showing {from}–{to} of {total}', { from, to, total })}
         {canFetchMore && '+'}
       </span>
       <div className="flex items-center gap-2">
-        <button type="button" disabled={page === 0} onClick={() => onPage(page - 1)} className={pagerBtn}>
-          ‹ Previous
+        <button
+          type="button"
+          disabled={page === 0}
+          onClick={() => onPage(page - 1)}
+          className={`${pagerBtn} inline-flex items-center gap-1`}
+        >
+          <span aria-hidden className="rtl:-scale-x-100">‹</span>
+          {t('Previous')}
         </button>
         <span className="text-xs tabular-nums text-muted">
-          Page {page + 1} of {loadedPages}
+          {t('Page {page} of {pages}', { page: page + 1, pages: loadedPages })}
           {canFetchMore && '+'}
         </span>
-        <button type="button" disabled={atEnd} onClick={next} className={pagerBtn}>
-          Next ›
+        <button type="button" disabled={atEnd} onClick={next} className={`${pagerBtn} inline-flex items-center gap-1`}>
+          {t('Next')}
+          <span aria-hidden className="rtl:-scale-x-100">›</span>
         </button>
       </div>
     </div>
@@ -155,6 +175,7 @@ export default function GridScreen({
   hasMore = false,
   onMore,
 }: GridScreenProps) {
+  const { t } = useT()
   const [selected, setSelected] = useState(0)
   const [page, setPage] = useState(0)
   // Grid messages (empty selection, "no more matches", "to be built") surface as
@@ -175,16 +196,16 @@ export default function GridScreen({
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="mb-6">
-        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{kicker}</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
+        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{t(kicker)}</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{t(title)}</h1>
+        {subtitle && <p className="mt-1 text-sm text-muted">{t(subtitle)}</p>}
       </div>
 
       {header.length > 0 && (
         <div className="mb-5 flex flex-wrap items-center gap-x-8 gap-y-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
           {header.map(({ label, value }) => (
             <div key={label}>
-              <p className="text-xs text-muted-soft">{label}</p>
+              <p className="text-xs text-muted-soft">{t(label)}</p>
               <p dir="auto" className="mt-0.5 text-sm font-semibold text-ink">
                 {value || '—'}
               </p>
@@ -198,15 +219,15 @@ export default function GridScreen({
         <div className="overflow-x-auto">
           <table className={`w-full ${minWidth} border-collapse text-sm`}>
             <thead>
-              <tr className="border-b border-edge bg-surface-muted text-left">
+              <tr className="border-b border-edge bg-surface-muted text-start">
                 {columns.map((col) => (
                   <th
                     key={col.key}
                     className={`whitespace-nowrap px-3.5 py-3 text-xs font-semibold uppercase tracking-wide text-muted ${
-                      col.align === 'right' ? 'text-right' : ''
+                      col.align === 'right' ? 'text-end' : ''
                     }`}
                   >
-                    {col.label}
+                    {t(col.label)}
                   </th>
                 ))}
               </tr>
@@ -215,7 +236,7 @@ export default function GridScreen({
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={columns.length} className="px-4 py-14 text-center text-muted-soft">
-                    {emptyText}
+                    {t(emptyText)}
                   </td>
                 </tr>
               )}
@@ -237,13 +258,15 @@ export default function GridScreen({
                       key={col.key}
                       dir="auto"
                       className={`whitespace-nowrap px-3.5 py-2.5 ${
-                        col.align === 'right' ? 'text-right tabular-nums' : ''
+                        col.align === 'right' ? 'text-end tabular-nums' : ''
                       } ${ci === 0 ? 'font-semibold text-primary-ink' : 'text-ink-soft'} ${
                         // Accent bar down the left edge of the clicked row. It
                         // sits on the first cell, not the <tr>: with
                         // border-collapse a row's box-shadow is not painted.
+                        // The accent bar hangs off the row's START edge, so
+                        // it moves to the right-hand side under RTL.
                         selected === i && ci === 0
-                          ? 'shadow-[inset_3px_0_0_0_var(--primary)]'
+                          ? 'shadow-[inset_3px_0_0_0_var(--primary)] rtl:shadow-[inset_-3px_0_0_0_var(--primary)]'
                           : ''
                       } ${selected === i && ci !== 0 ? 'text-ink' : ''}`}
                     >
@@ -273,15 +296,15 @@ export default function GridScreen({
                 key={btn.label}
                 type="button"
                 disabled={btn.disabled}
-                title={btn.title}
+                title={btn.title && t(btn.title)}
                 onClick={() => btn.onClick?.({ row: selectedRow, rows, notify })}
                 className={`${btnKinds[btn.kind ?? 'secondary']} ${
-                  btn.alignEnd ? 'ml-auto' : ''
+                  btn.alignEnd ? 'ms-auto' : ''
                 } ${isBack(btn.label) || isEnquiry(btn.label) ? 'inline-flex items-center gap-2' : ''}`}
               >
                 {isBack(btn.label) && <BackArrow />}
                 {isEnquiry(btn.label) && <SearchIcon />}
-                {btn.label}
+                {t(btn.label)}
               </button>
             ))}
           </div>

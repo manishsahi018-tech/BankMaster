@@ -6,6 +6,7 @@ import com.banksystem.api.domain.model.CustUpdateHistoryEntry;
 import com.banksystem.api.domain.model.CustomerProfile;
 import com.banksystem.api.domain.model.CustomerSearchCriteria;
 import com.banksystem.api.domain.model.CustomerSummary;
+import com.banksystem.api.domain.model.EssentialDocuments;
 import com.banksystem.api.domain.model.HeirEntry;
 import com.banksystem.api.domain.model.IdDocument;
 import com.banksystem.api.domain.model.JointHolderDetail;
@@ -871,15 +872,29 @@ public class JdbcCustomerRepository implements CustomerRepository {
      * the saving row, anything else the other row; later rows overwrite
      * earlier ones like the legacy strncpy. The C's 11-char info string
      * is currency(2)+ledger(3)+accStatus(2)+statementFreq(2)+
-     * checkBook(1)+droppedAcc(1); droppedAcc has no slot in the enquiry
-     * model, and the flag slots carry "1" for row-found (the screen's
-     * facility check-box). Returns the 14 facility slots in
+     * checkBook(1)+droppedAcc(1); droppedAcc has no slot of its own in
+     * the enquiry model and is consumed here instead — a dropped row is
+     * skipped, as the legacy reads it — and the flag slots carry "1" for
+     * row-found (the screen's facility check-box). Returns the 14 facility slots in
      * JuristicAccountInfo order; blanks on any failure — the C ignores
      * acclog open errors too.
      */
     private String[] acctFacilityRows(String branchCode, String createdUserId, String createdDateTime) {
         String[] slots = new String[14];
         Arrays.fill(slots, "");
+        // NORMALISE THE STAMP FIRST. stcusttab.createdDateTime is typed
+        // Timestamp in the workbook while stacclog.dateTime is a 14-char
+        // STRING, so a view that hands the driver an ISO timestamp for the
+        // customer leaves both bindings below in ISO form — the raw one
+        // because that is what arrived, the "Iso" one because bmToIso passes
+        // non-BM input straight through — and neither can equal a 14-digit
+        // string. Every facility row then goes missing and all three rows on
+        // the page read "Not requested", for every customer, however many
+        // accounts the session actually opened. juristicAccountInfo already
+        // guarded this at its call site (isoToBmTimestamp on the column); doing
+        // it HERE covers both callers, and is a no-op when the value is already
+        // the 14-digit form.
+        String bmDateTime = BmForms.isoToBmTimestamp(trim(createdDateTime));
         try {
             List<String[]> rows = jdbc.query("""
                     SELECT accNo, accStatus, statementFreq, checkBook, droppedAcc
@@ -892,9 +907,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     Map.of("bankingDate", bankingDate.bankingDate(),
                             "branchCode", branchCode == null ? "" : branchCode,
                             "userId", createdUserId == null ? "" : createdUserId,
-                            "dateTime", createdDateTime == null ? "" : createdDateTime,
-                            "dateTimeIso", BmForms.bmToIso(
-                                    createdDateTime == null ? "" : createdDateTime)),
+                            "dateTime", bmDateTime,
+                            "dateTimeIso", BmForms.bmToIso(bmDateTime)),
                     (rs, i) -> new String[] {
                             rs.getString("accNo"), rs.getString("accStatus"),
                             rs.getString("statementFreq"), rs.getString("checkBook"),
@@ -906,6 +920,13 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 String status = trim(r[1]);
                 String stmtFreq = trim(r[2]);
                 String chequeBook = trim(r[3]);
+                // A DROPPED row is not a facility: the legacy tests the info
+                // string's last byte and leaves the frame on "No" when it is
+                // "1" (globalFunctions.bas:6654, 6715, 6771 — droppedAcc is
+                // position 11 of the 11-char string getAcctInfo builds).
+                if ("1".equals(trim(r[4]))) {
+                    continue;
+                }
                 if ("008".equals(ledger)) {         // current account (cbothers.c:7244/7287)
                     slots[0] = "1";
                     slots[1] = currency;
@@ -926,7 +947,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 }
             }
         } catch (DataAccessException e) {
-            log.warn("stacclog unavailable; juristic account-facility rows left blank", e);
+            log.warn("stacclog unavailable; account-facility rows left blank", e);
             Arrays.fill(slots, "");
         }
         return slots;
@@ -1473,6 +1494,18 @@ public class JdbcCustomerRepository implements CustomerRepository {
      * one point read on '01' rather than a join — an expatriate with no abroad
      * address simply has no such row, and the frame comes back empty, which is
      * what the legacy shows too.
+     *
+     * <p>{@code addressNo = '0000'} is part of that filter and not optional:
+     * the C skips every row whose addressNo is not "0000" BEFORE it switches on
+     * the type ({@code if (strncmp(addrTabRec.addressNo, "0000", 4)) continue;},
+     * cbothers.c:3117). addressNo is key part 4 and numbers the PARTY the row
+     * belongs to — "0000" the account holder, "0001"+ the owners, heirs and
+     * references hanging off the same custNo. Without it this read is
+     * {@code FETCH FIRST 1 ROWS ONLY} over an unordered set and can return a
+     * related party's abroad address — or a sparsely filled one, which is how
+     * it shows up: Home Address, Phone (Res.) and Country blank on a customer
+     * who demonstrably has them. The juristic twin has always carried the
+     * filter (see {@code juristicAccountInfo}); this one had not.
      */
     private Map<String, String> homeCountryAddress(String custNo) {
         List<Map<String, String>> rows = jdbc.query("""
@@ -1483,7 +1516,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 FROM   staddrtab
                 WHERE  BankingDate = :bankingDate
                   AND  custNo = :custNo
-                  AND  addressType = '01'
+                  AND  addressType = '01' AND addressNo = '0000'
                 FETCH FIRST 1 ROWS ONLY
                 """,
                 Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
@@ -1543,6 +1576,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 FROM   stidtab
                 WHERE  BankingDate = :bankingDate
                   AND  custNo = :custNo
+                  AND  idCategory = 'C'
                   AND  idType IN ('M', 'S', 'A')
                 """,
                 Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
@@ -1580,30 +1614,63 @@ public class JdbcCustomerRepository implements CustomerRepository {
     }
 
     @Override
-    public List<String> requiredDocuments(String custNo) {
-        // Customer's SAMA category from stcusttab, then the required document
-        // codes from stctltabDC (documnetNo1..20) for that main+sub category
-        // (frmDocuments "Documents List for Sub Category").
+    public EssentialDocuments documents(String custNo, String asOfDateTime) {
+        // The customer's own row first: it carries BOTH the SAMA category that
+        // selects the required list AND the documents the customer actually
+        // supplied. The legacy reads all three off the same record — the C
+        // server ships custTabRec.documentsSupplied / .documentOther in the
+        // detail message (cbothers.c:3168-3169) and the form renders them into
+        // lstSelectedDoc / txtDocOthers (frmDocuments.frm:376-392).
         //
-        // Codes only, because there is nothing here to resolve them against:
-        // stctltabDC carries the mapping and no name columns, and the legacy
-        // looked names up in a documentinfo table in the client's LOCAL Access
-        // database (frmDocuments.frm:337), which has no archival counterpart.
-        // The UI therefore holds the names; note that its map is incomplete —
-        // see the comment on DOCUMENT_NAMES in EssentialDocuments.tsx.
-        List<String[]> cat = jdbc.query("""
-                SELECT samaMainCategory, samaSubCategory
-                FROM   stcusttab
-                WHERE  BankingDate = :bankingDate
-                  AND  custNo = :custNo
-                FETCH FIRST 1 ROWS ONLY
-                """,
-                Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
-                (rs, i) -> new String[] {trim(rs.getString("samaMainCategory")),
-                        trim(rs.getString("samaSubCategory"))});
-        if (cat.isEmpty()) {
-            return List.of();
+        // History mode reads the stcustlog snapshot instead, keyed the same way
+        // profileAsOf keys it — the legacy's custHistoryAction path is fed by
+        // processIndividual*PendingDetail off custLogRec (cbothers.c:3703-3704),
+        // so the categories and the supplied set are both the ones in force at
+        // that event, not today's.
+        boolean asOf = asOfDateTime != null && !asOfDateTime.isBlank();
+        Map<String, Object> params = new java.util.HashMap<>();
+        params.put("bankingDate", bankingDate.bankingDate());
+        params.put("custNo", padCust(custNo));
+        String sql;
+        if (asOf) {
+            // Bound in both forms for the same reason profileAsOf does it: the
+            // history grid may hand back a normalised ISO timestamp when the
+            // view types datetime_bigdata as a timestamp rather than a string.
+            params.put("dateTime", trim(asOfDateTime));
+            params.put("dateTimeIso", BmForms.bmToIso(trim(asOfDateTime)));
+            sql = """
+                    SELECT samaMainCategory, samaSubCategory, documentsSupplied, documentOther
+                    FROM   stcustlog
+                    WHERE  BankingDate = :bankingDate
+                      AND  custNo = :custNo
+                      AND  (datetime_bigdata = :dateTime OR datetime_bigdata = :dateTimeIso)
+                    FETCH FIRST 1 ROWS ONLY
+                    """;
+        } else {
+            sql = """
+                    SELECT samaMainCategory, samaSubCategory, documentsSupplied, documentOther
+                    FROM   stcusttab
+                    WHERE  BankingDate = :bankingDate
+                      AND  custNo = :custNo
+                    FETCH FIRST 1 ROWS ONLY
+                    """;
         }
+        List<String[]> cust = jdbc.query(sql, params,
+                (rs, i) -> new String[] {trim(rs.getString("samaMainCategory")),
+                        trim(rs.getString("samaSubCategory")),
+                        rs.getString("documentsSupplied"),
+                        trim(rs.getString("documentOther"))});
+        if (cust.isEmpty()) {
+            return EssentialDocuments.EMPTY;
+        }
+        String[] row = cust.get(0);
+        List<String> supplied = EssentialDocuments.splitCodes(row[2]);
+
+        // The required list for that category. Codes only — stctltabDC carries
+        // the mapping and no name columns, and the legacy resolved names in a
+        // documentinfo table in the client's LOCAL Access database
+        // (frmDocuments.frm:337), which has no archival counterpart. The UI
+        // resolves them against the stctltab 'DT' code set.
         List<List<String>> rows = jdbc.query("""
                 SELECT documnetNo1, documnetNo2, documnetNo3, documnetNo4, documnetNo5,
                        documnetNo6, documnetNo7, documnetNo8, documnetNo9, documnetNo10,
@@ -1615,18 +1682,23 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 FETCH FIRST 1 ROWS ONLY
                 """,
                 Map.of("bankingDate", bankingDate.bankingDate(),
-                        "main", cat.get(0)[0], "sub", cat.get(0)[1]),
+                        "main", row[0], "sub", row[1]),
                 (rs, i) -> {
                     List<String> docs = new java.util.ArrayList<>();
                     for (int n = 1; n <= 20; n++) {
                         String code = trim(rs.getString("documnetNo" + n));
-                        if (!code.isEmpty()) {
-                            docs.add(code);
+                        if (code.isEmpty()) {
+                            // The legacy walks a packed string and stops at the
+                            // first blank triplet (frmDocuments.frm:331), so a
+                            // gap ends the list rather than being skipped over.
+                            break;
                         }
+                        docs.add(code);
                     }
                     return docs;
                 });
-        return rows.isEmpty() ? List.of() : rows.get(0);
+        return new EssentialDocuments(
+                rows.isEmpty() ? List.of() : rows.get(0), supplied, row[3]);
     }
 
     private static String trim(String s) {

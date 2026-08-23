@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useT } from '../i18n/index.ts'
 
 /**
  * The persistent "this screen has no source to read" notice at the top of a
@@ -28,12 +29,13 @@ export default function SourceBanner({
   title: string
   children: ReactNode
 }) {
+  const { t } = useT()
   return (
     <div
       className="mb-5 rounded-2xl border border-danger/40 bg-danger-soft px-4 py-3 text-sm text-danger sm:px-5"
       role="status"
     >
-      <p className="font-semibold">{title}</p>
+      <p className="font-semibold">{t(title)}</p>
       <div className="mt-0.5 space-y-1">{children}</div>
     </div>
   )

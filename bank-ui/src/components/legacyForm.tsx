@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useT } from '../i18n/index.ts'
 
 // Shared primitives for the customer profile screens rebuilt from the legacy
 // VB6 forms (frmIndividualSaudi, frmIndividualOthers, frmJuristicMain).
@@ -24,8 +25,28 @@ export const isFirst = (code: unknown) => {
 export const labelCls = 'mb-1.5 block text-sm font-medium text-ink-soft'
 
 const boxBase =
-  'block w-full rounded-lg border border-edge-strong bg-surface px-3 py-2 text-sm text-ink ' +
+  'block rounded-lg border border-edge-strong bg-surface px-3 py-2 text-sm text-ink ' +
   'shadow-xs whitespace-pre-wrap break-words min-h-[2.375rem]'
+
+/**
+ * The box's own width, unless the caller set one.
+ *
+ * <p>`w-full` used to live in boxBase, which quietly beat every width a caller
+ * passed: Tailwind emits `.w-full` AFTER `.w-16` in the stylesheet, and for two
+ * utilities in the same layer the LATER rule wins no matter which order they
+ * appear in the class attribute. So `<RoText className="w-16" />` rendered
+ * full-width, and every phone/fax/mobile row came out as equal-width boxes
+ * instead of the legacy's narrow area code beside a wide number
+ * (frmIndividualOthers2.frm: area 375 twips vs number 1215).
+ *
+ * <p>Handing the caller's width priority by dropping the default is the fix
+ * that needs no `!important` and leaves all the boxes that pass no width
+ * exactly as they were. A pinned width also pins the flex basis — these boxes
+ * sit in `flex` rows, where the default `shrink` would let a long number squeeze
+ * the area code back down to nothing.
+ */
+const widthCls = (className: string) =>
+  /(^|\s)w-(?!full(\s|$))\S+/.test(className) ? 'shrink-0' : 'w-full'
 
 /**
  * A read-only value box styled like the form's text input.
@@ -51,7 +72,9 @@ export function RoText({
     <div
       dir={dir ?? 'auto'}
       title={text || undefined}
-      className={`${boxBase} ${muted ? 'border-edge bg-surface-muted text-muted' : ''} ${className}`}
+      className={`${boxBase} ${widthCls(className)} ${
+        muted ? 'border-edge bg-surface-muted text-muted' : ''
+      } ${className}`}
     >
       {text || ' '}
     </div>
@@ -71,14 +94,14 @@ export function RoCombo({
   const text = value == null ? '' : String(value)
   return (
     <div className={`relative ${className}`}>
-      <div dir={dir ?? 'auto'} title={text || undefined} className={`${boxBase} pr-9`}>
+      <div dir={dir ?? 'auto'} title={text || undefined} className={`${boxBase} w-full pe-9`}>
         {text || ' '}
       </div>
       <svg
         viewBox="0 0 20 20"
         fill="currentColor"
         aria-hidden
-        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft"
+        className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft"
       >
         <path
           fillRule="evenodd"
@@ -99,9 +122,10 @@ export function Field({
   children: ReactNode
   className?: string
 }) {
+  const { t } = useT()
   return (
     <div className={className}>
-      <span className={labelCls}>{label}</span>
+      <span className={labelCls}>{t(label)}</span>
       {children}
     </div>
   )
@@ -109,6 +133,7 @@ export function Field({
 
 /** Segmented choice, showing the stored option. Read-only: the legacy greys these. */
 export function Segmented({ options, selected }: { options: readonly string[]; selected: number }) {
+  const { t } = useT()
   return (
     <div className="inline-flex rounded-lg border border-edge-strong bg-surface p-0.5 shadow-xs">
       {options.map((opt, i) => (
@@ -118,7 +143,7 @@ export function Segmented({ options, selected }: { options: readonly string[]; s
             i === selected ? 'bg-primary text-white shadow-sm' : 'text-muted'
           }`}
         >
-          {opt}
+          {t(opt)}
         </span>
       ))}
     </div>
@@ -158,6 +183,7 @@ export function DateTriple({ value }: { value: unknown }) {
  * the group shows what was NOT selected, which is half of what a flag row says.
  */
 export function CheckBoxGroup({ flags }: { flags: { label: string; on: boolean }[] }) {
+  const { t } = useT()
   return (
     <div className="flex flex-wrap gap-x-6 gap-y-2.5">
       {flags.map(({ label, on }) => (
@@ -185,7 +211,7 @@ export function CheckBoxGroup({ flags }: { flags: { label: string; on: boolean }
               </svg>
             )}
           </span>
-          {label}
+          {t(label)}
         </span>
       ))}
     </div>
@@ -227,6 +253,7 @@ export function DocTable({
   showIssuedAt?: boolean
   extraHeader?: string
 }) {
+  const { t } = useT()
   const heads = [
     'Document',
     'Number',
@@ -240,13 +267,13 @@ export function DocTable({
     <div className="overflow-x-auto">
       <table className="w-full min-w-[860px] border-collapse text-sm">
         <thead>
-          <tr className="border-b border-edge text-left">
+          <tr className="border-b border-edge text-start">
             {heads.map((h) => (
               <th
                 key={h}
                 className="whitespace-nowrap px-2 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted"
               >
-                {h}
+                {t(h)}
               </th>
             ))}
           </tr>
@@ -256,7 +283,7 @@ export function DocTable({
             const hijri = isFirst(row.idDateType)
             return (
               <tr key={label} className="border-b border-edge-soft last:border-b-0">
-                <td className="whitespace-nowrap px-2 py-2.5 font-medium text-ink-soft">{label}</td>
+                <td className="whitespace-nowrap px-2 py-2.5 font-medium text-ink-soft">{t(label)}</td>
                 <td className="px-2 py-2.5">
                   <RoText value={row.idNo} className="w-40" />
                 </td>
@@ -302,13 +329,14 @@ const fmt = (v: unknown) => {
 
 /** The two read-only audit cards at the foot of every customer form. */
 export function AuditCards({ audit, openDateFallback }: { audit: AuditInfo; openDateFallback?: unknown }) {
+  const { t } = useT()
   const card = (title: string, cells: { label: string; value: unknown }[]) => (
     <div className="rounded-xl border border-edge bg-surface-muted p-4">
-      <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-soft">{title}</p>
+      <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-soft">{t(title)}</p>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
         {cells.map(({ label, value }) => (
           <div key={label}>
-            <p className="text-xs text-muted-soft">{label}</p>
+            <p className="text-xs text-muted-soft">{t(label)}</p>
             <p className="mt-0.5 text-sm font-medium text-ink-soft">{String(value ?? '') || '—'}</p>
           </div>
         ))}
@@ -374,17 +402,18 @@ export function EventGrid({
   /** how a raw archival date is rendered — the caller's schema helper */
   dateFormat: (v: unknown) => string
 }) {
+  const { t } = useT()
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[26rem] border-collapse text-sm">
         <thead>
-          <tr className="border-b border-edge bg-surface-muted text-left">
+          <tr className="border-b border-edge bg-surface-muted text-start">
             {['Date', 'Time', 'Action', 'User Id'].map((h) => (
               <th
                 key={h}
                 className="whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted"
               >
-                {h}
+                {t(h)}
               </th>
             ))}
           </tr>
@@ -393,7 +422,7 @@ export function EventGrid({
           {rows.length === 0 && (
             <tr>
               <td colSpan={4} className="px-3 py-8 text-center text-muted-soft">
-                No records.
+                {t('No records.')}
               </td>
             </tr>
           )}
@@ -408,7 +437,10 @@ export function EventGrid({
               <td className="whitespace-nowrap px-3 py-2 tabular-nums text-ink-soft">
                 {formatHhmmss(r.time)}
               </td>
-              <td className="px-3 py-2 font-medium text-ink">{r.action}</td>
+              {/* The action is a lifecycle caption the caller picked from a
+                  fixed vocabulary (Produced, Received By Branch, …), so it goes
+                  through the dictionary like any other label. */}
+              <td className="px-3 py-2 font-medium text-ink">{t(r.action)}</td>
               <td className="whitespace-nowrap px-3 py-2 text-ink-soft">{String(r.user ?? '')}</td>
             </tr>
           ))}
@@ -427,7 +459,7 @@ export function EventGrid({
  */
 export function BackArrow() {
   return (
-    <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden className="h-4 w-4 rotate-180">
+    <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden className="h-4 w-4 rotate-180 rtl:rotate-0">
       <path
         fillRule="evenodd"
         d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z"
@@ -463,6 +495,7 @@ export function SearchIcon() {
  * The arrow is the Next chevron rotated, so the pair can never drift apart.
  */
 export function PrevPageButton({ onClick }: { onClick: () => void }) {
+  const { t } = useT()
   return (
     <button
       type="button"
@@ -470,21 +503,22 @@ export function PrevPageButton({ onClick }: { onClick: () => void }) {
       className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
     >
       <BackArrow />
-      Previous Page
+      {t('Previous Page')}
     </button>
   )
 }
 
 /** The primary forward action, with the design's trailing arrow. */
 export function NextPageButton({ onClick }: { onClick: () => void }) {
+  const { t } = useT()
   return (
     <button
       type="button"
       onClick={onClick}
-      className="ml-auto inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      className="ms-auto inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
     >
-      Next Page
-      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden className="h-4 w-4">
+      {t('Next Page')}
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden className="h-4 w-4 rtl:-scale-x-100">
         <path
           fillRule="evenodd"
           d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z"

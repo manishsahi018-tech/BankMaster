@@ -3,6 +3,7 @@ import type { GridRow } from '../components/GridScreen.tsx'
 import { formatAmount } from '../schema/helpers.ts'
 import { RoText, Field, DateTriple, BackArrow } from '../components/legacyForm.tsx'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmStopChqDetails.frm — pyd0data point read plus the latest
 // ststchqlog entry (QUERY-SPECS §10) — as a FORM, which is what the legacy is:
 // seven text boxes, a DD/MM/YYYY stop date and one free-text box, in this order.
@@ -32,11 +33,11 @@ export default function StopChequeDetail({
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">Account</p>
+          <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{t('Account')}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
-            Stop Cheque Details
+            {t('Stop Cheque Details')}
           </h1>
-          <p className="mt-1 text-sm text-muted">Read-only enquiry.</p>
+          <p className="mt-1 text-sm text-muted">{t('Read-only enquiry.')}</p>
         </div>
         <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
           Cheque {String(detail.chequeNo ?? '')}
@@ -77,7 +78,7 @@ export default function StopChequeDetail({
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong"
           >
             <BackArrow />
-            Return
+            {t('Return')}
           </button>
         </div>
       </div>

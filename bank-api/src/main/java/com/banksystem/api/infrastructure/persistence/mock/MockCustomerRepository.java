@@ -2,6 +2,7 @@ package com.banksystem.api.infrastructure.persistence.mock;
 
 import com.banksystem.api.domain.model.CustUpdateHistoryEntry;
 import com.banksystem.api.domain.model.CustomerProfile;
+import com.banksystem.api.domain.model.EssentialDocuments;
 import com.banksystem.api.domain.model.HeirEntry;
 import com.banksystem.api.domain.model.IdDocument;
 import com.banksystem.api.domain.model.JointHolderEntry;
@@ -363,7 +364,8 @@ public class MockCustomerRepository implements CustomerRepository {
                 "1", "01", "04", "1", "00",
                 "0", "", "", "",
                 "108", "01", "05", "0", "00",
-                "J", "1", "1", "0",
+                // signatureNature is 0-single / 1-joint (workbook row 92).
+                "1", "1", "1", "0",
                 p.relationshipManager(), "Trade licence renewed 1994", "", "0"));
     }
 
@@ -438,7 +440,9 @@ public class MockCustomerRepository implements CustomerRepository {
                             "011", String.valueOf(4000000 + DemoData.pick(key, 97, 900000)), "",
                             "011", String.valueOf(4000000 + DemoData.pick(key, 98, 900000)), "",
                             "", "", "", j.mobileNo(), "", "",
-                            "0003", "0006", "0005", "0002", "010000", "1",
+                            // Two characters, as stjointtab stores them (rows
+                            // 58-61) — see the note on acctInfo below.
+                            "03", "06", "05", "02", "010000", "1",
                             "شركة الاتصالات السعودية", "قسم المبيعات", "6677", c.city(), c.zipCode());
                 });
     }
@@ -578,17 +582,25 @@ public class MockCustomerRepository implements CustomerRepository {
     @Override
     public java.util.Map<String, String> acctInfo(String custNo) {
         java.util.Map<String, String> base = java.util.Map.ofEntries(
-                java.util.Map.entry("education", "0003"),
-                java.util.Map.entry("profession", "0006"),
-                java.util.Map.entry("position", "0005"),
-                java.util.Map.entry("monthlyIncome", "0003"),
+                // TWO characters, as stcusttab stores them (workbook rows
+                // 73-76) — NOT the four of the stctltab ctlCode they resolve
+                // against. The reference code "0003" carries "03" in its last
+                // two places, and codes.ts matches on that tail exactly as the
+                // legacy did. Seeding the wide form here would have made the
+                // mock the only place the lookup succeeds.
+                java.util.Map.entry("education", "03"),
+                java.util.Map.entry("profession", "06"),
+                java.util.Map.entry("position", "05"),
+                java.util.Map.entry("monthlyIncome", "03"),
                 java.util.Map.entry("segmentation", "1"),
                 java.util.Map.entry("employerName", "البنك العربي الوطني"),
                 java.util.Map.entry("employerPoBox", "61128"),
                 java.util.Map.entry("employerCity", "الرياض"),
                 java.util.Map.entry("employerZipCode", "11565"),
                 java.util.Map.entry("packageAcc", "0"),
-                java.util.Map.entry("signatureNature", "S"),
+                // 0-single / 1-joint, as stcusttab stores it (workbook row 92)
+                // — NOT the 'S'/'J' initials the screens used to match on.
+                java.util.Map.entry("signatureNature", "0"),
                 java.util.Map.entry("custAdviceFlag", "1"),
                 java.util.Map.entry("updatedForSama", "1"),
                 java.util.Map.entry("relationshipManager", ""),
@@ -622,7 +634,8 @@ public class MockCustomerRepository implements CustomerRepository {
         // Six positional flags: rented house, own house, company accommodation,
         // rented car, own car, company transport.
         all.put("ownerShip", "010010");
-        all.put("singleJointAcc", "S");
+        // 0-single / 1-joint / 2-unknown (workbook row 87).
+        all.put("singleJointAcc", "0");
         all.put("excludeFromAtmFees", "0");
         all.put("excludeFromMinBalFees", "0");
         all.put("pkgStmtFreqOverride", "0");
@@ -663,7 +676,14 @@ public class MockCustomerRepository implements CustomerRepository {
     }
 
     @Override
-    public List<String> requiredDocuments(String custNo) {
-        return List.of("001", "002", "008", "009", "025", "051", "074");
+    public EssentialDocuments documents(String custNo, String asOfDateTime) {
+        // Supplied is a strict subset of required, packed the way
+        // stcusttab.documentsSupplied holds it — 3-char codes, space-padded to
+        // 60 — so the splitting path is exercised rather than bypassed.
+        String packed = "001002008025" + " ".repeat(48);
+        return new EssentialDocuments(
+                List.of("001", "002", "008", "009", "025", "051", "074"),
+                EssentialDocuments.splitCodes(packed),
+                "Salary certificate pending");
     }
 }

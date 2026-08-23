@@ -11,6 +11,7 @@ import {
   BackArrow,
 } from '../components/legacyForm.tsx'
 
+import { t } from '../i18n/index.ts'
 // The detail panel of legacy frmJuristicOwner — the 54 text boxes, 10 combos
 // and 10 option buttons the grid does NOT carry.
 //
@@ -96,17 +97,17 @@ export default function OwnerDetail({
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">
-            Juristic Customer
+            {t('Juristic Customer')}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
-            Owner Details
+            {t('Owner Details')}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Read-only enquiry — one row of Owner / Management Details in full.
+            {t('Read-only enquiry — one row of Owner / Management Details in full.')}
           </p>
         </div>
         <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
-          Customer {customer?.custNo} · Owner {d.ownerNo}
+          {t('Customer {custNo} · Owner {ownerNo}', { custNo: customer?.custNo ?? '', ownerNo: d.ownerNo })}
         </span>
       </div>
 
@@ -139,16 +140,16 @@ export default function OwnerDetail({
               <span />
               {['First Name', '2nd Name', '3rd Name', 'Last Name', 'Short Name'].map((h) => (
                 <span key={h} className="text-xs font-semibold uppercase tracking-wide text-muted-soft">
-                  {h}
+                  {t(h)}
                 </span>
               ))}
-              <span className="self-center text-sm font-medium text-ink-soft">Arabic</span>
-              <RoText value={d.aFirstName} dir="rtl" className="text-right" />
-              <RoText value={d.aSecondName} dir="rtl" className="text-right" />
-              <RoText value={d.aThirdName} dir="rtl" className="text-right" />
-              <RoText value={d.aLastName} dir="rtl" className="text-right" />
-              <RoText value={d.aShortName} dir="rtl" className="text-right" />
-              <span className="self-center text-sm font-medium text-ink-soft">English</span>
+              <span className="self-center text-sm font-medium text-ink-soft">{t('Arabic')}</span>
+              <RoText value={d.aFirstName} dir="rtl" className="text-end" />
+              <RoText value={d.aSecondName} dir="rtl" className="text-end" />
+              <RoText value={d.aThirdName} dir="rtl" className="text-end" />
+              <RoText value={d.aLastName} dir="rtl" className="text-end" />
+              <RoText value={d.aShortName} dir="rtl" className="text-end" />
+              <span className="self-center text-sm font-medium text-ink-soft">{t('English')}</span>
               <RoText value={d.eFirstName} />
               <RoText value={d.eSecondName} />
               <RoText value={d.eThirdName} />
@@ -196,7 +197,7 @@ export default function OwnerDetail({
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong"
           >
             <BackArrow />
-            Return
+            {t('Return')}
           </button>
         </div>
       </div>

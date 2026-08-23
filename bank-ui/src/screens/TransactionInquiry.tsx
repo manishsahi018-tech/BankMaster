@@ -7,6 +7,7 @@ import type { OnlineStatementPage, OnlineTransaction } from '../api.ts'
 import { api, ApiError } from '../api.ts'
 import { balanceMarker, formatGatewayDate, formatMinor, splitAmount } from '../gateway.ts'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmTransaction.frm ("Transaction Enquiry", the frmAccount
 // cmdTransaction button, authority ~60/~61/~62).
 //
@@ -208,8 +209,8 @@ export default function TransactionInquiry({
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="mb-6">
-        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">Account</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">Transaction Enquiry</h1>
+        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{t('Account')}</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{t('Transaction Enquiry')}</h1>
       </div>
 
       {/* Only the cannot-fetch case gets a banner. The screen no longer carries a
@@ -243,7 +244,7 @@ export default function TransactionInquiry({
               </div>
               <div className="w-20 shrink-0">
                 <Select
-                  aria-label="Start month"
+                  aria-label={t('Start month')}
                   options={MONTHS}
                   value={form.startMonth}
                   placeholder="MM"
@@ -252,7 +253,7 @@ export default function TransactionInquiry({
               </div>
               <div className="w-24 shrink-0">
                 <TextInput
-                  aria-label="Start year"
+                  aria-label={t('Start year')}
                   inputMode="numeric"
                   value={form.startYear}
                   maxLength={4}
@@ -290,14 +291,14 @@ export default function TransactionInquiry({
             disabled={fetching}
             className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong disabled:cursor-not-allowed disabled:bg-faint"
           >
-            {fetching ? 'Fetching…' : 'Go'}
+            {fetching ? t('Fetching…') : t('Go')}
           </button>
           <button
             type="button"
             onClick={onExit}
-            className="ml-auto rounded-lg border border-danger/30 bg-surface px-4 py-2.5 text-sm font-medium text-danger shadow-xs transition-colors hover:bg-danger-soft"
+            className="ms-auto rounded-lg border border-danger/30 bg-surface px-4 py-2.5 text-sm font-medium text-danger shadow-xs transition-colors hover:bg-danger-soft"
           >
-            Return to Account Menu
+            {t('Return to Account Menu')}
           </button>
         </div>
       </div>
@@ -308,11 +309,11 @@ export default function TransactionInquiry({
           <section className="mt-3 overflow-x-auto rounded-2xl border border-edge bg-surface shadow-sm">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-edge-soft text-left text-xs uppercase tracking-wider text-muted-soft">
+                <tr className="border-b border-edge-soft text-start text-xs uppercase tracking-wider text-muted-soft">
                   {COLUMNS.map((c, i) => (
                     <th
                       key={c}
-                      className={`px-4 py-2.5 font-semibold ${i >= 4 && i <= 6 ? 'text-right' : ''}`}
+                      className={`px-4 py-2.5 font-semibold ${i >= 4 && i <= 6 ? 'text-end' : ''}`}
                     >
                       {c}
                     </th>
@@ -339,13 +340,13 @@ export default function TransactionInquiry({
                           </span>
                         ))}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-ink-soft">
+                      <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums text-ink-soft">
                         {r.credit ? '—' : formatMinor(r.minor, decimals)}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-ink-soft">
+                      <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums text-ink-soft">
                         {r.credit ? formatMinor(r.minor, decimals) : '—'}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums font-medium text-ink">
+                      <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-medium text-ink">
                         {startedFromNumber ? (
                           <span className="text-muted-soft">—</span>
                         ) : (

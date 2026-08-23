@@ -13,6 +13,7 @@ import {
   todayYyyymmdd,
 } from '../gateway.ts'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmInputform (OnlineStmt.frm, "OnLine Statement Printing") —
 // the frmAccount cmdStatement button, authority ~60/~61/~62.
 //
@@ -245,9 +246,9 @@ export default function OnDemandStatement({
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="mb-6">
-        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">Account</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{t('Account')}</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
-          OnLine Statement Printing
+          {t('OnLine Statement Printing')}
         </h1>
       </div>
 
@@ -288,7 +289,7 @@ export default function OnDemandStatement({
             disabled={generating}
             className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong disabled:cursor-not-allowed disabled:bg-faint"
           >
-            {generating ? 'Generating…' : 'Print Statement'}
+            {generating ? t('Generating…') : t('Print Statement')}
           </button>
           <button
             type="button"
@@ -297,14 +298,14 @@ export default function OnDemandStatement({
             title={hasReport ? undefined : 'Generate a statement first'}
             className={secondaryBtn}
           >
-            Send to Printer
+            {t('Send to Printer')}
           </button>
           <button
             type="button"
             onClick={onExit}
-            className="ml-auto rounded-lg border border-danger/30 bg-surface px-4 py-2.5 text-sm font-medium text-danger shadow-xs transition-colors hover:bg-danger-soft"
+            className="ms-auto rounded-lg border border-danger/30 bg-surface px-4 py-2.5 text-sm font-medium text-danger shadow-xs transition-colors hover:bg-danger-soft"
           >
-            Exit
+            {t('Exit')}
           </button>
         </div>
       </div>
@@ -312,7 +313,7 @@ export default function OnDemandStatement({
       {hasReport && page && (
         <section className="mt-5 overflow-hidden rounded-2xl border border-edge bg-surface shadow-sm">
           <header className="border-b border-edge-soft bg-surface-muted px-4 py-4 sm:px-5">
-            <h2 className="text-base font-semibold text-ink">ON DEMAND STATEMENT</h2>
+            <h2 className="text-base font-semibold text-ink">{t('ON DEMAND STATEMENT')}</h2>
             <p className="mt-0.5 text-sm text-muted">
               {page.branchName} · {formatGatewayDate(page.fromDate)} to{' '}
               {formatGatewayDate(page.toDate)}
@@ -325,14 +326,14 @@ export default function OnDemandStatement({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-edge-soft text-left text-xs uppercase tracking-wider text-muted-soft">
-                  <th className="px-4 py-2.5 font-semibold">Tlr Id</th>
-                  <th className="px-4 py-2.5 font-semibold">Trans. Date</th>
-                  <th className="px-4 py-2.5 font-semibold">Particulars</th>
-                  <th className="px-4 py-2.5 font-semibold">Value Date</th>
-                  <th className="px-4 py-2.5 text-right font-semibold">Debit</th>
-                  <th className="px-4 py-2.5 text-right font-semibold">Credit</th>
-                  <th className="px-4 py-2.5 text-right font-semibold">Balance</th>
+                <tr className="border-b border-edge-soft text-start text-xs uppercase tracking-wider text-muted-soft">
+                  <th className="px-4 py-2.5 font-semibold">{t('Tlr Id')}</th>
+                  <th className="px-4 py-2.5 font-semibold">{t('Trans. Date')}</th>
+                  <th className="px-4 py-2.5 font-semibold">{t('Particulars')}</th>
+                  <th className="px-4 py-2.5 font-semibold">{t('Value Date')}</th>
+                  <th className="px-4 py-2.5 text-end font-semibold">{t('Debit')}</th>
+                  <th className="px-4 py-2.5 text-end font-semibold">{t('Credit')}</th>
+                  <th className="px-4 py-2.5 text-end font-semibold">{t('Balance')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -343,10 +344,10 @@ export default function OnDemandStatement({
                     {formatGatewayDate(page.fromDate)}
                   </td>
                   <td className="px-4 py-2.5 font-medium text-ink-soft" colSpan={3}>
-                    Balance Brought Forward
+                    {t('Balance Brought Forward')}
                   </td>
                   <td className="px-4 py-2.5" />
-                  <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums font-medium text-ink">
+                  <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-medium text-ink">
                     {formatMinor(Math.abs(Number(page.bfBalance) || 0), decimals)}{' '}
                     <span className="text-xs font-normal text-muted">
                       {balanceMarker(Number(page.bfBalance) || 0)}
@@ -373,13 +374,13 @@ export default function OnDemandStatement({
                       <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted">
                         {formatGatewayDate(r.txn.valueDate)}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-ink-soft">
+                      <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums text-ink-soft">
                         {r.credit ? '—' : formatMinor(r.minor, decimals)}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-ink-soft">
+                      <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums text-ink-soft">
                         {r.credit ? formatMinor(r.minor, decimals) : '—'}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums font-medium text-ink">
+                      <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-medium text-ink">
                         {formatMinor(Math.abs(r.balanceMinor), decimals)}{' '}
                         <span className="text-xs font-normal text-muted">
                           {balanceMarker(r.balanceMinor)}
@@ -392,24 +393,24 @@ export default function OnDemandStatement({
               <tfoot className="border-t-2 border-edge">
                 <tr>
                   <td className="px-4 py-2.5 text-xs uppercase tracking-wider text-muted-soft" colSpan={4}>
-                    Value of Movements
+                    {t('Value of Movements')}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums font-semibold text-ink">
+                  <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-semibold text-ink">
                     {formatMinor(totals.debit, decimals)}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums font-semibold text-ink">
+                  <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-semibold text-ink">
                     {formatMinor(totals.credit, decimals)}
                   </td>
                   <td />
                 </tr>
                 <tr>
                   <td className="px-4 py-2.5 text-xs uppercase tracking-wider text-muted-soft" colSpan={4}>
-                    Number of Movements
+                    {t('Number of Movements')}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">
+                  <td className="px-4 py-2.5 text-end tabular-nums text-ink-soft">
                     {totals.debitCount}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">
+                  <td className="px-4 py-2.5 text-end tabular-nums text-ink-soft">
                     {totals.creditCount}
                   </td>
                   <td />
@@ -420,7 +421,7 @@ export default function OnDemandStatement({
 
           {/* The legacy's closing line, printed on every statement (:822). */}
           <footer className="border-t border-edge-soft px-4 py-2.5 text-xs text-muted-soft sm:px-5">
-            Issued Upon your request. NOT A SUBSTITUTE FOR PERIODIC STATEMENT
+            {t('Issued Upon your request. NOT A SUBSTITUTE FOR PERIODIC STATEMENT')}
           </footer>
         </section>
       )}
@@ -435,13 +436,13 @@ export default function OnDemandStatement({
           <table>
             <thead>
               <tr>
-                <th>Tlr Id</th>
-                <th>Trans. Date</th>
-                <th>Particulars</th>
-                <th>Value Date</th>
-                <th className="right">Debit</th>
-                <th className="right">Credit</th>
-                <th className="right">Balance</th>
+                <th>{t('Tlr Id')}</th>
+                <th>{t('Trans. Date')}</th>
+                <th>{t('Particulars')}</th>
+                <th>{t('Value Date')}</th>
+                <th className="right">{t('Debit')}</th>
+                <th className="right">{t('Credit')}</th>
+                <th className="right">{t('Balance')}</th>
               </tr>
             </thead>
             <tbody>
@@ -465,7 +466,7 @@ export default function OnDemandStatement({
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={4}>Value of Movements</td>
+                <td colSpan={4}>{t('Value of Movements')}</td>
                 <td className="right">{formatMinor(totals.debit, decimals)}</td>
                 <td className="right">{formatMinor(totals.credit, decimals)}</td>
                 <td />
@@ -473,7 +474,7 @@ export default function OnDemandStatement({
             </tfoot>
           </table>
           <p className="print-meta">
-            Issued Upon your request. NOT A SUBSTITUTE FOR PERIODIC STATEMENT
+            {t('Issued Upon your request. NOT A SUBSTITUTE FOR PERIODIC STATEMENT')}
           </p>
         </section>
       )}

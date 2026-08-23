@@ -13,6 +13,7 @@ import {
   isFirst,
 } from '../components/legacyForm.tsx'
 
+import { t } from '../i18n/index.ts'
 // The panel behind the Joint Holders grid — frmIndividualJoint's double-click
 // (jointInfoGrid_DblClick → fetchJointDetailInfo), and the widest of the
 // related-party panels at 56 labels, 42 text boxes and 19 option buttons.
@@ -65,17 +66,17 @@ export default function JointHolderDetail({
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">
-            Joint Holders
+            {t('Joint Holders')}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
-            Joint Holder Details
+            {t('Joint Holder Details')}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Read-only enquiry — identity, personal, address and employment.
+            {t('Read-only enquiry — identity, personal, address and employment.')}
           </p>
         </div>
         <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
-          Customer {customer?.custNo} · Joint {d.jointCustNo}
+          {t('Customer {custNo} · Joint {jointNo}', { custNo: customer?.custNo ?? '', jointNo: d.jointCustNo })}
         </span>
       </div>
 
@@ -104,16 +105,16 @@ export default function JointHolderDetail({
                   key={h}
                   className="text-xs font-semibold uppercase tracking-wide text-muted-soft"
                 >
-                  {h}
+                  {t(h)}
                 </span>
               ))}
-              <span className="self-center text-sm font-medium text-ink-soft">Arabic</span>
-              <RoText value={d.aFirstName} dir="rtl" className="text-right" />
-              <RoText value={d.a2ndName} dir="rtl" className="text-right" />
-              <RoText value={d.a3rdName} dir="rtl" className="text-right" />
-              <RoText value={d.aLastName} dir="rtl" className="text-right" />
-              <RoText value={d.aShortName} dir="rtl" className="text-right" />
-              <span className="self-center text-sm font-medium text-ink-soft">English</span>
+              <span className="self-center text-sm font-medium text-ink-soft">{t('Arabic')}</span>
+              <RoText value={d.aFirstName} dir="rtl" className="text-end" />
+              <RoText value={d.a2ndName} dir="rtl" className="text-end" />
+              <RoText value={d.a3rdName} dir="rtl" className="text-end" />
+              <RoText value={d.aLastName} dir="rtl" className="text-end" />
+              <RoText value={d.aShortName} dir="rtl" className="text-end" />
+              <span className="self-center text-sm font-medium text-ink-soft">{t('English')}</span>
               <RoText value={d.eFirstName} />
               <RoText value={d.e2ndName} />
               <RoText value={d.e3rdName} />
@@ -252,7 +253,7 @@ export default function JointHolderDetail({
 
           <div className="mt-5 border-t border-edge-soft pt-4">
             <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-soft">
-              Owner Ship
+              {t('Owner Ship')}
             </p>
             <CheckBoxGroup
               flags={OWNERSHIP.map((label, i) => ({
@@ -288,7 +289,7 @@ export default function JointHolderDetail({
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong"
           >
             <BackArrow />
-            Return
+            {t('Return')}
           </button>
         </div>
       </div>

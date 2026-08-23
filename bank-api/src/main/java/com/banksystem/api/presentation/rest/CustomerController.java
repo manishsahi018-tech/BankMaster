@@ -5,6 +5,7 @@ import com.banksystem.api.domain.model.CustUpdateHistoryEntry;
 import com.banksystem.api.domain.model.CustomerProfile;
 import com.banksystem.api.domain.model.CustomerSearchCriteria;
 import com.banksystem.api.domain.model.CustomerSummary;
+import com.banksystem.api.domain.model.EssentialDocuments;
 import com.banksystem.api.domain.model.HeirEntry;
 import com.banksystem.api.domain.model.JointHolderDetail;
 import com.banksystem.api.domain.model.JointHolderEntry;
@@ -125,9 +126,17 @@ public class CustomerController {
         return customers.acctInfo(custNo);
     }
 
+    /** frmDocuments for the live customer record. */
     @GetMapping("/{custNo}/documents")
-    public java.util.List<String> requiredDocuments(@PathVariable String custNo) {
-        return customers.requiredDocuments(custNo);
+    public EssentialDocuments documents(@PathVariable String custNo) {
+        return customers.documents(custNo, null);
+    }
+
+    /** frmDocuments as it stood at one stcustlog event (legacy history mode). */
+    @GetMapping("/{custNo}/documents-asof/{dateTime}")
+    public EssentialDocuments documentsAsOf(
+            @PathVariable String custNo, @PathVariable String dateTime) {
+        return customers.documents(custNo, dateTime);
     }
 
     @GetMapping("/{custNo}/update-history")

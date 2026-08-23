@@ -12,6 +12,7 @@ import {
 } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { t as translate } from '../i18n/index.ts'
 
 export type ToastKind = 'error' | 'warn' | 'info' | 'success'
 
@@ -114,12 +115,17 @@ function ToastCard({ toast, onClose }: { toast: ToastItem; onClose: () => void }
         KIND_STYLE[toast.kind]
       } ${shown ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0'}`}
     >
-      <span className="min-w-0 flex-1 break-words">{toast.text}</span>
+      {/* Messages are pushed as English and translated on the way out, so a
+          screen can call toast.warn('…') without importing the dictionary.
+          A caller that has already translated its text — one that interpolates
+          a value into the message — is unharmed: looking Arabic up in an
+          English-keyed dictionary misses and returns it unchanged. */}
+      <span className="min-w-0 flex-1 break-words">{translate(toast.text)}</span>
       <button
         type="button"
-        aria-label="Dismiss"
+        aria-label={translate('Dismiss')}
         onClick={onClose}
-        className="-mr-1 -mt-0.5 shrink-0 rounded p-0.5 text-current opacity-60 transition-opacity hover:opacity-100"
+        className="-me-1 -mt-0.5 shrink-0 rounded p-0.5 text-current opacity-60 transition-opacity hover:opacity-100"
       >
         <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
           <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />

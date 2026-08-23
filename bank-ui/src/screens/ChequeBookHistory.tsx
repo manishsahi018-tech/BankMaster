@@ -3,6 +3,7 @@ import type { GridRow } from '../components/GridScreen.tsx'
 import { formatDate } from '../schema/helpers.ts'
 import { RoText, Field, EventGrid, BackArrow, type HistoryEvent } from '../components/legacyForm.tsx'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmChequeBookHistory.frm — the lifecycle audit of one stchqtab
 // record (QUERY-SPECS §12).
 //
@@ -74,8 +75,8 @@ export default function ChequeBookHistory({
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="mb-6">
-        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">Account</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">Cheque Book History</h1>
+        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{t('Account')}</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{t('Cheque Book History')}</h1>
       </div>
 
       <div className="grid gap-5">
@@ -95,7 +96,7 @@ export default function ChequeBookHistory({
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong"
           >
             <BackArrow />
-            Return
+            {t('Return')}
           </button>
         </div>
       </div>

@@ -17,6 +17,7 @@ import {
   type IdRowData,
 } from '../components/legacyForm.tsx'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmIndividualSaudi.frm — page 1 of the Individual Saudi
 // National customer profile, field for field. The legacy disables every frame
 // in search/supervisor/history mode, so this renders read-only throughout.
@@ -39,7 +40,6 @@ export default function IndividualSaudi({
   onCards,
   onHeirs,
   onReferences,
-  onJointHolders,
   onBack,
 }: {
   profile: GridRow
@@ -47,9 +47,10 @@ export default function IndividualSaudi({
   onNextPage?: () => void
   onAccounts?: () => void
   onCards?: () => void
+  /** Present only for sub category 65 — see partyPanelsFor in screenSet.ts. */
   onHeirs?: () => void
+  /** Present only for sub category 02 — see partyPanelsFor in screenSet.ts. */
   onReferences?: () => void
-  onJointHolders?: () => void
   onBack: () => void
 }) {
   // stidtab is the richer source; fall back to the bare stcusttab numbers when
@@ -92,15 +93,15 @@ export default function IndividualSaudi({
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">
-            Individual — Saudi National
+            {t('Individual — Saudi National')}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">Customer Profile</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{t('Customer Profile')}</h1>
           <p className="mt-1 text-sm text-muted">
-            Page 1 of 2 — identity, personal and contact information.
+            {t('Page 1 of 2 — identity, personal and contact information.')}
           </p>
         </div>
         <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
-          Customer {profile.custNo}
+          {t('Customer {custNo}', { custNo: profile.custNo })}
         </span>
       </div>
 
@@ -131,7 +132,7 @@ export default function IndividualSaudi({
 
           <div className="mt-5 border-t border-edge-soft pt-4">
             <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-soft">
-              Special Status
+              {t('Special Status')}
             </p>
             <CheckBoxGroup
               flags={[
@@ -172,18 +173,18 @@ export default function IndividualSaudi({
               <span />
               {['First Name', '2nd Name', '3rd Name', 'Last Name', 'Short Name'].map((h) => (
                 <span key={h} className="text-xs font-semibold uppercase tracking-wide text-muted-soft">
-                  {h}
+                  {t(h)}
                 </span>
               ))}
 
-              <span className="self-center text-sm font-medium text-ink-soft">Arabic</span>
-              <RoText value={profile.aFirstName} dir="rtl" className="text-right" />
-              <RoText value={profile.a2ndName} dir="rtl" className="text-right" />
-              <RoText value={profile.a3rdName} dir="rtl" className="text-right" />
-              <RoText value={profile.aLastName} dir="rtl" className="text-right" />
-              <RoText value={profile.aShortName} dir="rtl" className="text-right" />
+              <span className="self-center text-sm font-medium text-ink-soft">{t('Arabic')}</span>
+              <RoText value={profile.aFirstName} dir="rtl" className="text-end" />
+              <RoText value={profile.a2ndName} dir="rtl" className="text-end" />
+              <RoText value={profile.a3rdName} dir="rtl" className="text-end" />
+              <RoText value={profile.aLastName} dir="rtl" className="text-end" />
+              <RoText value={profile.aShortName} dir="rtl" className="text-end" />
 
-              <span className="self-center text-sm font-medium text-ink-soft">English</span>
+              <span className="self-center text-sm font-medium text-ink-soft">{t('English')}</span>
               <RoText value={profile.eFirstName} />
               <RoText value={profile.e2ndName} />
               <RoText value={profile.e3rdName} />
@@ -308,34 +309,40 @@ export default function IndividualSaudi({
 
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
           <button type="button" onClick={() => onAccounts?.()} className={btnKinds.secondary}>
-            Account
+            {t('Account')}
           </button>
           <button type="button" onClick={() => onCards?.()} className={btnKinds.secondary}>
-            Card Info
+            {t('Card Info')}
           </button>
-          <button type="button" onClick={() => onHeirs?.()} className={btnKinds.secondary}>
-            Heirs / Proxy
-          </button>
-          <button type="button" onClick={() => onReferences?.()} className={btnKinds.secondary}>
-            References
-          </button>
-          <button type="button" onClick={() => onJointHolders?.()} className={btnKinds.secondary}>
-            Joint Holders
-          </button>
+          {/* Heirs / Proxy and References are not buttons in the legacy: Next
+              Page routes to one or the other on sub category 65 / 02 and to the
+              account-info page otherwise (frmIndividualSaudi.frm:5880-5960). A
+              customer of any other sub category never sees them, so neither
+              handler is passed and neither button is rendered. */}
+          {onHeirs && (
+            <button type="button" onClick={onHeirs} className={btnKinds.secondary}>
+              {t('Heirs / Proxy')}
+            </button>
+          )}
+          {onReferences && (
+            <button type="button" onClick={onReferences} className={btnKinds.secondary}>
+              {t('References')}
+            </button>
+          )}
           {/* stcustlog.supervisorComments is not in the point read — see notes */}
           {!ENQUIRY_ONLY && (
             <button
               type="button"
               disabled
-              title="Available during supervisor approval only"
+              title={t('Available during supervisor approval only')}
               className={btnKinds.disabled}
             >
-              Supervisor Comments
+              {t('Supervisor Comments')}
             </button>
           )}
           <NextPageButton onClick={() => onNextPage?.()} />
           <button type="button" onClick={onBack} className={btnKinds.danger}>
-            Cancel
+            {t('Cancel')}
           </button>
         </div>
       </div>

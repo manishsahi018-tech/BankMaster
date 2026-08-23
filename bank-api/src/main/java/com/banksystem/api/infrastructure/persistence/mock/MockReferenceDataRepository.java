@@ -1,12 +1,14 @@
 package com.banksystem.api.infrastructure.persistence.mock;
 
 import com.banksystem.api.domain.model.CodeEntry;
+import com.banksystem.api.domain.model.UiLanguage;
 import com.banksystem.api.domain.repository.ReferenceDataRepository;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Profile("!denodo")
 @Repository
@@ -29,9 +31,14 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("W", "Widowed"),
                     new CodeEntry("D", "Divorced"))),
             // stctltab record types TT / ED / PR / PO / MI / SG / DT — the
-            // combos the legacy read from its local Access database. Codes here
-            // follow the profile fixtures (education 0003, profession 0006,
-            // position 0005, income 0003, segmentation 1).
+            // combos the legacy read from its local Access database.
+            //
+            // ED / PR / PO / MI carry the FOUR-character ctlCode the archival
+            // table holds, which is wider than the two characters stcusttab
+            // stores against it: the profile fixture's "03" resolves to
+            // "0003-Diploma" on the tail match codes.ts does (the legacy's own
+            // Mid(list, 3, 2), globalFunctions.bas:2439). TT is two characters
+            // and matches outright.
             Map.entry("title", List.of(
                     new CodeEntry("01", "Mr."),
                     new CodeEntry("02", "Mrs."),
@@ -79,6 +86,15 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
             Map.entry("language", List.of(
                     new CodeEntry("0", "Arabic"),
                     new CodeEntry("1", "English"))),
+            // stcusttab.packageAcc's documented domain — see the same set in
+            // JdbcReferenceDataRepository for why it is not a stctltab read.
+            Map.entry("packageAcc", List.of(
+                    new CodeEntry("0", "None"),
+                    new CodeEntry("1", "Munafa"),
+                    new CodeEntry("2", "Wahat"),
+                    new CodeEntry("3", "Al Safwa"),
+                    new CodeEntry("4", "Mubarak"),
+                    new CodeEntry("5", "Private Banking"))),
             Map.entry("country", List.of(
                     new CodeEntry("001", "Saudi Arabia"),
                     new CodeEntry("002", "Bahrain"),
@@ -157,6 +173,10 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
             // match the values the account screens already had hard-coded.
             Map.entry("accStatus", List.of(
                     new CodeEntry("00", "Open"),
+                    // 02 is what the dormant demo account carries
+                    // (MockAccountRepository.STATUSES); without an entry here
+                    // it rendered as a bare "02".
+                    new CodeEntry("02", "Dormant"),
                     new CodeEntry("03", "Account Stopped"),
                     new CodeEntry("04", "No Debits"),
                     new CodeEntry("08", "Enquiry Restricted"))),
@@ -183,8 +203,158 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("2", "Pay by cheque"),
                     new CodeEntry("3", "Memorandum interest only"))));
 
+    /**
+     * Arabic for the demo sets, keyed {@code set/code}.
+     *
+     * <p>Kept as an OVERLAY rather than a second copy of the map above: the
+     * codes and the set membership are the fixture, and duplicating them would
+     * let the two drift. Anything with no entry here falls back to its English
+     * name, which is also what happens under denodo when an archival row
+     * carries only one of its two names.
+     *
+     * <p>This exists so the mock profile can actually exercise the Arabic UI.
+     * Without it every combo and every code→description label on an Arabic
+     * screen would read English in local verification, which is precisely the
+     * part of the translation a mock run is there to check.
+     */
+    private static final Map<String, String> ARABIC = Map.ofEntries(
+            Map.entry("idType/I", "هوية وطنية"),
+            Map.entry("idType/Q", "إقامة"),
+            Map.entry("idType/C", "سجل تجاري"),
+            Map.entry("idType/P", "جواز سفر"),
+            Map.entry("idType/D", "بطاقة دبلوماسية"),
+            Map.entry("idType/G", "هوية خليجية"),
+            Map.entry("sex/M", "ذكر"),
+            Map.entry("sex/F", "أنثى"),
+            Map.entry("maritalStatus/M", "متزوج"),
+            Map.entry("maritalStatus/S", "أعزب"),
+            Map.entry("maritalStatus/W", "أرمل"),
+            Map.entry("maritalStatus/D", "مطلق"),
+            Map.entry("title/01", "السيد"),
+            Map.entry("title/02", "السيدة"),
+            Map.entry("title/03", "الآنسة"),
+            Map.entry("title/04", "الدكتور"),
+            Map.entry("title/05", "الشيخ"),
+            Map.entry("title/06", "المهندس"),
+            Map.entry("title/07", "الأستاذ الدكتور"),
+            Map.entry("title/08", "السادة"),
+            Map.entry("education/0001", "ابتدائي"),
+            Map.entry("education/0002", "ثانوي"),
+            Map.entry("education/0003", "دبلوم"),
+            Map.entry("education/0004", "بكالوريوس"),
+            Map.entry("education/0005", "دراسات عليا"),
+            Map.entry("profession/0001", "حكومي"),
+            Map.entry("profession/0002", "القطاع الخاص"),
+            Map.entry("profession/0006", "موظف البنك العربي الوطني"),
+            Map.entry("profession/0007", "صاحب عمل"),
+            Map.entry("position/0001", "مدير"),
+            Map.entry("position/0002", "مشرف"),
+            Map.entry("position/0005", "أخرى"),
+            // 0002/0003 are numeric ranges and read the same either way.
+            Map.entry("monthlyIncome/0001", "أقل من 3000"),
+            Map.entry("monthlyIncome/0004", "أكثر من 10000"),
+            Map.entry("segmentation/0", "لا يوجد"),
+            Map.entry("segmentation/1", "ثروات عالية"),
+            Map.entry("segmentation/2", "ميسور"),
+            Map.entry("segmentation/3", "عام"),
+            Map.entry("documentType/001", "توقيع صاحب الحساب"),
+            Map.entry("documentType/002", "بصمة الإبهام / الختم الشخصي"),
+            Map.entry("documentType/008", "بطاقة هوية صاحب الحساب"),
+            Map.entry("documentType/009", "دفتر العائلة لصاحب الحساب"),
+            Map.entry("documentType/025", "صورة جواز سفر ساري"),
+            Map.entry("documentType/051", "اتفاقية فتح حساب"),
+            Map.entry("documentType/074", "سجل الأسرة"),
+            Map.entry("language/0", "عربي"),
+            Map.entry("language/1", "انجليزي"),
+            // ANB product names — the Arabic is the product's own name.
+            Map.entry("packageAcc/0", "لا يوجد"),
+            Map.entry("packageAcc/1", "منافع"),
+            Map.entry("packageAcc/2", "واحات"),
+            Map.entry("packageAcc/3", "الصفوة"),
+            Map.entry("packageAcc/4", "مبارك"),
+            Map.entry("packageAcc/5", "الخدمات المصرفية الخاصة"),
+            Map.entry("country/001", "المملكة العربية السعودية"),
+            Map.entry("country/002", "البحرين"),
+            Map.entry("country/003", "الكويت"),
+            Map.entry("country/004", "الإمارات العربية المتحدة"),
+            Map.entry("country/005", "قطر"),
+            Map.entry("country/019", "مصر"),
+            Map.entry("businessType/001", "حكومي"),
+            Map.entry("businessType/002", "القطاع الخاص"),
+            Map.entry("businessType/003", "عمل حر"),
+            Map.entry("businessType/004", "متقاعد"),
+            Map.entry("businessType/049", "تجارة"),
+            Map.entry("businessType/266", "موظف البنك العربي الوطني"),
+            Map.entry("samaMainCategory/01", "أفراد"),
+            Map.entry("samaMainCategory/02", "شركات"),
+            Map.entry("samaMainCategory/03", "منشآت صغيرة ومتوسطة"),
+            Map.entry("samaMainCategory/04", "حكومي"),
+            Map.entry("samaMainCategory/05", "جمعيات وأوقاف"),
+            Map.entry("samaSubCategory/01", "توفير"),
+            Map.entry("samaSubCategory/02", "جاري"),
+            Map.entry("samaSubCategory/03", "رواتب"),
+            Map.entry("samaSubCategory/04", "مميز"),
+            Map.entry("samaSubCategory/05", "موظفين"),
+            Map.entry("branch/0001", "المركز الرئيسي"),
+            Map.entry("branch/0002", "وسط المدينة"),
+            Map.entry("branch/0127", "السويدي"),
+            Map.entry("branch/0128", "المتنبي"),
+            Map.entry("branch/0191", "العليا"),
+            Map.entry("chequeType/1", "شخصي"),
+            Map.entry("chequeType/2", "تجاري"),
+            Map.entry("chequeBookStatus/1", "مطلوب"),
+            Map.entry("chequeBookStatus/2", "تم الإصدار"),
+            Map.entry("chequeBookStatus/3", "مستلمة من الفرع"),
+            Map.entry("chequeBookStatus/4", "صادرة للعميل"),
+            Map.entry("chequeBookStatus/9", "مرفوضة من الفرع"),
+            Map.entry("cardStatus/0", "غير مفعلة"),
+            Map.entry("cardStatus/1", "مفعلة"),
+            Map.entry("cardStatus/9", "ملغاة"),
+            Map.entry("cardRequestStatus/1", "مطلوبة"),
+            Map.entry("cardRequestStatus/3", "مرفوضة"),
+            Map.entry("cardRequestStatus/9", "مكتملة"),
+            Map.entry("currency/01", "ريال سعودي"),
+            Map.entry("currency/43", "ين ياباني"),
+            Map.entry("currency/45", "دينار كويتي"),
+            Map.entry("currency/53", "ريال قطري"),
+            Map.entry("currency/54", "درهم إماراتي"),
+            Map.entry("currency/67", "دولار أمريكي"),
+            Map.entry("currency/70", "دينار بحريني"),
+            Map.entry("currency/84", "جنيه إسترليني"),
+            Map.entry("currency/85", "روبية هندية"),
+            Map.entry("ledger/008", "حساب جاري"),
+            Map.entry("ledger/009", "حساب توفير"),
+            Map.entry("ledger/100", "وديعة لأجل"),
+            Map.entry("ledger/108", "وديعة تحت الطلب"),
+            Map.entry("accStatus/00", "مفتوح"),
+            Map.entry("accStatus/02", "غير متحرك"),
+            Map.entry("accStatus/03", "حساب موقوف"),
+            Map.entry("accStatus/04", "ممنوع السحب"),
+            // As frmAcctStatusHistory renders it in the Arabic capture:
+            // "08-استفسارات ممنوعة", not a literal "enquiry restricted".
+            Map.entry("accStatus/08", "استفسارات ممنوعة"),
+            Map.entry("stmtFreq/01", "غير آلي"),
+            Map.entry("stmtFreq/02", "يومي"),
+            Map.entry("stmtFreq/03", "أسبوعي"),
+            Map.entry("stmtFreq/04", "شهري"),
+            Map.entry("stmtFreq/05", "ربع سنوي"),
+            Map.entry("stmtFreq/06", "نصف سنوي"),
+            Map.entry("stmtFreq/07", "سنوي"),
+            Map.entry("intApplication/0", "إضافة للرصيد"),
+            Map.entry("intApplication/1", "تحويل لحساب آخر"),
+            Map.entry("intApplication/2", "صرف بشيك"),
+            Map.entry("intApplication/3", "فائدة تذكيرية فقط"));
+
+    /** The English map with every description swapped for its Arabic, once. */
+    private static final Map<String, List<CodeEntry>> CODES_AR = CODES.entrySet().stream()
+            .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, set -> set.getValue().stream()
+                    .map(entry -> new CodeEntry(entry.code(),
+                            ARABIC.getOrDefault(set.getKey() + "/" + entry.code(),
+                                    entry.description())))
+                    .toList()));
+
     @Override
-    public Map<String, List<CodeEntry>> codes() {
-        return CODES;
+    public Map<String, List<CodeEntry>> codes(UiLanguage language) {
+        return language == UiLanguage.ARABIC ? CODES_AR : CODES;
     }
 }

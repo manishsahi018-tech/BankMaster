@@ -20,6 +20,7 @@ import {
   pickRaw,
 } from './profilePageFields.tsx'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmIndividualOthers2.frm ("Customers Maintenance Page 2 - For
 // Other Individuals") — the page the profile used to skip — field for field, in
 // the form's own frame order and with the form's own controls: combos for the
@@ -69,11 +70,11 @@ export default function IndividualOthersPage2({
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">
-            Individual — Other Nationality
+            {t('Individual — Other Nationality')}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">Customer Details</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{t('Customer Details')}</h1>
           <p className="mt-1 text-sm text-muted">
-            Page 2 of 3 — employment, ownership, home country and approvals.
+            {t('Page 2 of 3 — employment, ownership, home country and approvals.')}
           </p>
         </div>
         {/* The form heads itself with the customer's category pair —
@@ -81,11 +82,11 @@ export default function IndividualOthersPage2({
             (frmIndividualOthers2.frm:2514-2515). */}
         <div className="flex flex-col items-end gap-1.5">
           <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
-            Customer {customer?.custNo}
+            {t('Customer {custNo}', { custNo: customer?.custNo ?? '' })}
           </span>
           {(mainCategory || subCategory) && (
             <p className="text-xs text-muted">
-              <span className="font-medium text-ink-soft">Category</span> {mainCategory}
+              <span className="font-medium text-ink-soft">{t('Category')}</span> {mainCategory}
               {subCategory ? ` · ${subCategory}` : ''}
             </p>
           )}
@@ -170,7 +171,19 @@ export default function IndividualOthersPage2({
               </div>
             </Field>
             <Field label="Mobile">
-              <RoText value={a.homeMobileNo} className="tabular-nums" />
+              {/* legacy splits the stored 10 chars into [area 1-2][number 3-10]
+                  (globalFunctions.bas:6603-6604), the same pair the page-1
+                  forms show for the local mobile. */}
+              <div className="flex gap-2">
+                <RoText
+                  value={String(a.homeMobileNo ?? '').slice(0, 2)}
+                  className="w-16 text-center tabular-nums"
+                />
+                <RoText
+                  value={String(a.homeMobileNo ?? '').slice(2)}
+                  className="tabular-nums"
+                />
+              </div>
             </Field>
             <Field label="Pager">
               <RoText value={a.homePagerNo} className="tabular-nums" />
@@ -187,7 +200,7 @@ export default function IndividualOthersPage2({
             <Field label="Freezing Grace Period">
               <div className="flex items-center gap-2">
                 <RoText value={a.freezingGracePeriod} className="w-20 text-center tabular-nums" />
-                <span className="text-sm text-muted">Day(s)</span>
+                <span className="text-sm text-muted">{t('Day(s)')}</span>
               </div>
             </Field>
             <Field label="Inter-Group Acc. No.">
@@ -229,7 +242,7 @@ export default function IndividualOthersPage2({
           <PrevPageButton onClick={onPrevPage} />
           <NextPageButton onClick={onNextPage} />
           <button type="button" onClick={onCancel} className={btnKinds.danger}>
-            Cancel
+            {t('Cancel')}
           </button>
         </div>
       </div>

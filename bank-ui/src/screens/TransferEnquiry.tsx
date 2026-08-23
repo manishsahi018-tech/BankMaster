@@ -9,6 +9,7 @@ import TransferDetail from './TransferDetail.tsx'
 import { api } from '../api.ts'
 import { formatAmount, formatDate, todayYyyymmdd } from '../schema/helpers.ts'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmSarieTransferEnq.frm over rid0data — QUERY-SPECS §17.
 
 const COLUMNS: GridColumn[] = [
@@ -107,7 +108,7 @@ export default function TransferEnquiry({
             disabled={fetching}
             className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong disabled:cursor-not-allowed disabled:bg-faint"
           >
-            {fetching ? 'Fetching…' : 'Fetch Transfers'}
+            {fetching ? t('Fetching…') : t('Fetch Transfers')}
           </button>
         </div>
       </div>

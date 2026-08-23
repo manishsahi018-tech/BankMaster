@@ -2,6 +2,7 @@ package com.banksystem.api.domain.repository;
 
 import com.banksystem.api.domain.model.CustUpdateHistoryEntry;
 import com.banksystem.api.domain.model.CustomerProfile;
+import com.banksystem.api.domain.model.EssentialDocuments;
 import com.banksystem.api.domain.model.HeirEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
 import com.banksystem.api.domain.model.JointHolderDetail;
@@ -79,7 +80,12 @@ public interface CustomerRepository {
      *  Keys match the screen fields; empty map when not found. */
     java.util.Map<String, String> acctInfo(String custNo);
 
-    /** Essential documents required for the customer's SAMA sub-category
-     *  (frmDocuments) — the document codes from stctltabDC, resolved to names. */
-    List<String> requiredDocuments(String custNo);
+    /** The frmDocuments payload — the codes required for the customer's SAMA
+     *  sub-category (stctltabDC) together with the ones the customer supplied
+     *  (stcusttab.documentsSupplied / documentOther).
+     *
+     *  <p>{@code asOfDateTime} null reads the live customer record; a 14-char
+     *  BM timestamp reads the stcustlog snapshot for that event, which is what
+     *  the legacy's custHistoryAction path shows. */
+    EssentialDocuments documents(String custNo, String asOfDateTime);
 }

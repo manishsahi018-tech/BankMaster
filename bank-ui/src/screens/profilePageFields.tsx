@@ -2,6 +2,7 @@ import { SectionCard } from '../components/fields.tsx'
 import { codeLabel } from '../codes.ts'
 import { RoText, RoCombo, Field, Segmented, CheckBoxGroup } from '../components/legacyForm.tsx'
 
+import { t } from '../i18n/index.ts'
 // Shared controls for the customer profile's later pages —
 // frmIndividualSaudiAcctInfo, frmIndividualOthers2 and
 // frmIndividualOthersAcctInfo.
@@ -58,7 +59,7 @@ export function OwnershipFlags({ packed }: { packed?: string }) {
   return (
     <div>
       <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-soft">
-        Owner Ship
+        {t('Owner Ship')}
       </p>
       <CheckBoxGroup flags={OWNERSHIP.map((label, i) => ({ label, on: flags.charAt(i) === '1' }))} />
     </div>
@@ -91,7 +92,7 @@ export function AccountFacilities({ a }: { a: Record<string, string> }) {
           </Field>
         ))
       ) : (
-        <div className="self-end pb-2 text-sm text-muted-soft lg:col-span-4">Not requested.</div>
+        <div className="self-end pb-2 text-sm text-muted-soft lg:col-span-4">{t('Not requested.')}</div>
       )}
     </div>
   )
@@ -157,7 +158,7 @@ export function AccountHolding({
         <Field label="Freezing Grace Period">
           <div className="flex items-center gap-2">
             <RoText value={a.freezingGracePeriod} className="w-20 text-center tabular-nums" />
-            <span className="text-sm text-muted">Day(s)</span>
+            <span className="text-sm text-muted">{t('Day(s)')}</span>
           </div>
         </Field>
       )}
@@ -317,7 +318,7 @@ export function PackageFeesAndMemos({ a }: { a: Record<string, string> }) {
           <RoText value={a.generalMemo} />
         </Field>
         <Field label="Package A/c">
-          <RoCombo value={a.packageAcc} />
+          <RoCombo value={codeLabel('packageAcc', a.packageAcc) || a.packageAcc} />
         </Field>
         <Field label="Segment Statement Override">
           <YesNo value={a.pkgStmtFreqOverride} />
