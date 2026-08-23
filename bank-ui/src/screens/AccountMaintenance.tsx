@@ -209,7 +209,10 @@ export default function AccountMaintenance({
         </Stat>
         <Stat label="SAMA Status">
           {data.samaStatus && (
-            <StatusBadge value={data.samaStatus} tone={statusTone(data.samaStatus)} />
+            <StatusBadge
+              value={codeLabel('samaStatus', data.samaStatus)}
+              tone={statusTone(data.samaStatus)}
+            />
           )}
         </Stat>
         <Stat label="Dormant">
@@ -253,7 +256,7 @@ export default function AccountMaintenance({
               <RoCombo value={status} />
             </Field>
             <Field label="SAMA status">
-              <RoCombo value={data.samaStatus} />
+              <RoCombo value={codeLabel('samaStatus', data.samaStatus)} />
             </Field>
 
             <Field label="Dormant">

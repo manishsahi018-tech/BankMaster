@@ -3,6 +3,7 @@ import type { GridRow } from '../components/GridScreen.tsx'
 import type { Account } from '../types.ts'
 import { stacclog } from '../schema/index.ts'
 import { column } from '../schema/helpers.ts'
+import { codeLabel } from '../codes.ts'
 
 // A/C Status History — legacy service 57 requestType '0' (getAcctStatusHistory
 // in cbothers.c): stacclog rows where statusChanged='1', including the change
@@ -13,8 +14,14 @@ const COLUMNS = [
   column(stacclog, 'userId', { label: 'User Id' }),
   column(stacclog, 'supervisorId', { label: 'Supervisor Id' }),
   column(stacclog, 'lastUpdateDateTime', { label: 'Approved Date & Time' }),
-  column(stacclog, 'fromStatus', { label: 'From Status' }),
-  column(stacclog, 'toStatus', { label: 'To Status' }),
+  column(stacclog, 'fromStatus', {
+    label: 'From Status',
+    render: (v) => codeLabel('accStatus', v),
+  }),
+  column(stacclog, 'toStatus', {
+    label: 'To Status',
+    render: (v) => codeLabel('accStatus', v),
+  }),
   column(stacclog, 'accStatusChangeReason', { label: 'Reason for Changing' }),
 ]
 

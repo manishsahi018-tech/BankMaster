@@ -180,6 +180,13 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("03", "Account Stopped"),
                     new CodeEntry("04", "No Debits"),
                     new CodeEntry("08", "Enquiry Restricted"))),
+            // SAMA account status — see JdbcReferenceDataRepository for why
+            // this is a fixed domain rather than an stctltab read.
+            Map.entry("samaStatus", List.of(
+                    new CodeEntry("00", "Open"),
+                    new CodeEntry("01", "Inactive"),
+                    new CodeEntry("02", "Dormant"),
+                    new CodeEntry("03", "Unclaimed"))),
             // Statement frequency — stctltab recType 'SF' under denodo. The
             // codes come from stacclog.ts's statementFreq description, which
             // enumerates them: 01 is NON-AUTOMATIC, not "Monthly". (The
@@ -327,6 +334,10 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
             Map.entry("ledger/100", "وديعة لأجل"),
             Map.entry("ledger/108", "وديعة تحت الطلب"),
             Map.entry("accStatus/00", "مفتوح"),
+            Map.entry("samaStatus/00", "مفتوح"),
+            Map.entry("samaStatus/01", "غير نشط"),
+            Map.entry("samaStatus/02", "غير متحرك"),
+            Map.entry("samaStatus/03", "غير مطالب به"),
             Map.entry("accStatus/02", "غير متحرك"),
             Map.entry("accStatus/03", "حساب موقوف"),
             Map.entry("accStatus/04", "ممنوع السحب"),

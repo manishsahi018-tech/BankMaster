@@ -103,6 +103,12 @@ const TAIL_MATCHED = new Set([
   'monthlyIncome',
   'segmentation',
   'packageAcc',
+  // samaStatus is here for a different reason than the rest: the reference
+  // codes are the 2-char form stacclog documents ("00-Open"), but gld0data
+  // holds the SAME domain one character wide ("0- active"), so an account read
+  // from the master arrives as "0" and has to reach "00". Codes 00-03 have no
+  // ambiguous tails.
+  'samaStatus',
 ])
 
 /**

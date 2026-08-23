@@ -302,6 +302,28 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
         // stchqtab's own column descriptions enumerate both domains — the
         // same source the cardStatus / currency sets were transcribed from,
         // and there is no stctltab record type for either.
+        // SAMA account status. No stctltab record type carries it — the
+        // RecordType list has 'AS' for the bank's own account status and 'RC'
+        // for the change reason, but nothing for SAMA — so like cardStatus and
+        // packageAcc the domain comes from the column's own description.
+        //
+        // The legacy read it from samaacctstatusinfo, a table in the branch
+        // PC's LOCAL Access database (frmAccct.frm:2482, and the same table in
+        // frmAcctStatusHistory.frm:210), matching on the leading TWO
+        // characters. Codes are the 2-char form stacclog documents
+        // ("00-Open;01-Inactive;02-Dormant;03-Unclaimed"); gld0data holds the
+        // same domain one character wide, which codes.ts tail-matches.
+        //
+        // "Not defined" is deliberately absent: it is the legacy's fallback for
+        // a code missing from the local table (globalFunctions.bas:9042
+        // appends tCode & "-Not defined"), not a value the domain carries —
+        // which is why the Arabic capture shows "0 -Not define" beside a real
+        // "00-Open". codeLabel degrades the same way, to the bare code.
+        sets.put("samaStatus", fixed(language,
+                new Fixed("00", "Open", "مفتوح"),
+                new Fixed("01", "Inactive", "غير نشط"),
+                new Fixed("02", "Dormant", "غير متحرك"),
+                new Fixed("03", "Unclaimed", "غير مطالب به")));
         sets.put("chequeType", fixed(language,
                 new Fixed("1", "Personal", "شخصي"),
                 new Fixed("2", "Corporate", "تجاري")));
