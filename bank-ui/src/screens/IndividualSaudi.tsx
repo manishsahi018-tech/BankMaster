@@ -220,7 +220,7 @@ export default function IndividualSaudi({
           </div>
         </SectionCard>
 
-        <SectionCard title="Address &amp; Contact">
+        <SectionCard title="Address & Contact">
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Address Type">
               <Segmented options={['P.O. Box', 'Saudi Post']} selected={poBoxMode ? 0 : 1} />
