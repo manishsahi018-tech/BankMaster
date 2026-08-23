@@ -13,7 +13,10 @@ export default function TransferDetail({ detail, onReturn }: { detail: GridRow; 
       title="Transfer Details"
       chips={[
         { label: 'Reference No', value: detail.transRef },
-        { label: 'Status', value: detail.paymentType },
+        // The repository maps rid0data.statusFlag into this key
+        // (JdbcTransferRepository:254); the name it shares with
+        // sod0data.paymentType is a coincidence, not the same domain.
+        { label: 'Status', value: codeLabel('transferStatus', detail.paymentType) },
         { label: 'Customer', value: detail.custName },
       ]}
       sections={[

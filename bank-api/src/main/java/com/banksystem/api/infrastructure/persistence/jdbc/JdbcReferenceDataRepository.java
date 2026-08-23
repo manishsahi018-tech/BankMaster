@@ -351,6 +351,37 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
                 new Fixed("01", "Inactive", "غير نشط"),
                 new Fixed("02", "Dormant", "غير متحرك"),
                 new Fixed("03", "Unclaimed", "غير مطالب به")));
+        // Three more fixed domains — stctltab has no record type for any of
+        // them, so like cardStatus they come from the column's own description.
+        //
+        // cardType is stcardtab/stcardlog; transferStatus is rid0data's
+        // statusFlag, which the transfer repository hands over as
+        // "paymentType" (JdbcTransferRepository:254) — a name it shares with
+        // sod0data.paymentType and emphatically NOT the same domain;
+        // signatureNature is stcusttab, 0/1 and not the J/S the juristic
+        // screen used to test for.
+        sets.put("cardType", fixed(language,
+                new Fixed("R", "Regular", "عادية"),
+                new Fixed("I", "International", "دولية"),
+                new Fixed("V", "VIP", "كبار العملاء"),
+                new Fixed("A", "Administrative", "إدارية"),
+                new Fixed("D", "Deposit only", "إيداع فقط"),
+                new Fixed("C", "CPS", "CPS"),
+                new Fixed("S", "International chip card", "بطاقة دولية بشريحة"),
+                new Fixed("L", "Local chip card", "بطاقة محلية بشريحة")));
+        sets.put("transferStatus", fixed(language,
+                new Fixed("S", "Create Skeleton", "إنشاء مبدئي"),
+                new Fixed("I", "Issued", "صادرة"),
+                new Fixed("V", "Verified", "تم التحقق"),
+                new Fixed("C", "Confirmed", "مؤكدة"),
+                new Fixed("D", "Cancelled", "ملغاة"),
+                new Fixed("P", "Stopped", "موقوفة"),
+                new Fixed("O", "Dormant", "غير متحركة"),
+                new Fixed("R", "Repurchased", "معاد شراؤها"),
+                new Fixed("T", "Settled/Cleared", "تمت التسوية")));
+        sets.put("signatureNature", fixed(language,
+                new Fixed("0", "Single", "مفرد"),
+                new Fixed("1", "Joint", "مشترك")));
         sets.put("chequeType", fixed(language,
                 new Fixed("1", "Personal", "شخصي"),
                 new Fixed("2", "Corporate", "تجاري")));

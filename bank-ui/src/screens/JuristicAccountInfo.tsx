@@ -94,7 +94,10 @@ export default function JuristicAccountInfo({
           fields: [
             {
               label: 'Nature of Signature',
-              value: info.signatureNature === 'J' ? 'Joint' : info.signatureNature === 'S' ? 'Single' : '',
+              // stcusttab.signatureNature is 0-single / 1-joint. This tested
+              // for 'J' and 'S', which the column never holds, so the field
+              // rendered EMPTY for every customer in both locales.
+              value: codeLabel('signatureNature', info.signatureNature),
             },
             { label: 'Internet Facility', value: yesNo(info.internetFlag) },
             { label: 'Customer Advice', value: yesNo(info.customerAdvice) },

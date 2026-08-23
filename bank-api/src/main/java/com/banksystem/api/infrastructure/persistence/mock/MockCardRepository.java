@@ -72,6 +72,10 @@ public class MockCardRepository implements CardRepository {
                 .findFirst();
     }
 
+    /** stcardtab.cardType — the letter domain the column documents. */
+    private static final List<String> CARD_TYPES =
+            List.of("R", "I", "V", "A", "D", "C", "S", "L");
+
     @Override
     public CardSearchResult search(String custNo, String accNo, String cardNo, int page) {
         DemoData.Customer c;
@@ -119,7 +123,12 @@ public class MockCardRepository implements CardRepository {
                 .or(() -> Optional.of(new CardSummary(cardNo, nameOnCard(c), DemoData.dateBack(900),
                         plusYears(DemoData.dateBack(900), 4), "1", "9", "9", c.accNo(0) + "01")))
                 .map(k -> new CardDetail(k.cardNo(), c.custNo(), c.shortName(),
-                        c.juristic() ? "C" : "P", k.requestStatus(), c.branchCode(), "1",
+                        // cardType is stcardtab's LETTER domain (R/I/V/A/D/C/S/L),
+                        // not a number. It was hardcoded "1", which is not a
+                        // member — so the screen had nothing to resolve and
+                        // showed the fixture value raw.
+                        c.juristic() ? "C" : "P", k.requestStatus(), c.branchCode(),
+                        DemoData.pick(k.cardNo(), 12, CARD_TYPES),
                         k.nameOnTheCard(),
                         k.coreAccNo().substring(0, Math.min(13, k.coreAccNo().length())),
                         k.coreAccNo(),

@@ -33,7 +33,7 @@ export default function CardDetail({
           title: 'Card',
           fields: [
             { label: 'Name on the Card', value: detail.nameOnTheCard, wide: true },
-            { label: 'Card Type', value: detail.cardType },
+            { label: 'Card Type', value: codeLabel('cardType', detail.cardType) },
             { label: 'Request Status', value: codeLabel('cardRequestStatus', detail.requestStatus) },
             { label: 'New / Update', value: detail.newOrUpdate },
             { label: 'Delivery Branch', value: detail.deliveryBranchCode },

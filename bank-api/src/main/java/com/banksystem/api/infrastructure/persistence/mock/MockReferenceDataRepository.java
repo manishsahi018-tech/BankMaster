@@ -180,6 +180,22 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("03", "Account Stopped"),
                     new CodeEntry("04", "No Debits"),
                     new CodeEntry("08", "Enquiry Restricted"))),
+            // See JdbcReferenceDataRepository for why these three are fixed
+            // domains rather than stctltab reads.
+            Map.entry("cardType", List.of(
+                    new CodeEntry("R", "Regular"), new CodeEntry("I", "International"),
+                    new CodeEntry("V", "VIP"), new CodeEntry("A", "Administrative"),
+                    new CodeEntry("D", "Deposit only"), new CodeEntry("C", "CPS"),
+                    new CodeEntry("S", "International chip card"),
+                    new CodeEntry("L", "Local chip card"))),
+            Map.entry("transferStatus", List.of(
+                    new CodeEntry("S", "Create Skeleton"), new CodeEntry("I", "Issued"),
+                    new CodeEntry("V", "Verified"), new CodeEntry("C", "Confirmed"),
+                    new CodeEntry("D", "Cancelled"), new CodeEntry("P", "Stopped"),
+                    new CodeEntry("O", "Dormant"), new CodeEntry("R", "Repurchased"),
+                    new CodeEntry("T", "Settled/Cleared"))),
+            Map.entry("signatureNature", List.of(
+                    new CodeEntry("0", "Single"), new CodeEntry("1", "Joint"))),
             // The four standing-order lists — stctltab recTypes ST / PT / PM /
             // PF under denodo. Codes are the ONE character sod0data stores;
             // the wording is that column's own documented domain.
@@ -373,6 +389,17 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
             Map.entry("ledger/100", "وديعة لأجل"),
             Map.entry("ledger/108", "وديعة تحت الطلب"),
             Map.entry("accStatus/00", "مفتوح"),
+            Map.entry("cardType/R", "عادية"), Map.entry("cardType/I", "دولية"),
+            Map.entry("cardType/V", "كبار العملاء"), Map.entry("cardType/A", "إدارية"),
+            Map.entry("cardType/D", "إيداع فقط"),
+            Map.entry("cardType/S", "بطاقة دولية بشريحة"),
+            Map.entry("cardType/L", "بطاقة محلية بشريحة"),
+            Map.entry("transferStatus/S", "إنشاء مبدئي"), Map.entry("transferStatus/I", "صادرة"),
+            Map.entry("transferStatus/V", "تم التحقق"), Map.entry("transferStatus/C", "مؤكدة"),
+            Map.entry("transferStatus/D", "ملغاة"), Map.entry("transferStatus/P", "موقوفة"),
+            Map.entry("transferStatus/O", "غير متحركة"), Map.entry("transferStatus/R", "معاد شراؤها"),
+            Map.entry("transferStatus/T", "تمت التسوية"),
+            Map.entry("signatureNature/0", "مفرد"), Map.entry("signatureNature/1", "مشترك"),
             Map.entry("orderType/0", "أمر ثابت محدد"),
             Map.entry("orderType/1", "تحويل آلي من حساب الأمر الثابت"),
             Map.entry("orderType/2", "تحويل آلي إلى حساب الأمر الثابت"),
