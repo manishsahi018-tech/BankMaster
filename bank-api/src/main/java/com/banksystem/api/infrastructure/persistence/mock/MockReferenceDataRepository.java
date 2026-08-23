@@ -180,6 +180,34 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("03", "Account Stopped"),
                     new CodeEntry("04", "No Debits"),
                     new CodeEntry("08", "Enquiry Restricted"))),
+            // The four standing-order lists — stctltab recTypes ST / PT / PM /
+            // PF under denodo. Codes are the ONE character sod0data stores;
+            // the wording is that column's own documented domain.
+            Map.entry("orderType", List.of(
+                    new CodeEntry("0", "Specific standing order"),
+                    new CodeEntry("1", "Automatic funds transfer FROM standing order account"),
+                    new CodeEntry("2", "Automatic funds transfer TO standing order account"))),
+            Map.entry("paymentType", List.of(
+                    new CodeEntry("0", "Pay until further notice"),
+                    new CodeEntry("1", "Pay until specified total has been paid"),
+                    new CodeEntry("2", "Pay until specified date has been reached"),
+                    new CodeEntry("3", "Pay until specified number of payments have been made"),
+                    new CodeEntry("4", "Payment stopped"),
+                    new CodeEntry("5", "Final payment made"))),
+            Map.entry("paymentMode", List.of(
+                    new CodeEntry("0", "Customer is beneficiary — pay from/to account at our bank"),
+                    new CodeEntry("1", "Customer is not beneficiary — pay from/to account at our bank"),
+                    new CodeEntry("2", "Credit transfer — pay to account at another bank"),
+                    new CodeEntry("3", "Pay by cheque"),
+                    new CodeEntry("4", "Credit transfer — pay account in the payee's account number"),
+                    new CodeEntry("5", "Pay by cheque — pay account in the payee's account number"))),
+            Map.entry("paymentFrequency", List.of(
+                    new CodeEntry("D", "Daily"),
+                    new CodeEntry("W", "Weekly"),
+                    new CodeEntry("M", "Monthly"),
+                    new CodeEntry("Q", "Quarterly"),
+                    new CodeEntry("H", "Half yearly"),
+                    new CodeEntry("Y", "Yearly"))),
             // Account status change reason — stctltab recType 'RC' under
             // denodo. 4-char ctlCodes, which is what makes the legacy's
             // "starts with 0" test tell a code apart from free text.
@@ -345,6 +373,27 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
             Map.entry("ledger/100", "وديعة لأجل"),
             Map.entry("ledger/108", "وديعة تحت الطلب"),
             Map.entry("accStatus/00", "مفتوح"),
+            Map.entry("orderType/0", "أمر ثابت محدد"),
+            Map.entry("orderType/1", "تحويل آلي من حساب الأمر الثابت"),
+            Map.entry("orderType/2", "تحويل آلي إلى حساب الأمر الثابت"),
+            Map.entry("paymentType/0", "الدفع حتى إشعار آخر"),
+            Map.entry("paymentType/1", "الدفع حتى سداد المبلغ المحدد"),
+            Map.entry("paymentType/2", "الدفع حتى التاريخ المحدد"),
+            Map.entry("paymentType/3", "الدفع حتى اكتمال عدد الدفعات المحدد"),
+            Map.entry("paymentType/4", "الدفع متوقف"),
+            Map.entry("paymentType/5", "تم سداد الدفعة الأخيرة"),
+            Map.entry("paymentMode/0", "العميل هو المستفيد — الدفع من/إلى حساب لدى بنكنا"),
+            Map.entry("paymentMode/1", "العميل ليس المستفيد — الدفع من/إلى حساب لدى بنكنا"),
+            Map.entry("paymentMode/2", "حوالة دائنة — الدفع إلى حساب في بنك آخر"),
+            Map.entry("paymentMode/3", "الدفع بشيك"),
+            Map.entry("paymentMode/4", "حوالة دائنة — الدفع للحساب المحدد في رقم حساب المستفيد"),
+            Map.entry("paymentMode/5", "الدفع بشيك — للحساب المحدد في رقم حساب المستفيد"),
+            Map.entry("paymentFrequency/D", "يومي"),
+            Map.entry("paymentFrequency/W", "أسبوعي"),
+            Map.entry("paymentFrequency/M", "شهري"),
+            Map.entry("paymentFrequency/Q", "ربع سنوي"),
+            Map.entry("paymentFrequency/H", "نصف سنوي"),
+            Map.entry("paymentFrequency/Y", "سنوي"),
             Map.entry("statusChangeReason/0001", "طلب العميل"),
             Map.entry("statusChangeReason/0002", "أمر قضائي"),
             Map.entry("statusChangeReason/0003", "تعليمات ساما"),

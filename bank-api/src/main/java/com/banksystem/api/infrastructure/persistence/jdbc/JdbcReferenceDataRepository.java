@@ -123,6 +123,7 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
             "idType", "country", "businessType",
             "samaMainCategory", "samaSubCategory", "branch",
             "currency", "ledger", "accStatus", "statusChangeReason",
+            "orderType", "paymentType", "paymentMode", "paymentFrequency",
             "stmtFreq", "intApplication",
             // The seven stctltab record types the profile combos resolve
             // against. They belong on this list by its own definition — every
@@ -306,6 +307,21 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
         // does not. The screen applies that same test; this set only has to
         // answer for the coded half.
         sets.put("statusChangeReason", ctltabSet(language, "statusChangeReason", "RC"));
+        // The four standing-order combos. All are stctltab record types —
+        // 'ST' SOD type, 'PT' payment type, 'PM' payment mode, 'PF' payment
+        // frequency — so like RC they are read, not hardcoded. The legacy read
+        // the same four lists from sodtypeinfo / paymenttypeinfo /
+        // paymodeinfo / payfreqinfo in the branch PC's LOCAL Access database
+        // (frmStandingOrderDetail.frm:1600-1655).
+        //
+        // sod0data stores each of them in ONE character and the legacy matched
+        // on one character (Mid$(list, 1, 1) throughout that form), so if
+        // stctltab pads its ctlCode to four, codes.ts tail-matches — see the
+        // note beside TAIL_MATCHED there.
+        sets.put("orderType", ctltabSet(language, "orderType", "ST"));
+        sets.put("paymentType", ctltabSet(language, "paymentType", "PT"));
+        sets.put("paymentMode", ctltabSet(language, "paymentMode", "PM"));
+        sets.put("paymentFrequency", ctltabSet(language, "paymentFrequency", "PF"));
         sets.put("stmtFreq", ctltabSet(language, "stmtFreq", "SF"));
         sets.put("intApplication", ctltabSet(language, "intApplication", "IA"));
         // Fixed value domains documented on stcardtab.ts (cardStatus /

@@ -4,6 +4,7 @@ import StatusBadge from '../components/StatusBadge.tsx'
 import { formatAmount, formatDate } from '../schema/helpers.ts'
 
 import { t } from '../i18n/index.ts'
+import { codeLabel } from '../codes.ts'
 // Mirrors legacy frmStandingOrderDetail.frm — sod0data joined with
 // gld0data / stcusttab / latest stsodlog (QUERY-SPECS §11).
 
@@ -29,10 +30,10 @@ export default function StandingOrderDetail({ detail, onReturn }: { detail: Grid
         {
           title: 'Order',
           fields: [
-            { label: 'Order Type', value: detail.orderType },
-            { label: 'Payment Type', value: detail.paymentType },
-            { label: 'Pay Mode', value: detail.paymentMode },
-            { label: 'Pay Freq', value: detail.paymentFrequency },
+            { label: 'Order Type', value: codeLabel('orderType', detail.orderType) },
+            { label: 'Payment Type', value: codeLabel('paymentType', detail.paymentType) },
+            { label: 'Pay Mode', value: codeLabel('paymentMode', detail.paymentMode) },
+            { label: 'Pay Freq', value: codeLabel('paymentFrequency', detail.paymentFrequency) },
           ],
         },
         {

@@ -109,6 +109,15 @@ const TAIL_MATCHED = new Set([
   // from the master arrives as "0" and has to reach "00". Codes 00-03 have no
   // ambiguous tails.
   'samaStatus',
+  // The four standing-order lists, for the same reason: sod0data stores each
+  // in ONE character and the legacy matched on one (Mid$(list, 1, 1) all
+  // through frmStandingOrderDetail), so these resolve by exact match if
+  // stctltab holds a 1-char ctlCode and by tail match if it pads to 4. The
+  // domains — 0-2, 0-5, 0-5 and D/W/M/Q/H/Y — have no ambiguous tails.
+  'orderType',
+  'paymentType',
+  'paymentMode',
+  'paymentFrequency',
 ])
 
 /**
