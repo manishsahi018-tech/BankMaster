@@ -1,9 +1,9 @@
 import DetailScreen from '../components/DetailScreen.tsx'
 import type { GridRow } from '../components/GridScreen.tsx'
 import { formatDate } from '../schema/helpers.ts'
+import { Segmented, isFirst } from '../components/legacyForm.tsx'
 import { codeLabel } from '../codes.ts'
 
-import { t } from '../i18n/index.ts'
 // Mirrors the legacy signatory drill-down — stsigntab ⋈ stidtab with
 // idCategory 'S' (QUERY-SPECS §20).
 
@@ -35,14 +35,17 @@ export default function SignatoryDetail({ detail, onReturn }: { detail: GridRow;
             { label: 'Signatory No', value: detail.signatoryNo },
             { label: 'Customer Branch', value: detail.custBranchCode },
             {
+              // An OptionButton pair on the legacy form, so it is drawn as one
+              // here too — the same control PartyDetail, OwnerDetail and
+              // JointHolderDetail use for their Yes/No rows. Segmented
+              // translates its own options.
               label: 'Signatory Enabled',
-              // A literal word, not data: DetailScreen translates labels but
-              // renders values as given, so this has to be translated here.
-              value: detail.activeStatus === '1' ? t('Yes') : t('No'),
+              node: <Segmented options={['Yes', 'No']} selected={detail.activeStatus === '1' ? 0 : 1} />,
             },
             { label: 'Arabic Name', value: arabicName, wide: true },
             { label: 'English Name', value: englishName, wide: true },
-            { label: 'Short Name', value: detail.signatoryShortName, wide: true },
+            { label: 'Arabic Short Name', value: detail.aShortName, wide: true },
+            { label: 'English Short Name', value: detail.eShortName, wide: true },
             // The form shows this only when the signature is disabled; it is
             // the reason someone turned it off, and it is the first thing an
             // operator looking at a blocked signatory needs.
@@ -67,7 +70,9 @@ export default function SignatoryDetail({ detail, onReturn }: { detail: GridRow;
             { label: 'Issued At', value: detail.idIssuedAt },
             {
               label: 'Date Type',
-              value: detail.idDateType === '0' ? t('Hijri') : t('Gregorian'),
+              node: (
+                <Segmented options={['Hijri', 'Gregorian']} selected={isFirst(detail.idDateType) ? 0 : 1} />
+              ),
             },
             { label: 'Issue Date (Hijri)', value: formatDate(detail.idIssueDateH) },
             { label: 'Issue Date (Gregorian)', value: formatDate(detail.idIssueDateG) },

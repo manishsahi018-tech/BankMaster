@@ -210,7 +210,15 @@ public class MockTransferRepository implements TransferRepository {
                 "608", currency[0],
                 DemoData.amount((int) riyals, 0), milli(payThousandths),
                 applicant.shortName(), benef[0], benef[1], benef[2], benef[3],
-                "1", "0", applicant.branchCode(), applicant.shortName(),
+                // transType is rid0data.paymentStatus (0-4) and paymentType is
+                // its statusFlag (S/I/V/C/D/P/O/R/T). This passed a hardcoded
+                // "0" for the status, which is not a member of that domain, so
+                // the Status chip showed the fixture value raw instead of a
+                // description. Both are seeded off the reference now, like
+                // every other field on this record.
+                String.valueOf(1 + DemoData.pick(key, 37, 4)),
+                List.of("C", "C", "C", "P", "R").get(DemoData.pick(key, 38, 5)),
+                applicant.branchCode(), applicant.shortName(),
                 DemoData.pick(key, 35, PURPOSES), currency[1],
                 DemoData.pick(key, 36, 3) == 0 ? "PLEASE ADVISE BENEFICIARY ON CREDIT" : ""));
     }

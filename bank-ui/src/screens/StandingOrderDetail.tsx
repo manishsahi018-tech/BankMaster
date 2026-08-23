@@ -5,6 +5,7 @@ import { formatAmount, formatDate } from '../schema/helpers.ts'
 
 import { t } from '../i18n/index.ts'
 import { codeLabel } from '../codes.ts'
+import { Segmented } from '../components/legacyForm.tsx'
 // Mirrors legacy frmStandingOrderDetail.frm — sod0data joined with
 // gld0data / stcusttab / latest stsodlog (QUERY-SPECS §11).
 
@@ -34,6 +35,29 @@ export default function StandingOrderDetail({ detail, onReturn }: { detail: Grid
             { label: 'Payment Type', value: codeLabel('paymentType', detail.paymentType) },
             { label: 'Pay Mode', value: codeLabel('paymentMode', detail.paymentMode) },
             { label: 'Pay Freq', value: codeLabel('paymentFrequency', detail.paymentFrequency) },
+            // frameCommission / frameNextDay: two OptionButton pairs the form
+            // draws between "No of payments made" and "Payment Amount", both
+            // read as "0 means the first button, anything else the second"
+            // (frmStdOrdGrid.frm:623). They were dropped entirely, so two of
+            // the order's terms never reached the screen.
+            //
+            // limitInExcessFlag and transactionDateFlag stay out: the wire
+            // record carries them (:517, :528) but frmStandingOrderDetail has
+            // no control for either, so the legacy never shows them.
+            {
+              label: 'Commission Flag',
+              node: <Segmented options={['Yes', 'No']} selected={detail.commissionFlag === '0' ? 1 : 0} />,
+            },
+            {
+              label: 'Next Day Flag',
+              node: (
+                <Segmented
+                  options={['Process Same Day', 'Process Next Day']}
+                  selected={detail.processNextDayFlag === '0' ? 0 : 1}
+                />
+              ),
+              wide: true,
+            },
           ],
         },
         {

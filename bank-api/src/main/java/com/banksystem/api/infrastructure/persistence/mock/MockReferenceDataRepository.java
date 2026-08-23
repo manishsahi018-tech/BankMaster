@@ -194,6 +194,12 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("D", "Cancelled"), new CodeEntry("P", "Stopped"),
                     new CodeEntry("O", "Dormant"), new CodeEntry("R", "Repurchased"),
                     new CodeEntry("T", "Settled/Cleared"))),
+            // rid0data.paymentStatus, arriving on the transfer detail as
+            // "transType" — the legacy's transfertypeinfo lookup.
+            Map.entry("transferType", List.of(
+                    new CodeEntry("0", "Initialised"), new CodeEntry("1", "Direct Transfer"),
+                    new CodeEntry("2", "SWIFT/Telex"), new CodeEntry("3", "Postal/Fax"),
+                    new CodeEntry("4", "Telephone"))),
             Map.entry("signatureNature", List.of(
                     new CodeEntry("0", "Single"), new CodeEntry("1", "Joint"))),
             // The four standing-order lists — stctltab recTypes ST / PT / PM /
@@ -399,6 +405,9 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
             Map.entry("transferStatus/D", "ملغاة"), Map.entry("transferStatus/P", "موقوفة"),
             Map.entry("transferStatus/O", "غير متحركة"), Map.entry("transferStatus/R", "معاد شراؤها"),
             Map.entry("transferStatus/T", "تمت التسوية"),
+            Map.entry("transferType/0", "مبدئية"), Map.entry("transferType/1", "حوالة مباشرة"),
+            Map.entry("transferType/2", "سويفت/تلكس"), Map.entry("transferType/3", "بريد/فاكس"),
+            Map.entry("transferType/4", "هاتف"),
             Map.entry("signatureNature/0", "مفرد"), Map.entry("signatureNature/1", "مشترك"),
             Map.entry("orderType/0", "أمر ثابت محدد"),
             Map.entry("orderType/1", "تحويل آلي من حساب الأمر الثابت"),

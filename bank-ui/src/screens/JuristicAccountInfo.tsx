@@ -2,13 +2,21 @@ import DetailScreen from '../components/DetailScreen.tsx'
 import type { GridRow } from '../components/GridScreen.tsx'
 import { codeLabel } from '../codes.ts'
 
+import { Segmented } from '../components/legacyForm.tsx'
 // Mirrors legacy frmJuristicAccountInfo.frm ("Account Details") — page 2 of
 // the juristic profile. Enquiry subset: in history/search/supervisor modes
 // the legacy form disables every input frame, so this read-only rendering
 // matches the enquiry behavior. The create/approve/reject maintenance path
 // is out of scope.
 
-const yesNo = (v: unknown) => (v === '1' ? 'Yes' : v === '0' ? 'No' : '')
+/**
+ * The Yes/No OptionButton pairs frmJuristicAccountInfo draws. A blank column
+ * means the flag was never set, and the legacy leaves both buttons clear
+ * rather than defaulting to No — Segmented takes -1 for that.
+ */
+const yesNo = (v: unknown) => (
+  <Segmented options={['Yes', 'No']} selected={v === '1' ? 0 : v === '0' ? 1 : -1} />
+)
 
 export default function JuristicAccountInfo({
   profile,
@@ -35,7 +43,7 @@ export default function JuristicAccountInfo({
   const facilityRow = (prefix: string) => [
     { label: 'Currency', value: codeLabel('currency', info[`${prefix}Currency`]) },
     { label: 'Stmt. Frequency', value: codeLabel('stmtFreq', info[`${prefix}StmtFreq`]) },
-    { label: 'Cheque Book', value: yesNo(info[`${prefix}ChequeBook`]) },
+    { label: 'Cheque Book', node: yesNo(info[`${prefix}ChequeBook`]) },
     { label: 'A/c Status', value: codeLabel('accStatus', info[`${prefix}Status`]) },
   ]
   return (
@@ -99,9 +107,9 @@ export default function JuristicAccountInfo({
               // rendered EMPTY for every customer in both locales.
               value: codeLabel('signatureNature', info.signatureNature),
             },
-            { label: 'Internet Facility', value: yesNo(info.internetFlag) },
-            { label: 'Customer Advice', value: yesNo(info.customerAdvice) },
-            { label: 'Update for SAMA', value: yesNo(info.updateForSama) },
+            { label: 'Internet Facility', node: yesNo(info.internetFlag) },
+            { label: 'Customer Advice', node: yesNo(info.customerAdvice) },
+            { label: 'Update for SAMA', node: yesNo(info.updateForSama) },
           ],
         },
         {

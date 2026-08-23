@@ -225,6 +225,23 @@ const AR_EXTRA: Record<string, string> = {
   'delivery branch': 'فرع التسليم',
   'new / update': 'جديد / تعديل',
   'sequence no': 'الرقم التسلسلي',
+  // The card carries both account numbers and the screen now names each; the
+  // legacy's plain "رقم الحساب" would have read the same on both rows.
+  'core account no': 'رقم الحساب الأساسي',
+  'bm account no': 'رقم حساب BM',
+  // An acronym the legacy leaves in Latin on the Arabic form too
+  // (frmCardDetailsCaption(50, 0) = "CPS"). Spelled out here so the audit
+  // sees it answered rather than missing.
+  cps: 'CPS',
+
+  // Reference / heir detail (frmIndividualSaudi2, frmIndividualHeirs)
+  'disabled date': 'تاريخ الإيقاف',
+
+  // Signatory detail (frmJuristicSignatory). The legacy draws ONE "Short Name"
+  // label over an Arabic box and an English one; flattened to a labelled pair
+  // here, so each needs its own caption.
+  'arabic short name': 'الاسم المختصر بالعربية',
+  'english short name': 'الاسم المختصر بالانجليزية',
 
   // Account maintenance
   opened: 'تاريخ الفتح',

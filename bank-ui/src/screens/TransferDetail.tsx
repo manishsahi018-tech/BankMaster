@@ -32,6 +32,11 @@ export default function TransferDetail({ detail, onReturn }: { detail: GridRow; 
             { label: 'Payment Amount', value: formatAmount(detail.payAmt) },
             { label: 'Payment Currency', value: codeLabel('currency', detail.payCurrCode) },
             { label: 'Exchange Rate', value: detail.exchangeRate },
+            // rid0data.paymentStatus. The legacy resolves it against
+            // transfertypeinfo and prints "code-text" beside the payment
+            // status (frmSarieTransferEnq.frm:1373); it was fetched but never
+            // rendered, so the transfer's own type never reached the screen.
+            { label: 'Transfer Type', value: codeLabel('transferType', detail.transType) },
             { label: 'Purpose', value: detail.transferPurpose },
             { label: 'Branch', value: detail.branchCode },
           ],

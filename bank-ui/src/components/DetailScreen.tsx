@@ -9,8 +9,19 @@ import { useT } from '../i18n/index.ts'
 
 export interface DetailField {
   label: string
-  /** Plain scalars only — rendered into a read-only <input>, which cannot hold JSX. */
-  value: string | number | null | undefined
+  /** Plain scalars — rendered into a read-only <input>. */
+  value?: string | number | null
+  /**
+   * A control instead of a value box, for the fields the legacy forms draw as
+   * something other than a text box — an OptionButton pair above all.
+   *
+   * <p>Without this a radio pair had to be flattened to the word it selects,
+   * which is how frmJuristicSignatory's هـ/م and نعم/لا arrived here as plain
+   * text while the party, owner and joint-holder drill-downs — built on the
+   * legacyForm primitives — drew them as Segmented. Same layout either way;
+   * only the control changes.
+   */
+  node?: ReactNode
   /** span two grid columns (long values like names/narratives) */
   wide?: boolean
 }
@@ -114,7 +125,9 @@ export default function DetailScreen({
                   >
                     {/* Blank columns render as an empty box rather than a dash —
                         same convention as frmAccct.frm / AccountMaintenance. */}
-                    <ReadOnlyInput id={id} dir="auto" value={f.value == null ? '' : String(f.value)} />
+                    {f.node ?? (
+                      <ReadOnlyInput id={id} dir="auto" value={f.value == null ? '' : String(f.value)} />
+                    )}
                   </Field>
                 )
               })}

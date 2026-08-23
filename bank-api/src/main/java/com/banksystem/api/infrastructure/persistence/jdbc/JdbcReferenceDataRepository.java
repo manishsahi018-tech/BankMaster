@@ -379,6 +379,17 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
                 new Fixed("O", "Dormant", "غير متحركة"),
                 new Fixed("R", "Repurchased", "معاد شراؤها"),
                 new Fixed("T", "Settled/Cleared", "تمت التسوية")));
+        // rid0data.paymentStatus, which the transfer repository hands over
+        // as "transType" (JdbcTransferRepository:257). The legacy resolved it
+        // out of the local transfertypeinfo table and printed it
+        // code-with-text (frmSarieTransferEnq.frm:1373-1383); the workbook
+        // carries the same domain on the column.
+        sets.put("transferType", fixed(language,
+                new Fixed("0", "Initialised", "مبدئية"),
+                new Fixed("1", "Direct Transfer", "حوالة مباشرة"),
+                new Fixed("2", "SWIFT/Telex", "سويفت/تلكس"),
+                new Fixed("3", "Postal/Fax", "بريد/فاكس"),
+                new Fixed("4", "Telephone", "هاتف")));
         sets.put("signatureNature", fixed(language,
                 new Fixed("0", "Single", "مفرد"),
                 new Fixed("1", "Joint", "مشترك")));

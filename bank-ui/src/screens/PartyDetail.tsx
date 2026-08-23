@@ -100,6 +100,12 @@ export default function PartyDetail({
             <Field label="Branch">
               <RoCombo value={codeLabel('branch', d.branchCode)} />
             </Field>
+            {/* stcreftab/stheirtab.disabledDate — the date behind an
+                "Active: No". It came down with the record but had nowhere to
+                land, so a deactivated party gave no hint when. */}
+            <Field label="Disabled Date">
+              <DateTriple value={d.disabledDate} />
+            </Field>
           </div>
 
           <div className="mt-5 overflow-x-auto border-t border-edge-soft pt-4">
