@@ -105,7 +105,6 @@ export default function JuristicMain({
   // Date of Establishment reuses the DOB columns — cbjuristic.c:3212-3214
   const doeHijri = isFirst(profile.dobDateType)
   const poBoxMode = String(profile.addressType ?? '').trim() !== '1'
-  const addr1 = String(profile.address1 ?? '')
   const zip = String(profile.zipCode ?? '')
 
   return (
@@ -234,7 +233,7 @@ export default function JuristicMain({
         <SectionCard title="Address &amp; Contact">
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Address Type">
-              <Segmented options={['PO Box', 'GPS']} selected={poBoxMode ? 0 : 1} />
+              <Segmented options={['P.O. Box', 'Saudi Post']} selected={poBoxMode ? 0 : 1} />
             </Field>
             {poBoxMode ? (
               <>
@@ -247,11 +246,18 @@ export default function JuristicMain({
               </>
             ) : (
               <>
+                {/* stcusttab carries gprsNo (8) and unitNo (5) as their own
+                    columns, both "Added for Saudi postal address". These used
+                    to be sliced out of address1 — a packing the schema never
+                    describes, which showed the first five characters of the
+                    street as a GPS number and never showed gprsNo at all.
+                    JointHolderDetail reads the columns directly; so does this
+                    now. */}
                 <Field label="GPS Number">
-                  <RoText value={addr1.slice(0, 5)} />
+                  <RoText value={profile.gprsNo} className="tabular-nums" />
                 </Field>
                 <Field label="Street / Area Name">
-                  <RoText value={addr1.slice(6)} />
+                  <RoText value={profile.address1} />
                 </Field>
               </>
             )}
@@ -259,7 +265,7 @@ export default function JuristicMain({
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label={poBoxMode ? 'P.O. Box' : 'Unit'}>
-              <RoText value={profile.poBox} />
+              <RoText value={poBoxMode ? profile.poBox : profile.unitNo} />
             </Field>
             <Field label="City">
               <RoCombo value={profile.cityName} />

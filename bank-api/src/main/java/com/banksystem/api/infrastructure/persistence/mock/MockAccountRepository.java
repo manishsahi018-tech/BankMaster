@@ -430,7 +430,14 @@ public class MockAccountRepository implements AccountRepository {
                 Map.entry("dormant", dormant ? "Yes" : "No"),
                 Map.entry("stmtFrequency",
                         List.of("01", "02", "04", "05").get(DemoData.pick(accNo, 71, 4))),
-                Map.entry("statementDay", "Br.Stmt.Day"),
+                // RAW code, as gld0data.statementDay holds it and as the
+                // archival path returns it: "0" is the branch statement day,
+                // anything else a day of the month. The word "Br.Stmt.Day"
+                // here was a fixture LABEL, and the screen's stmtDayIndex
+                // reads a code — so it matched the "anything else" branch and
+                // the demo account showed Month End, the opposite of what the
+                // fixture meant.
+                Map.entry("statementDay", "0"),
                 Map.entry("intApplication", "0"),
                 Map.entry("crInterestRate", String.valueOf(DemoData.pick(accNo, 72, 4))),
                 Map.entry("drInterestRate", String.valueOf(18 + DemoData.pick(accNo, 73, 6))),

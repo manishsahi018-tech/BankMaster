@@ -106,6 +106,16 @@ final class DemoData {
                     "", "", "", "",
                     "Al Noor Trading Est.", "0127", "02", "10", "4030099812",
                     "جدة", "9921", "21423", "20011115", 3),
+            // The only SAUDI POST customer in the fixtures (addressType "1").
+            // Every other one is a P.O. Box address, which left the whole
+            // Saudi-Post branch of the profile screens unreachable in the mock
+            // — and that is precisely where the unitNo and gprsNo columns were
+            // being mis-read. Sub category 04 routes it to frmIndividualOthers.
+            new Customer("0415743", "Q", "1006677341", "6648120", "", "0544120983",
+                    "", "", "", "",
+                    "Omar", "Faisal", "", "Al-Harbi",
+                    "Omar F. Al-Harbi", "0127", "01", "04", "",
+                    "الدمام", "", "34212", "20120311", 2),
             // Sub category 39 → screen set 5, frmJuristicDiplomats.
             new Customer("0417050", "D", "3014778220", "6601180", "", "0533771902",
                     "", "", "", "",

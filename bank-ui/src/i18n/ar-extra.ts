@@ -333,6 +333,13 @@ const AR_EXTRA: Record<string, string> = {
   'starting from the date above. the gateway supplies its own end date — the legacy sends none, because the branch pc clock could not be trusted':
     'يبدأ من التاريخ أعلاه. تحدد البوابة تاريخ النهاية بنفسها — النظام السابق لا يرسله، لأن ساعة جهاز الفرع لم تكن موثوقة.',
 
+  // Saudi Post (Wasel) address labels. The legacy table already carries
+  // "GPS Number" as رقم واصل and "Unit" as وحدة رقم, which is what confirms
+  // this field is the Wasel number rather than part of the street line.
+  'saudi post': 'واصل',
+  'street name': 'اسم الشارع',
+  'street / area name': 'اسم شارع/منطقة',
+
   // Chrome the shared components ask for.
   'fetching from server': 'جاري الجلب من الخادم…',
   'please wait a moment': 'الرجاء الانتظار لحظة…',

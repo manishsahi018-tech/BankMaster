@@ -86,7 +86,6 @@ export default function IndividualSaudi({
   const marital = String(profile.marritalStatus ?? '').trim().toUpperCase()
   const maritalIdx = marital === 'M' || marital === '0' ? 0 : marital === 'S' || marital === '1' ? 1 : 2
   const sex = String(profile.sexCode ?? '').trim().toUpperCase()
-  const addr1 = String(profile.address1 ?? '')
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
@@ -224,7 +223,7 @@ export default function IndividualSaudi({
         <SectionCard title="Address &amp; Contact">
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Address Type">
-              <Segmented options={['PO Box', 'GPS']} selected={poBoxMode ? 0 : 1} />
+              <Segmented options={['P.O. Box', 'Saudi Post']} selected={poBoxMode ? 0 : 1} />
             </Field>
             {poBoxMode ? (
               <>
@@ -237,11 +236,18 @@ export default function IndividualSaudi({
               </>
             ) : (
               <>
+                {/* stcusttab carries gprsNo (8) and unitNo (5) as their own
+                    columns, both "Added for Saudi postal address". These used
+                    to be sliced out of address1 — a packing the schema never
+                    describes, which showed the first five characters of the
+                    street as a GPS number and never showed gprsNo at all.
+                    JointHolderDetail reads the columns directly; so does this
+                    now. */}
                 <Field label="GPS Number">
-                  <RoText value={addr1.slice(0, 5)} />
+                  <RoText value={profile.gprsNo} className="tabular-nums" />
                 </Field>
                 <Field label="Street Name">
-                  <RoText value={addr1.slice(6)} />
+                  <RoText value={profile.address1} />
                 </Field>
               </>
             )}
