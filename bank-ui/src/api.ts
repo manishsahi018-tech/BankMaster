@@ -8,6 +8,7 @@ import { encryptPassword } from './pocCrypto.ts'
 import { beginRequest, endRequest } from './pending.ts'
 import { getLocale } from './i18n/locale.ts'
 
+import { t } from './i18n/index.ts'
 /**
  * The headers every call carries.
  *
@@ -144,7 +145,14 @@ function clientReference(): string {
  * getting one flat "something went wrong".
  */
 function technicalMessage(action: string, reference: string): string {
-  return `Could not ${action}. Please try again — if it keeps happening, quote reference ${reference} to the help desk.`
+  // The frame and the action phrase are translated separately: every call site
+  // passes its own phrase ("load the cards", "open this signatory"), so a
+  // single template with the phrase as a placeholder covers all of them. The
+  // reference is a generated code and stays as it is.
+  return t('Could not {action}. Please try again — if it keeps happening, quote reference {reference} to the help desk.', {
+    action: t(action),
+    reference,
+  })
 }
 
 /** Reads a Spring ProblemDetail body, tolerating a non-JSON error page. */
