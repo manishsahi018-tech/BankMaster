@@ -180,6 +180,17 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("03", "Account Stopped"),
                     new CodeEntry("04", "No Debits"),
                     new CodeEntry("08", "Enquiry Restricted"))),
+            // Account status change reason — stctltab recType 'RC' under
+            // denodo. 4-char ctlCodes, which is what makes the legacy's
+            // "starts with 0" test tell a code apart from free text.
+            Map.entry("statusChangeReason", List.of(
+                    new CodeEntry("0001", "Customer request"),
+                    new CodeEntry("0002", "Court order"),
+                    new CodeEntry("0003", "SAMA instruction"),
+                    new CodeEntry("0004", "Public prosecution request"),
+                    new CodeEntry("0005", "Compliance review"),
+                    new CodeEntry("0006", "Dormancy rules"),
+                    new CodeEntry("0007", "ID expired"))),
             // SAMA account status — see JdbcReferenceDataRepository for why
             // this is a fixed domain rather than an stctltab read.
             Map.entry("samaStatus", List.of(
@@ -334,6 +345,13 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
             Map.entry("ledger/100", "وديعة لأجل"),
             Map.entry("ledger/108", "وديعة تحت الطلب"),
             Map.entry("accStatus/00", "مفتوح"),
+            Map.entry("statusChangeReason/0001", "طلب العميل"),
+            Map.entry("statusChangeReason/0002", "أمر قضائي"),
+            Map.entry("statusChangeReason/0003", "تعليمات ساما"),
+            Map.entry("statusChangeReason/0004", "طلب النيابة العامة"),
+            Map.entry("statusChangeReason/0005", "مراجعة الالتزام"),
+            Map.entry("statusChangeReason/0006", "قواعد الركود"),
+            Map.entry("statusChangeReason/0007", "انتهاء الهوية"),
             Map.entry("samaStatus/00", "مفتوح"),
             Map.entry("samaStatus/01", "غير نشط"),
             Map.entry("samaStatus/02", "غير متحرك"),

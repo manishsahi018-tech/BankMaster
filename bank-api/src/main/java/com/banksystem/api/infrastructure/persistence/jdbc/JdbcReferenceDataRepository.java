@@ -122,7 +122,8 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
     private static final List<String> DB_BACKED = List.of(
             "idType", "country", "businessType",
             "samaMainCategory", "samaSubCategory", "branch",
-            "currency", "ledger", "accStatus", "stmtFreq", "intApplication",
+            "currency", "ledger", "accStatus", "statusChangeReason",
+            "stmtFreq", "intApplication",
             // The seven stctltab record types the profile combos resolve
             // against. They belong on this list by its own definition — every
             // one is a view read — and their absence from it hid them from the
@@ -295,6 +296,16 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
         // RecordType list: 'AS' Account status type info, 'SF' Statement
         // Frequency Code info.
         sets.put("accStatus", ctltabSet(language, "accStatus", "AS"));
+        // 'RC' Account status change reason. Unlike samaStatus this IS an
+        // stctltab record type, so it is read rather than hardcoded.
+        //
+        // The column it decodes (stacclog.accStatusChangeReason) is 30 chars
+        // of free text, and the legacy treats it as EITHER a code or a
+        // sentence: globalFunctions.bas:9046 puts it in the reason combo when
+        // it starts with "0" and in the free-text "other reason" box when it
+        // does not. The screen applies that same test; this set only has to
+        // answer for the coded half.
+        sets.put("statusChangeReason", ctltabSet(language, "statusChangeReason", "RC"));
         sets.put("stmtFreq", ctltabSet(language, "stmtFreq", "SF"));
         sets.put("intApplication", ctltabSet(language, "intApplication", "IA"));
         // Fixed value domains documented on stcardtab.ts (cardStatus /

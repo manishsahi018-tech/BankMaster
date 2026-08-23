@@ -352,6 +352,10 @@ public class MockAccountRepository implements AccountRepository {
                 List.copyOf(items));
     }
 
+    /** stctltab 'RC' codes, as MockReferenceDataRepository serves them. */
+    private static final List<String> REASON_CODES = List.of(
+            "0001", "0002", "0003", "0004", "0005", "0006", "0007");
+
     private static final List<String> SAMA_REASONS = List.of(
             "Court order", "Order released", "SAMA circular 361000098504",
             "Public prosecution request", "Customer request at branch",
@@ -424,9 +428,18 @@ public class MockAccountRepository implements AccountRepository {
                 // stands). The baked "00 - Open" here was a fixture label the
                 // screen could not resolve, so it showed English on an Arabic
                 // screen and hid the fact that the Denodo path shows a bare
-                // code. NOTE: samaAccStatus is still not run through a code
-                // set by either path — the screen renders whatever it is given.
+                // code. Both now go through their code sets.
                 Map.entry("samaStatus", dormant ? "03" : "00"),
+                // accStatusChangeReason is one column doing two jobs. Half the
+                // demo accounts carry an stctltab 'RC' CODE, which the screen
+                // resolves into the reason combo, and half carry free text,
+                // which it puts in "Other reason" — the legacy's own split on
+                // the leading character (globalFunctions.bas:9046). Both
+                // branches need a fixture or one of them is never rendered.
+                Map.entry("statusUpdReason",
+                        DemoData.pick(accNo, 77, 2) == 0
+                                ? DemoData.pick(accNo, 78, REASON_CODES)
+                                : DemoData.pick(accNo, 78, SAMA_REASONS)),
                 Map.entry("dormant", dormant ? "Yes" : "No"),
                 Map.entry("stmtFrequency",
                         List.of("01", "02", "04", "05").get(DemoData.pick(accNo, 71, 4))),

@@ -75,6 +75,20 @@ const STMT_DAY = ['Br.Stmt.Day', 'Month End'] as const
 const stmtDayIndex = (value: string) => (value.trim() === '0' ? 0 : 1)
 
 /**
+ * accStatusChangeReason is ONE 30-character column doing two jobs, and the
+ * legacy tells them apart by the first character (globalFunctions.bas:9046):
+ *
+ *   Mid$(reason, 1, 1) <> "0"  ->  txtOtherReason   (free text)
+ *   otherwise                  ->  cmbReason        (an stctltab 'RC' code)
+ *
+ * The RC codes are 4-char ctlCodes and so always start with "0", which is what
+ * makes the test work. The API hands the raw column over in statusUpdReason
+ * and leaves otherReason empty, so the split happens here, where the legacy
+ * does it.
+ */
+const isReasonCode = (value: string) => value.trim().startsWith('0')
+
+/**
  * Port of displayIban (globalFunctions.bas:12680-12689) — the IBAN in four-
  * character groups separated by single spaces, and BLANK when the field is
  * empty or its first six characters are "000000", which is how the legacy
@@ -266,10 +280,20 @@ export default function AccountMaintenance({
               <Segmented options={STMT_DAY} selected={stmtDayIndex(data.statementDay)} />
             </Field>
             <Field label="A/c Status upd reason">
-              <RoCombo value={data.statusUpdReason} />
+              <RoCombo
+                value={
+                  isReasonCode(data.statusUpdReason)
+                    ? codeLabel('statusChangeReason', data.statusUpdReason)
+                    : ''
+                }
+              />
             </Field>
             <Field label="Other reason">
-              <RoText value={data.otherReason} />
+              <RoText
+                value={
+                  isReasonCode(data.statusUpdReason) ? data.otherReason : data.statusUpdReason
+                }
+              />
             </Field>
           </div>
         </SectionCard>
