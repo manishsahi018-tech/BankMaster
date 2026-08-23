@@ -60,6 +60,9 @@ import OnDemandStatement from './screens/OnDemandStatement.tsx'
 import TransactionInquiry from './screens/TransactionInquiry.tsx'
 import SadadTransEnquiry from './screens/SadadTransEnquiry.tsx'
 
+/** The row-sets that page against the server. */
+type PagedKey = 'searchRows' | 'gridRows' | 'accountRows' | 'cardsResult'
+
 interface ScreenState {
   name: string
   customer?: Customer
@@ -92,9 +95,21 @@ interface ScreenState {
   partyFrom?: string
   /** grid to return to from a related-party DETAIL */
   partyBack?: string
-  /** server-side pagination cursor for the current paged grid */
-  page?: number
-  hasMore?: boolean
+  /**
+   * Server pagination cursor, PER ROW-SET.
+   *
+   * <p>A cursor describes ONE grid, but four different row-sets share this
+   * screen state — searchRows, accountRows, cardsResult and gridRows (every
+   * other paged grid) — and go()/goFetch() merge the previous state forward.
+   * A single page/hasMore pair therefore leaked between grids: exiting the
+   * paged Customer Update History back to the search results carried the
+   * history's hasMore onto the results pager, which then showed a live Next
+   * on a single-row result set.
+   *
+   * <p>Keyed by row-set, each grid reads only its own cursor and the others
+   * survive the trip — which they must, since the rows themselves do.
+   */
+  paging?: Partial<Record<PagedKey, { page: number; hasMore: boolean }>>
   /** set when showing a stcustlog/stacclog snapshot (legacy history mode) */
   historyAsOf?: string
   /** stacclog maintenance-field overrides for the account history snapshot */
@@ -181,15 +196,26 @@ export default function App() {
   // the legacy's Next Page branching, see partyPanelsFor.
   const parties = partyPanelsFor(customer?.mainCategoryCode, customer?.subCategoryCode)
 
+  /**
+   * `paging` is merged a level deeper than everything else: a spread would let
+   * one screen's cursor entry wipe the others, and the row-sets they belong to
+   * outlive the navigation.
+   */
+  const merge = (s: ScreenState, ...parts: Partial<ScreenState>[]): ScreenState => {
+    const next = Object.assign({}, s, ...parts) as ScreenState
+    const paging = parts.reduce((acc, p) => (p.paging ? { ...acc, ...p.paging } : acc), s.paging)
+    return paging ? { ...next, paging } : next
+  }
+
   const go = (name: string, extra: Partial<ScreenState> = {}) =>
-    setScreen((s) => ({ ...s, ...extra, name }))
+    setScreen((s) => ({ ...merge(s, extra), name }))
 
   // Appends the next 10-row page to a paged grid (legacy "More" button).
   const appendPage = (
-    key: 'searchRows' | 'gridRows' | 'accountRows',
+    key: Exclude<PagedKey, 'cardsResult'>,
     fetcher: (page: number) => Promise<{ rows: unknown[]; hasMore: boolean }>,
   ) => () => {
-    const nextPage = (screen.page ?? 0) + 1
+    const nextPage = (screen.paging?.[key]?.page ?? 0) + 1
     setBusy(true)
     setError(null)
     fetcher(nextPage)
@@ -199,8 +225,7 @@ export default function App() {
             ({
               ...s,
               [key]: [...((s[key] as unknown[] | undefined) ?? []), ...r.rows],
-              page: nextPage,
-              hasMore: r.hasMore,
+              paging: { ...s.paging, [key]: { page: nextPage, hasMore: r.hasMore } },
             }) as ScreenState,
         ),
       )
@@ -213,7 +238,7 @@ export default function App() {
   // result while keeping the header.
   const moreCards = () => {
     if (!screen.cardsResult?.hasMore || !screen.cardsQuery) return
-    const nextPage = (screen.page ?? 0) + 1
+    const nextPage = (screen.paging?.cardsResult?.page ?? 0) + 1
     setBusy(true)
     setError(null)
     api
@@ -224,7 +249,7 @@ export default function App() {
           cardsResult: s.cardsResult
             ? { ...s.cardsResult, rows: [...s.cardsResult.rows, ...r.rows], hasMore: r.hasMore }
             : r,
-          page: nextPage,
+          paging: { ...s.paging, cardsResult: { page: nextPage, hasMore: r.hasMore } },
         })),
       )
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
@@ -241,7 +266,7 @@ export default function App() {
     setBusy(true)
     setError(null)
     fetcher()
-      .then((data) => setScreen((s) => ({ ...s, ...extra, ...data, name })))
+      .then((data) => setScreen((s) => ({ ...merge(s, extra, data), name })))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setBusy(false))
   }
@@ -276,8 +301,7 @@ export default function App() {
               const r = await api.searchCustomers(criteria.params)
               return {
                 searchRows: r.rows,
-                page: 0,
-                hasMore: r.hasMore,
+                paging: { searchRows: { page: 0, hasMore: r.hasMore } },
                 searchIncomplete: r.incomplete ?? false,
               }
             })
@@ -286,7 +310,7 @@ export default function App() {
             goFetch('cards', { cardsFrom: 'search' }, async () => ({
               cardsResult: await api.searchCards(params),
               cardsQuery: params,
-              page: 0,
+              paging: { cardsResult: { page: 0, hasMore: false } },
             }))
           }
           // cmdMerchant opens frmMerchantStmt directly — no search or customer
@@ -332,8 +356,7 @@ export default function App() {
               return {
                 customer: cust.rows[0],
                 accountRows: accts.rows,
-                hasMore: accts.hasMore,
-                page: 0,
+                paging: { accountRows: { page: 0, hasMore: accts.hasMore } },
               }
             })
           }}
@@ -345,7 +368,7 @@ export default function App() {
           criteria={screen.criteria}
           incomplete={screen.searchIncomplete ?? false}
           rows={screen.searchRows ?? []}
-          hasMore={screen.hasMore ?? false}
+          hasMore={screen.paging?.searchRows?.hasMore ?? false}
           onMore={appendPage('searchRows', (p) => api.searchCustomers(screen.criteria!.params, p))}
           onBack={() => setScreen({ name: 'search' })}
           onEnquiry={(row) => {
@@ -369,7 +392,7 @@ export default function App() {
           onHistory={(row) =>
             goFetch('custHistory', { customer: row }, async () => {
               const r = await api.custUpdateHistory(row.custNo)
-              return { gridRows: r.rows, page: 0, hasMore: r.hasMore }
+              return { gridRows: r.rows, paging: { gridRows: { page: 0, hasMore: r.hasMore } } }
             })
           }
         />
@@ -387,14 +410,14 @@ export default function App() {
           onAccounts={() =>
             goFetch('accounts', { from: 'detail' }, async () => {
               const _r = await api.accounts(customer!.custNo)
-              return { accountRows: _r.rows, hasMore: _r.hasMore, page: 0 }
+              return { accountRows: _r.rows, paging: { accountRows: { page: 0, hasMore: _r.hasMore } } }
             })
           }
           onCards={() =>
             goFetch('cards', { cardsFrom: 'detail' }, async () => ({
               cardsResult: await api.searchCards({ custNo: customer!.custNo }),
               cardsQuery: { custNo: customer!.custNo },
-              page: 0,
+              paging: { cardsResult: { page: 0, hasMore: false } },
             }))
           }
           onHeirs={
@@ -402,7 +425,7 @@ export default function App() {
               ? () =>
                   goFetch('heirs', { partyFrom: 'detail' }, async () => {
                     const _r = await api.heirs(customer!.custNo)
-                    return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
+                    return { gridRows: _r.rows, paging: { gridRows: { page: 0, hasMore: _r.hasMore } } }
                   })
               : undefined
           }
@@ -411,7 +434,7 @@ export default function App() {
               ? () =>
                   goFetch('references', { partyFrom: 'detail' }, async () => {
                     const _r = await api.references(customer!.custNo)
-                    return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
+                    return { gridRows: _r.rows, paging: { gridRows: { page: 0, hasMore: _r.hasMore } } }
                   })
               : undefined
           }
@@ -440,13 +463,13 @@ export default function App() {
           onAccounts={() =>
             goFetch('accounts', { from: 'juristic' }, async () => {
               const _r = await api.accounts(customer!.custNo)
-              return { accountRows: _r.rows, hasMore: _r.hasMore, page: 0 }
+              return { accountRows: _r.rows, paging: { accountRows: { page: 0, hasMore: _r.hasMore } } }
             })
           }
           onOwners={() =>
             goFetch('owners', { partyFrom: screen.name }, async () => {
               const _r = await api.owners(customer!.custNo)
-              return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
+              return { gridRows: _r.rows, paging: { gridRows: { page: 0, hasMore: _r.hasMore } } }
             })
           }
           onBack={() => go('results')}
@@ -464,13 +487,13 @@ export default function App() {
           onSignatories={() =>
             goFetch('signatories', { signatoriesFrom: 'juristic2', byCustomer: true }, async () => {
               const r = await api.signatoriesByCustomer(customer!.custNo)
-              return { gridRows: r.rows, page: 0, hasMore: r.hasMore }
+              return { gridRows: r.rows, paging: { gridRows: { page: 0, hasMore: r.hasMore } } }
             })
           }
           onOwners={() =>
             goFetch('owners', { partyFrom: 'juristic2' }, async () => {
               const r = await api.owners(customer!.custNo)
-              return { gridRows: r.rows, page: 0, hasMore: r.hasMore }
+              return { gridRows: r.rows, paging: { gridRows: { page: 0, hasMore: r.hasMore } } }
             })
           }
           onDocuments={() =>
@@ -489,14 +512,14 @@ export default function App() {
           onAccounts={() =>
             goFetch('accounts', { from: 'individualOthers' }, async () => {
               const _r = await api.accounts(customer!.custNo)
-              return { accountRows: _r.rows, hasMore: _r.hasMore, page: 0 }
+              return { accountRows: _r.rows, paging: { accountRows: { page: 0, hasMore: _r.hasMore } } }
             })
           }
           onCards={() =>
             goFetch('cards', { cardsFrom: 'individualOthers' }, async () => ({
               cardsResult: await api.searchCards({ custNo: customer!.custNo }),
               cardsQuery: { custNo: customer!.custNo },
-              page: 0,
+              paging: { cardsResult: { page: 0, hasMore: false } },
             }))
           }
           onNextPage={() =>
@@ -509,7 +532,7 @@ export default function App() {
               ? () =>
                   goFetch('heirs', { partyFrom: 'individualOthers' }, async () => {
                     const _r = await api.heirs(customer!.custNo)
-                    return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
+                    return { gridRows: _r.rows, paging: { gridRows: { page: 0, hasMore: _r.hasMore } } }
                   })
               : undefined
           }
@@ -518,7 +541,7 @@ export default function App() {
               ? () =>
                   goFetch('references', { partyFrom: 'individualOthers' }, async () => {
                     const _r = await api.references(customer!.custNo)
-                    return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
+                    return { gridRows: _r.rows, paging: { gridRows: { page: 0, hasMore: _r.hasMore } } }
                   })
               : undefined
           }
@@ -530,7 +553,7 @@ export default function App() {
         <HeirsProxy
           customer={customer}
           rows={screen.gridRows ?? []}
-          hasMore={screen.hasMore ?? false}
+          hasMore={screen.paging?.gridRows?.hasMore ?? false}
           onMore={appendPage('gridRows', (p) => api.heirs(customer.custNo, p))}
           onEnquiry={(row) =>
             goFetch('partyDetail', { partyBack: 'heirs' }, async () => ({
@@ -545,7 +568,7 @@ export default function App() {
         <JointHolders
           customer={customer}
           rows={screen.gridRows ?? []}
-          hasMore={screen.hasMore ?? false}
+          hasMore={screen.paging?.gridRows?.hasMore ?? false}
           onMore={appendPage('gridRows', (p) => api.jointHolders(customer.custNo, p))}
           onEnquiry={(row) =>
             goFetch('jointHolderDetail', {}, async () => ({
@@ -560,7 +583,7 @@ export default function App() {
         <References
           customer={customer}
           rows={screen.gridRows ?? []}
-          hasMore={screen.hasMore ?? false}
+          hasMore={screen.paging?.gridRows?.hasMore ?? false}
           onMore={appendPage('gridRows', (p) => api.references(customer.custNo, p))}
           onEnquiry={(row) =>
             goFetch('partyDetail', { partyBack: 'references' }, async () => ({
@@ -575,7 +598,7 @@ export default function App() {
         <Owners
           customer={customer}
           rows={screen.gridRows ?? []}
-          hasMore={screen.hasMore ?? false}
+          hasMore={screen.paging?.gridRows?.hasMore ?? false}
           onMore={appendPage('gridRows', (p) => api.owners(customer.custNo, p))}
           onEnquiry={(row) =>
             goFetch('ownerDetail', {}, async () => ({
@@ -678,7 +701,7 @@ export default function App() {
         <CustUpdateHistory
           customer={{ custNo: customer.custNo, name: customer.name, branchCode: customer.branchCode }}
           rows={screen.gridRows ?? []}
-          hasMore={screen.hasMore ?? false}
+          hasMore={screen.paging?.gridRows?.hasMore ?? false}
           onMore={appendPage('gridRows', (p) => api.custUpdateHistory(customer.custNo, p))}
           onViewDetail={(row) => {
             // Legacy getCustDetails: fetch the stcustlog snapshot for the
@@ -711,7 +734,7 @@ export default function App() {
         <AccountInfo
           customer={customer}
           rows={screen.accountRows ?? []}
-          hasMore={screen.hasMore ?? false}
+          hasMore={screen.paging?.accountRows?.hasMore ?? false}
           onMore={appendPage('accountRows', (p) => api.accounts(customer.custNo, p))}
           onEnquiry={(account) =>
             goFetch('accountDetail', { account, historyAsOf: undefined }, async () => ({
@@ -736,7 +759,7 @@ export default function App() {
           onUpdateHistory={(account) =>
             goFetch('acctHistory', { account }, async () => {
               const r = await api.acctUpdateHistory(account.accountNumber)
-              return { gridRows: r.rows, page: 0, hasMore: r.hasMore }
+              return { gridRows: r.rows, paging: { gridRows: { page: 0, hasMore: r.hasMore } } }
             })
           }
           onBlockedBreakup={(account) =>
@@ -787,7 +810,7 @@ export default function App() {
             // here and render an account list against the wrong query.
             goFetch('signatories', { byCustomer: false, signatoriesFrom: 'accountDetail' }, async () => {
               const _r = await api.signatoriesByAccount(screen.account!.accountNumber)
-              return { gridRows: _r.rows, hasMore: _r.hasMore, page: 0 }
+              return { gridRows: _r.rows, paging: { gridRows: { page: 0, hasMore: _r.hasMore } } }
             })
           }
           onCards={() =>
@@ -805,7 +828,7 @@ export default function App() {
           account={screen.account!}
           customer={customer}
           rows={screen.gridRows ?? []}
-          hasMore={screen.hasMore ?? false}
+          hasMore={screen.paging?.gridRows?.hasMore ?? false}
           onMore={appendPage('gridRows', (p) => api.acctUpdateHistory(screen.account!.accountNumber, p))}
           onViewDetail={(row) => {
             // Legacy getAcctDetails: stacclog snapshot → frmAccount in
@@ -936,7 +959,7 @@ export default function App() {
           onUpdateHistory={(row) =>
             goFetch('cardUpdateHistory', { card: String(row.cardNo) }, async () => {
               const r = await api.cardUpdateHistory(String(row.cardNo))
-              return { gridRows: r.rows, page: 0, hasMore: r.hasMore }
+              return { gridRows: r.rows, paging: { gridRows: { page: 0, hasMore: r.hasMore } } }
             })
           }
           onExit={() => go(screen.cardsFrom ?? 'search')}
@@ -961,7 +984,7 @@ export default function App() {
         <CardUpdateHistory
           cardNo={screen.card ?? ''}
           rows={screen.gridRows ?? []}
-          hasMore={screen.hasMore ?? false}
+          hasMore={screen.paging?.gridRows?.hasMore ?? false}
           onMore={appendPage('gridRows', (p) => api.cardUpdateHistory(screen.card ?? '', p))}
           onViewDetail={(row) => {
             const dt = asOfKey(row.dateTime)
@@ -987,7 +1010,7 @@ export default function App() {
           account={screen.byCustomer ? undefined : screen.account!}
           customer={customer ?? undefined}
           rows={screen.gridRows ?? []}
-          hasMore={screen.hasMore ?? false}
+          hasMore={screen.paging?.gridRows?.hasMore ?? false}
           onMore={appendPage('gridRows', (p) =>
             screen.byCustomer
               ? api.signatoriesByCustomer(customer!.custNo, p)
