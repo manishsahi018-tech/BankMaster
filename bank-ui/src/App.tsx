@@ -91,6 +91,16 @@ interface ScreenState {
   cardsFrom?: string
   /** stcusttab profile for the tier-2 customer detail screens */
   profile?: GridRow
+  /**
+   * Screen a customer profile returns to.
+   *
+   * <p>A profile is opened from three places — the search results, the
+   * Customer Update History (in history mode) and an account's Customer
+   * Information button — and its Cancel used to be hardcoded, so exiting a
+   * profile opened from the update history dropped the operator back on the
+   * empty search form and lost the list they were working through.
+   */
+  profileFrom?: string
   /** screen to return to from a related-party grid */
   partyFrom?: string
   /** grid to return to from a related-party DETAIL */
@@ -385,7 +395,7 @@ export default function App() {
               )
               return
             }
-            goFetch(screen, { customer: row, historyAsOf: undefined }, async () => ({
+            goFetch(screen, { customer: row, historyAsOf: undefined, profileFrom: 'results' }, async () => ({
               profile: await api.customerProfile(row.custNo),
             }))
           }}
@@ -438,7 +448,7 @@ export default function App() {
                   })
               : undefined
           }
-          onBack={() => setScreen({ name: 'search' })}
+          onBack={() => go(screen.profileFrom ?? 'results')}
         />
       )}
 
@@ -472,7 +482,7 @@ export default function App() {
               return { gridRows: _r.rows, paging: { gridRows: { page: 0, hasMore: _r.hasMore } } }
             })
           }
-          onBack={() => go('results')}
+          onBack={() => go(screen.profileFrom ?? 'results')}
         />
       )}
 
@@ -501,7 +511,7 @@ export default function App() {
               documents: await fetchDocuments(customer!.custNo, screen.historyAsOf),
             }))
           }
-          onCancel={() => setScreen({ name: 'search' })}
+          onCancel={() => go(screen.profileFrom ?? 'results')}
         />
       )}
 
@@ -545,7 +555,7 @@ export default function App() {
                   })
               : undefined
           }
-          onBack={() => go('results')}
+          onBack={() => go(screen.profileFrom ?? 'results')}
         />
       )}
 
@@ -622,7 +632,7 @@ export default function App() {
               documents: await fetchDocuments(customer!.custNo, screen.historyAsOf),
             }))
           }
-          onCancel={() => setScreen({ name: 'search' })}
+          onCancel={() => go(screen.profileFrom ?? 'results')}
         />
       )}
 
@@ -639,7 +649,7 @@ export default function App() {
           historyAsOf={screen.historyAsOf}
           onPrevPage={() => go('individualOthers')}
           onNextPage={() => go('others3')}
-          onCancel={() => setScreen({ name: 'search' })}
+          onCancel={() => go(screen.profileFrom ?? 'results')}
         />
       )}
 
@@ -654,7 +664,7 @@ export default function App() {
               documents: await fetchDocuments(customer!.custNo, screen.historyAsOf),
             }))
           }
-          onCancel={() => setScreen({ name: 'search' })}
+          onCancel={() => go(screen.profileFrom ?? 'results')}
         />
       )}
 
@@ -713,15 +723,15 @@ export default function App() {
               return
             }
             if (customer.mainCategoryCode !== '01') {
-              goFetch('juristic', { historyAsOf: dt }, async () => ({
+              goFetch('juristic', { historyAsOf: dt, profileFrom: 'custHistory' }, async () => ({
                 profile: await api.customerProfileAsOf(customer.custNo, dt),
               }))
             } else if (customer.idType === 'I') {
-              goFetch('detail', { historyAsOf: dt }, async () => ({
+              goFetch('detail', { historyAsOf: dt, profileFrom: 'custHistory' }, async () => ({
                 profile: await api.customerProfileAsOf(customer.custNo, dt),
               }))
             } else {
-              goFetch('individualOthers', { historyAsOf: dt }, async () => ({
+              goFetch('individualOthers', { historyAsOf: dt, profileFrom: 'custHistory' }, async () => ({
                 profile: await api.customerProfileAsOf(customer.custNo, dt),
               }))
             }
@@ -798,7 +808,7 @@ export default function App() {
           }
           onCustomerInfo={() =>
             customer &&
-            goFetch('detail', { historyAsOf: undefined }, async () => ({
+            goFetch('detail', { historyAsOf: undefined, profileFrom: 'accountDetail' }, async () => ({
               profile: await api.customerProfile(customer.custNo),
             }))
           }
