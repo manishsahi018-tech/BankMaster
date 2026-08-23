@@ -146,7 +146,12 @@ export function Pager({
           onClick={() => onPage(page - 1)}
           className={`${pagerBtn} inline-flex items-center gap-1`}
         >
-          <span aria-hidden className="rtl:-scale-x-100">‹</span>
+          {/* No rtl: flip here. U+2039/203A are Bidi_Mirrored, so the text
+              engine already draws them the other way round inside an RTL run —
+              mirroring them again in CSS cancels that out and points both
+              arrows backwards. SVG paths get no such treatment, which is why
+              BackArrow and the DatePicker chevrons DO carry an explicit flip. */}
+          <span aria-hidden>‹</span>
           {t('Previous')}
         </button>
         <span className="text-xs tabular-nums text-muted">
@@ -155,7 +160,7 @@ export function Pager({
         </span>
         <button type="button" disabled={atEnd} onClick={next} className={`${pagerBtn} inline-flex items-center gap-1`}>
           {t('Next')}
-          <span aria-hidden className="rtl:-scale-x-100">›</span>
+          <span aria-hidden>›</span>
         </button>
       </div>
     </div>

@@ -160,6 +160,10 @@ export default function EssentialDocuments({
               supervisorAction / custHistoryAction is set
               (frmDocuments.frm:352-358). */}
           <div className="flex shrink-0 flex-row justify-center gap-2 sm:flex-col">
+            {/* The two lists swap sides under RTL, and these arrows follow:
+                U+00AB/00BB are Bidi_Mirrored, so the text engine turns them
+                round on its own. No CSS flip — that would cancel it out and
+                leave each arrow pointing away from the list it feeds. */}
             {['»', '«'].map((glyph) => (
               <button
                 key={glyph}
@@ -168,7 +172,7 @@ export default function EssentialDocuments({
                 title={t('Marking documents submitted is a create-time action, not part of this enquiry')}
                 className="cursor-not-allowed rounded-lg border border-edge bg-surface-muted px-3 py-2 text-sm font-semibold text-muted-soft shadow-xs"
               >
-                {t(glyph)}
+                {glyph}
               </button>
             ))}
           </div>
