@@ -8,9 +8,10 @@ import { t } from '../i18n/index.ts'
 // language, which is the convention every bilingual site here follows and
 // needs no translation of its own to be readable.
 //
-// Two variants because it appears in two places with different weight: `nav`
-// sits beside the operator name in the header, `plain` sits under the logon
-// form where there is no chrome to match.
+// One appearance, in two places: beside the operator name in the header, and
+// opposite the mark on the logon form. It carried a second `plain` variant for
+// a centred link under the logon form; that placement is gone and both callers
+// now render the same pill, so the variant went with it.
 
 const GlobeIcon = () => (
   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden className="h-4 w-4">
@@ -20,14 +21,12 @@ const GlobeIcon = () => (
   </svg>
 )
 
-export default function LocalePicker({ variant = 'nav' }: { variant?: 'nav' | 'plain' }) {
+export default function LocalePicker() {
   const locale = useLocale()
   const other = LOCALES.find((l) => l.key !== locale) ?? LOCALES[0]
 
   const className =
-    variant === 'nav'
-      ? 'inline-flex items-center gap-1.5 rounded-lg border border-edge-strong bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-soft shadow-xs transition-colors hover:bg-surface-muted'
-      : 'inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-sm font-medium text-primary-ink underline-offset-4 transition-colors hover:underline'
+    'inline-flex items-center gap-1.5 rounded-lg border border-edge-strong bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-soft shadow-xs transition-colors hover:bg-surface-muted'
 
   return (
     <button

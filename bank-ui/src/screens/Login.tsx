@@ -65,14 +65,22 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
         onSubmit={submit}
         className="relative w-full max-w-md rounded-2xl border border-edge bg-surface p-8 shadow-sm"
       >
-        {/* The date/time readout that sat opposite the logo is gone, so this is
-            no longer a two-column row — just the mark. */}
-        <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-strong text-white shadow-sm">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-6 w-6">
-            <path d="M3 9.5 12 4l9 5.5" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M5 10v7M9.5 10v7M14.5 10v7M19 10v7" strokeLinecap="round" />
-            <path d="M3 20h18" strokeLinecap="round" />
-          </svg>
+        {/* The legacy's date/time readout sat opposite the mark; the locale
+            link takes that slot, so the row is two-column again. justify-between
+            rather than a pinned corner: under RTL the mark moves to the right
+            and the link follows to the left, which is what "opposite the logo"
+            has to mean in a mirrored layout. */}
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-strong text-white shadow-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-6 w-6">
+              <path d="M3 9.5 12 4l9 5.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M5 10v7M9.5 10v7M14.5 10v7M19 10v7" strokeLinecap="round" />
+              <path d="M3 20h18" strokeLinecap="round" />
+            </svg>
+          </div>
+          {/* The operator has to be able to reach the Arabic screens before
+              they have a session. */}
+          <LocalePicker />
         </div>
 
         <h1 className="text-lg font-semibold tracking-wide text-ink">
@@ -134,11 +142,6 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
           </button>
         </div>
 
-        {/* Same control the header carries once signed in — the operator has to
-            be able to reach the Arabic screens before they have a session. */}
-        <div className="mt-6 flex justify-center border-t border-edge-soft pt-4">
-          <LocalePicker variant="plain" />
-        </div>
       </form>
     </div>
   )
