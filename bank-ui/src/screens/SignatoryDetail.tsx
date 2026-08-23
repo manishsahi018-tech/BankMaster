@@ -3,6 +3,7 @@ import type { GridRow } from '../components/GridScreen.tsx'
 import { formatDate } from '../schema/helpers.ts'
 import { codeLabel } from '../codes.ts'
 
+import { t } from '../i18n/index.ts'
 // Mirrors the legacy signatory drill-down — stsigntab ⋈ stidtab with
 // idCategory 'S' (QUERY-SPECS §20).
 
@@ -20,7 +21,7 @@ export default function SignatoryDetail({ detail, onReturn }: { detail: GridRow;
   return (
     <DetailScreen
       kicker="Account"
-      title="Signatory Detail"
+      title="Signatory Details"
       chips={[
         { label: 'Account No', value: detail.accNo },
         { label: 'Signatory No', value: detail.signatoryNo },
@@ -33,7 +34,12 @@ export default function SignatoryDetail({ detail, onReturn }: { detail: GridRow;
             { label: 'Account No', value: detail.accNo },
             { label: 'Signatory No', value: detail.signatoryNo },
             { label: 'Customer Branch', value: detail.custBranchCode },
-            { label: 'Signature Enabled', value: detail.activeStatus === '1' ? 'Yes' : 'No' },
+            {
+              label: 'Signatory Enabled',
+              // A literal word, not data: DetailScreen translates labels but
+              // renders values as given, so this has to be translated here.
+              value: detail.activeStatus === '1' ? t('Yes') : t('No'),
+            },
             { label: 'Arabic Name', value: arabicName, wide: true },
             { label: 'English Name', value: englishName, wide: true },
             { label: 'Short Name', value: detail.signatoryShortName, wide: true },
@@ -44,7 +50,7 @@ export default function SignatoryDetail({ detail, onReturn }: { detail: GridRow;
               ? []
               : [
                   {
-                    label: 'Reason for Disabled Signature',
+                    label: 'Reason for Disabled signatory',
                     value: detail.reason,
                     wide: true,
                   },
@@ -57,9 +63,12 @@ export default function SignatoryDetail({ detail, onReturn }: { detail: GridRow;
           fields: [
             { label: 'Id Type', value: codeLabel('idType', detail.idType) },
             { label: 'Id Number', value: detail.idNo },
-            { label: 'Diplomatic PP Number', value: detail.diplomaticPpNo },
+            { label: 'Diplomatic Passport No', value: detail.diplomaticPpNo },
             { label: 'Issued At', value: detail.idIssuedAt },
-            { label: 'Date Type', value: detail.idDateType === '0' ? 'Hijri' : 'Gregorian' },
+            {
+              label: 'Date Type',
+              value: detail.idDateType === '0' ? t('Hijri') : t('Gregorian'),
+            },
             { label: 'Issue Date (Hijri)', value: formatDate(detail.idIssueDateH) },
             { label: 'Issue Date (Gregorian)', value: formatDate(detail.idIssueDateG) },
             { label: 'Expiry Date (Hijri)', value: formatDate(detail.idExpiryDateH) },

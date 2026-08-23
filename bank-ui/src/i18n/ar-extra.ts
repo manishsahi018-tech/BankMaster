@@ -340,6 +340,22 @@ const AR_EXTRA: Record<string, string> = {
   'street name': 'اسم الشارع',
   'street / area name': 'اسم شارع/منطقة',
 
+  // Signatory Detail. The four labels that matched legacy captions were
+  // renamed to the legacy's wording instead of being given entries here; these
+  // are the ones this build introduced.
+  'identity document': 'مستند الهوية',
+  'action date': 'تاريخ الإجراء',
+  'issue date (hijri)': 'تاريخ الاصدار (هجري)',
+  'issue date (gregorian)': 'تاريخ الاصدار (ميلادي)',
+  'expiry date (hijri)': 'تاريخ الانتهاء (هجري)',
+  'expiry date (gregorian)': 'تاريخ الانتهاء (ميلادي)',
+
+  // The Hijri marker is "هـ" — the trailing character is part of the
+  // abbreviation, not the decorative tatweel the extractor strips everywhere
+  // else, so it has to be restored here.
+  h: 'هـ',
+  hijri: 'هـ',
+
   // Chrome the shared components ask for.
   'fetching from server': 'جاري الجلب من الخادم…',
   'please wait a moment': 'الرجاء الانتظار لحظة…',
