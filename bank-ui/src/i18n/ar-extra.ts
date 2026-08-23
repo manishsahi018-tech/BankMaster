@@ -254,6 +254,72 @@ const AR_EXTRA: Record<string, string> = {
 
   'a/c {accno}': 'حساب {accNo}',
 
+  // ---- Account sub-screens -------------------------------------------------
+  // Titles follow the Arabic captures in docs/Screens where the legacy has
+  // one (image10 status history, image11 SAMA, image16 standing orders,
+  // image17 stopped cheques, image19 blocked amount); the rest is new copy.
+  'account status history': 'التغير في حالة الحساب',
+  'sama account status history': 'تفاصيل تعديلات الحساب على حالة ساما',
+  'stop cheque information': 'معلومات الشيكات الموقوفة',
+  'breakup of blocked amount': 'تفاصيل المبلغ المحجوز',
+  'total blocked balance': 'إجمالي الرصيد المحجوز',
+  'blocked by': 'حجز بواسطة',
+  'blocking type': 'نوع الحجز',
+  'standing orders': 'الأوامر الثابتة',
+  'standing order type': 'نوع الأمر الثابت',
+  'no standing orders for this account': 'لا توجد أوامر ثابتة لهذا الحساب.',
+  'cheque book requests': 'دفاتر الشيكات المطلوبة',
+  'from cheque number': 'من شيك رقم',
+  'reason for changing': 'سبب التغيير',
+  'debit account': 'الحساب المدين',
+  'pay curr': 'عملة الدفع',
+  'product / reference no': 'المنتج / رقم المرجع',
+  'signatory no': 'رقم المفوض بالتوقيع',
+  'reference no (optional)': 'رقم المرجع (اختياري)',
+  'read-only enquiry': 'استعلام للقراءة فقط.',
+
+  // Grid columns and lifecycle captions
+  'cust. br. code': 'رمز فرع العميل',
+  'main cat': 'التصنيف الرئيسي',
+  'sub cat': 'التصنيف الفرعي',
+  'approved date & time': 'تاريخ ووقت الموافقة',
+  counter: 'العداد',
+  type: 'النوع',
+  system: 'النظام',
+  processed: 'تمت المعالجة',
+  'issue to customer': 'صادرة للعميل',
+  'produced at dc9000': 'صدرت في DC9000',
+  'sent to dc9000': 'أُرسلت إلى DC9000',
+  'view detail': 'التفاصيل',
+  'transaction detail': 'تفاصيل الحركة',
+  'transfer detail': 'تفاصيل الحوالة',
+
+  // Enquiry forms and their validation
+  'trans type (rr = reversals)': 'نوع الحركة (RR = عكسية)',
+  'fetch transactions': 'جلب الحركات',
+  'fetch transfers': 'جلب الحوالات',
+  'fetch transactions first': 'اجلب الحركات أولاً',
+  'enter a date range and fetch': 'أدخل نطاق التاريخ ثم نفّذ.',
+  'empty row selected — please select a standing order':
+    'لم يتم اختيار سجل — الرجاء اختيار أمر ثابت.',
+  'empty row selected — please select a transaction':
+    'لم يتم اختيار سجل — الرجاء اختيار حركة.',
+  'empty row selected — please select a transfer':
+    'لم يتم اختيار سجل — الرجاء اختيار حوالة.',
+  'account number cannot be empty..please enter': 'رقم الحساب لا يمكن أن يكون فارغاً.. الرجاء الإدخال',
+  'branch code should be 4 characters..please enter it again':
+    'رمز الفرع يجب أن يكون 4 خانات.. الرجاء إعادة الإدخال',
+  'from date is blank or incomplete from date': 'تاريخ البداية فارغ أو غير مكتمل',
+  'start date is blank or incomplete': 'تاريخ البداية فارغ أو غير مكتمل',
+  'from year cannot be blank...please enter it': 'سنة البداية لا يمكن أن تكون فارغة... الرجاء الإدخال',
+  'start month': 'شهر البداية',
+  'start year': 'سنة البداية',
+  '14 digits': '14 رقماً',
+
+  // Statements
+  'online statement printing': 'طباعة كشف حساب فوري',
+  'send to printer': 'إرسال إلى الطابعة',
+
   // Chrome the shared components ask for.
   'fetching from server': 'جاري الجلب من الخادم…',
   'please wait a moment': 'الرجاء الانتظار لحظة…',

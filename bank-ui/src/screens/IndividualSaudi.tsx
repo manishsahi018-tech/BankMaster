@@ -178,11 +178,11 @@ export default function IndividualSaudi({
               ))}
 
               <span className="self-center text-sm font-medium text-ink-soft">{t('Arabic')}</span>
-              <RoText value={profile.aFirstName} dir="rtl" className="text-end" />
-              <RoText value={profile.a2ndName} dir="rtl" className="text-end" />
-              <RoText value={profile.a3rdName} dir="rtl" className="text-end" />
-              <RoText value={profile.aLastName} dir="rtl" className="text-end" />
-              <RoText value={profile.aShortName} dir="rtl" className="text-end" />
+              <RoText value={profile.aFirstName} dir="rtl" className="text-start" />
+              <RoText value={profile.a2ndName} dir="rtl" className="text-start" />
+              <RoText value={profile.a3rdName} dir="rtl" className="text-start" />
+              <RoText value={profile.aLastName} dir="rtl" className="text-start" />
+              <RoText value={profile.aShortName} dir="rtl" className="text-start" />
 
               <span className="self-center text-sm font-medium text-ink-soft">{t('English')}</span>
               <RoText value={profile.eFirstName} />

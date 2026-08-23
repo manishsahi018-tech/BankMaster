@@ -184,9 +184,13 @@ export default function EnquirySelect({
                       } ${
                         // Same selection marker as GridScreen: an accent bar on
                         // the first cell (a <tr> box-shadow is not painted under
-                        // border-collapse), and darker ink across the row.
+                        // border-collapse), and darker ink across the row. The
+                        // bar hangs off the row's START edge, so under RTL it
+                        // moves to the right-hand side — an inset shadow takes
+                        // a signed offset, not a logical one, so the mirrored
+                        // variant has to be spelled out.
                         selected === i && col.key === 'custNo'
-                          ? 'shadow-[inset_3px_0_0_0_var(--primary)]'
+                          ? 'shadow-[inset_3px_0_0_0_var(--primary)] rtl:shadow-[inset_-3px_0_0_0_var(--primary)]'
                           : ''
                       } ${selected === i && col.key !== 'custNo' ? 'text-ink' : ''}`}
                     >

@@ -122,7 +122,7 @@ function StatementCard({ statement }: { statement: Statement }) {
             <h2 className="text-base font-semibold text-ink">
               Statement for {monthLabel(s.stmtDate)}
               {s.stmtNum && (
-                <span className="ml-2 text-sm font-normal text-muted">No. {s.stmtNum}</span>
+                <span className="ms-2 text-sm font-normal text-muted">No. {s.stmtNum}</span>
               )}
             </h2>
             <p className="mt-0.5 text-sm text-muted">
@@ -149,7 +149,7 @@ function StatementCard({ statement }: { statement: Statement }) {
             <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Customer')}</dt>
             <dd className="text-ink-soft">
               {s.custName || '—'}
-              {s.custNum && <span className="ml-1 text-muted">({s.custNum})</span>}
+              {s.custNum && <span className="ms-1 text-muted">({s.custNum})</span>}
             </dd>
           </div>
           <div>
@@ -262,7 +262,7 @@ function StatementCard({ statement }: { statement: Statement }) {
                           carried beside the running balance. Shown verbatim —
                           the legacy never interpreted it either. */}
                       {line.runBalType && (
-                        <span className="ml-1 text-xs font-normal text-muted">
+                        <span className="ms-1 text-xs font-normal text-muted">
                           {line.runBalType}
                         </span>
                       )}

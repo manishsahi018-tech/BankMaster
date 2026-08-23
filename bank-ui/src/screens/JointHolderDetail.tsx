@@ -109,11 +109,11 @@ export default function JointHolderDetail({
                 </span>
               ))}
               <span className="self-center text-sm font-medium text-ink-soft">{t('Arabic')}</span>
-              <RoText value={d.aFirstName} dir="rtl" className="text-end" />
-              <RoText value={d.a2ndName} dir="rtl" className="text-end" />
-              <RoText value={d.a3rdName} dir="rtl" className="text-end" />
-              <RoText value={d.aLastName} dir="rtl" className="text-end" />
-              <RoText value={d.aShortName} dir="rtl" className="text-end" />
+              <RoText value={d.aFirstName} dir="rtl" className="text-start" />
+              <RoText value={d.a2ndName} dir="rtl" className="text-start" />
+              <RoText value={d.a3rdName} dir="rtl" className="text-start" />
+              <RoText value={d.aLastName} dir="rtl" className="text-start" />
+              <RoText value={d.aShortName} dir="rtl" className="text-start" />
               <span className="self-center text-sm font-medium text-ink-soft">{t('English')}</span>
               <RoText value={d.eFirstName} />
               <RoText value={d.e2ndName} />

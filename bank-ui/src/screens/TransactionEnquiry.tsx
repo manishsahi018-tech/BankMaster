@@ -139,7 +139,7 @@ export default function TransactionEnquiry({
               {rows.length} transaction{rows.length === 1 ? '' : 's'}
             </span>
             <span className="text-ink-soft">
-              {t('Total')} <span className="ml-2 font-semibold tabular-nums text-ink">{formatAmount(total)}</span>
+              {t('Total')} <span className="ms-2 font-semibold tabular-nums text-ink">{formatAmount(total)}</span>
             </span>
           </div>
         )}

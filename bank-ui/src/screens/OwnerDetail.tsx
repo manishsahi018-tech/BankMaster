@@ -144,11 +144,11 @@ export default function OwnerDetail({
                 </span>
               ))}
               <span className="self-center text-sm font-medium text-ink-soft">{t('Arabic')}</span>
-              <RoText value={d.aFirstName} dir="rtl" className="text-end" />
-              <RoText value={d.aSecondName} dir="rtl" className="text-end" />
-              <RoText value={d.aThirdName} dir="rtl" className="text-end" />
-              <RoText value={d.aLastName} dir="rtl" className="text-end" />
-              <RoText value={d.aShortName} dir="rtl" className="text-end" />
+              <RoText value={d.aFirstName} dir="rtl" className="text-start" />
+              <RoText value={d.aSecondName} dir="rtl" className="text-start" />
+              <RoText value={d.aThirdName} dir="rtl" className="text-start" />
+              <RoText value={d.aLastName} dir="rtl" className="text-start" />
+              <RoText value={d.aShortName} dir="rtl" className="text-start" />
               <span className="self-center text-sm font-medium text-ink-soft">{t('English')}</span>
               <RoText value={d.eFirstName} />
               <RoText value={d.eSecondName} />

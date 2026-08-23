@@ -186,9 +186,9 @@ export default function JuristicMain({
               ))}
 
               <span className="self-center text-sm font-medium text-ink-soft">{t('Arabic')}</span>
-              <RoText value={profile.aOrgName1} dir="rtl" className="text-end" />
-              <RoText value={profile.aOrgName2} dir="rtl" className="text-end" />
-              <RoText value={profile.aOrgShortName} dir="rtl" className="text-end" />
+              <RoText value={profile.aOrgName1} dir="rtl" className="text-start" />
+              <RoText value={profile.aOrgName2} dir="rtl" className="text-start" />
+              <RoText value={profile.aOrgShortName} dir="rtl" className="text-start" />
 
               <span className="self-center text-sm font-medium text-ink-soft">{t('English')}</span>
               <RoText value={profile.eOrgName1} />
