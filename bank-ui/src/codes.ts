@@ -51,6 +51,15 @@ export function initCodes(): Promise<void> {
       inFlight = null
       version += 1
       listeners.forEach((notify) => notify())
+      // The locale can change WHILE this request is in flight, and both guards
+      // that would normally start the new fetch swallow it: the in-flight
+      // guard above hands the switcher back this request instead of starting
+      // another, and the subscriber below sees loadedFor === null and returns.
+      // The result was permanent, not transient — one /api/codes call for the
+      // whole session and English descriptions under Arabic labels. Re-check
+      // once the request has settled, which is the only point where both the
+      // outcome and the current locale are known.
+      if (loadedFor !== null && loadedFor !== getLocale()) void initCodes()
     })
   return inFlight
 }
