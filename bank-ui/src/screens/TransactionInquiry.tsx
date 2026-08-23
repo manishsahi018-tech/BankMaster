@@ -280,8 +280,13 @@ export default function TransactionInquiry({
             blanks the other. Saying which one is in force costs nothing. */}
         <p className="mt-4 text-xs text-muted">
           {byNumber
-            ? `Starting from transaction ${form.startTrans} — the start date is ignored, and no running balance is carried (the legacy zeroes it for a mid-stream start).`
-            : 'Starting from the date above. The gateway supplies its own end date — the legacy sends none, because the branch PC clock could not be trusted.'}
+            ? t(
+                'Starting from transaction {trans} — the start date is ignored, and no running balance is carried (the legacy zeroes it for a mid-stream start).',
+                { trans: form.startTrans },
+              )
+            : t(
+                'Starting from the date above. The gateway supplies its own end date — the legacy sends none, because the branch PC clock could not be trusted.',
+              )}
         </p>
 
         <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-edge-soft pt-4">

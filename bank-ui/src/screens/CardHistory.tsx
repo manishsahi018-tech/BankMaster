@@ -195,11 +195,15 @@ export default function CardHistory({
           <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{t('Cards')}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{t('Card / Pin History')}</h1>
           <p className="mt-1 text-sm text-muted">
-            {entries.length} completed {entries.length === 1 ? 'request' : 'requests'}.
+            {/* Arabic does not pluralise by suffix, so both forms are whole
+                phrases with the count as a placeholder. */}
+            {entries.length === 1
+              ? t('{count} completed request.', { count: entries.length })
+              : t('{count} completed requests.', { count: entries.length })}
           </p>
         </div>
         <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
-          Card {maskCardNo(cardNo)}
+          {t('Card {cardNo}', { cardNo: maskCardNo(cardNo) })}
         </span>
       </div>
 

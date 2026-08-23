@@ -320,6 +320,19 @@ const AR_EXTRA: Record<string, string> = {
   'online statement printing': 'طباعة كشف حساب فوري',
   'send to printer': 'إرسال إلى الطابعة',
 
+  // Card / cheque header chips. The number is a Latin run, so it is a
+  // placeholder rather than text sitting beside the translated word.
+  'card {cardno}': 'بطاقة {cardNo}',
+  'cheque {chequeno}': 'شيك {chequeNo}',
+  '{count} completed request': '{count} طلب مكتمل.',
+  '{count} completed requests': '{count} طلبات مكتملة.',
+
+  // Transaction Inquiry — which start point is in force.
+  'starting from transaction {trans} — the start date is ignored, and no running balance is carried (the legacy zeroes it for a mid-stream start)':
+    'يبدأ من الحركة {trans} — يتم تجاهل تاريخ البداية، ولا يُحمل رصيد جارٍ (النظام السابق يصفّره عند البدء من منتصف السجل).',
+  'starting from the date above. the gateway supplies its own end date — the legacy sends none, because the branch pc clock could not be trusted':
+    'يبدأ من التاريخ أعلاه. تحدد البوابة تاريخ النهاية بنفسها — النظام السابق لا يرسله، لأن ساعة جهاز الفرع لم تكن موثوقة.',
+
   // Chrome the shared components ask for.
   'fetching from server': 'جاري الجلب من الخادم…',
   'please wait a moment': 'الرجاء الانتظار لحظة…',

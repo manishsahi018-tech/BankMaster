@@ -40,7 +40,7 @@ export default function StopChequeDetail({
           <p className="mt-1 text-sm text-muted">{t('Read-only enquiry.')}</p>
         </div>
         <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
-          Cheque {String(detail.chequeNo ?? '')}
+          {t('Cheque {chequeNo}', { chequeNo: String(detail.chequeNo ?? '') })}
         </span>
       </div>
 
