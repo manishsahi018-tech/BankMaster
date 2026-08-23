@@ -122,7 +122,7 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
     private static final List<String> DB_BACKED = List.of(
             "idType", "country", "businessType",
             "samaMainCategory", "samaSubCategory", "branch",
-            "currency", "ledger", "accStatus", "statusChangeReason",
+            "currency", "isoCurrency", "ledger", "accStatus", "statusChangeReason",
             "orderType", "paymentType", "paymentMode", "paymentFrequency",
             "stmtFreq", "intApplication",
             // The seven stctltab record types the profile combos resolve
@@ -279,6 +279,26 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
                 FROM   stctltabXC
                 WHERE  BankingDate = :bankingDate
                 ORDER  BY currCode
+                """, Map.of()));
+        // The SAME view read through its OTHER key. Every one of the 70
+        // currencyinfo lookups in the legacy client keys on currencycode — the
+        // 2-char BankMaster code above — EXCEPT the transfer forms, which key
+        // on isocurrcode (frmSarieTransferEnq.frm:1291, 1330 and the SWIFT
+        // forms beside them). rid0data.transCurrCode / payCurrCode are 3 chars
+        // wide and hold that ISO code, so resolving them against `currency`
+        // never matched and the screen showed the bare number.
+        //
+        // isoCurrCode is not a key column, so blanks are dropped and the order
+        // is made total — codeLabel takes the first match, and two internal
+        // codes sharing one ISO code must not resolve differently between
+        // loads.
+        sets.put("isoCurrency", querySet(language, "isoCurrency", """
+                SELECT isoCurrCode AS code,
+                       {name:} AS description
+                FROM   stctltabXC
+                WHERE  BankingDate = :bankingDate
+                AND    TRIM(isoCurrCode) <> ''
+                ORDER  BY isoCurrCode, currCode
                 """, Map.of()));
         // stctltabMM is the LEDGER master despite its table-level description
         // calling it "Memo Code": its columns are ledgerCode + LEDGER NAME IN

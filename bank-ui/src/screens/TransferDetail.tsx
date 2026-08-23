@@ -28,9 +28,14 @@ export default function TransferDetail({ detail, onReturn }: { detail: GridRow; 
             { label: 'Debit Account', value: detail.drAccNo },
             { label: 'Credit Account', value: detail.crAccNo },
             { label: 'Amount', value: formatAmount(detail.netAmt) },
-            { label: 'Currency', value: codeLabel('currency', detail.transCurrCode) },
+            // rid0data's two currency columns are 3 chars and hold the ISO
+            // code, not the 2-char BankMaster one: the transfer forms are the
+            // only place in the legacy that reads currencyinfo by isocurrcode
+            // (frmSarieTransferEnq.frm:1291, 1330). Against `currency` they
+            // never matched, so the screen showed "608" and "978" raw.
+            { label: 'Currency', value: codeLabel('isoCurrency', detail.transCurrCode) },
             { label: 'Payment Amount', value: formatAmount(detail.payAmt) },
-            { label: 'Payment Currency', value: codeLabel('currency', detail.payCurrCode) },
+            { label: 'Payment Currency', value: codeLabel('isoCurrency', detail.payCurrCode) },
             { label: 'Exchange Rate', value: detail.exchangeRate },
             // rid0data.paymentStatus. The legacy resolves it against
             // transfertypeinfo and prints "code-text" beside the payment

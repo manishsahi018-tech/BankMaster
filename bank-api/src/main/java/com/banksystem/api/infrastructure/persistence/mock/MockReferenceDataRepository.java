@@ -162,6 +162,21 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("70", "Bahraini Dinar"),
                     new CodeEntry("84", "British Pound"),
                     new CodeEntry("85", "Indian Rupees"))),
+            // stctltabXC read through isoCurrCode instead of currCode — the key
+            // the transfer forms use. Same nine currencies, so a transfer and
+            // an account agree on the name; the codes are the ISO numerics
+            // MockTransferRepository's own fixtures carry (608/840/978/826).
+            Map.entry("isoCurrency", List.of(
+                    new CodeEntry("048", "Bahraini Dinar"),
+                    new CodeEntry("356", "Indian Rupees"),
+                    new CodeEntry("392", "Japanese Yen"),
+                    new CodeEntry("414", "Kuwaiti Dinar"),
+                    new CodeEntry("608", "Saudi Riyal"),
+                    new CodeEntry("634", "Qatari Riyal"),
+                    new CodeEntry("784", "Arab Emirates Dirham"),
+                    new CodeEntry("826", "British Pound"),
+                    new CodeEntry("840", "U.S. Dollar"),
+                    new CodeEntry("978", "Euro"))),
             // Ledgers — the three the account fixtures use, plus the common
             // deposit ledgers. Served from stctltabMM under denodo.
             Map.entry("ledger", List.of(
@@ -390,6 +405,16 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
             Map.entry("currency/70", "دينار بحريني"),
             Map.entry("currency/84", "جنيه إسترليني"),
             Map.entry("currency/85", "روبية هندية"),
+            Map.entry("isoCurrency/048", "دينار بحريني"),
+            Map.entry("isoCurrency/356", "روبية هندية"),
+            Map.entry("isoCurrency/392", "ين ياباني"),
+            Map.entry("isoCurrency/414", "دينار كويتي"),
+            Map.entry("isoCurrency/608", "ريال سعودي"),
+            Map.entry("isoCurrency/634", "ريال قطري"),
+            Map.entry("isoCurrency/784", "درهم إماراتي"),
+            Map.entry("isoCurrency/826", "جنيه إسترليني"),
+            Map.entry("isoCurrency/840", "دولار أمريكي"),
+            Map.entry("isoCurrency/978", "يورو"),
             Map.entry("ledger/008", "حساب جاري"),
             Map.entry("ledger/009", "حساب توفير"),
             Map.entry("ledger/100", "وديعة لأجل"),
