@@ -74,10 +74,12 @@ function DocList({
 }) {
   return (
     <div className="flex-1">
-      <p className="mb-2 text-sm font-semibold text-ink-soft">{title}</p>
+      {/* A screen-local list, so it translates its own props the way the
+          shared shells do — the caller keeps passing English. */}
+      <p className="mb-2 text-sm font-semibold text-ink-soft">{t(title)}</p>
       <ul className="h-64 divide-y divide-edge-soft overflow-y-auto rounded-xl border border-edge-strong bg-surface shadow-xs">
         {items.length === 0 && (
-          <li className="px-3 py-8 text-center text-sm text-muted-soft">{emptyText}</li>
+          <li className="px-3 py-8 text-center text-sm text-muted-soft">{t(emptyText)}</li>
         )}
         {items.map((label) => (
           <li key={label} className="px-3 py-2.5 text-sm text-ink-soft">
@@ -186,8 +188,12 @@ export default function EssentialDocuments({
 
         {extra.length > 0 && (
           <p className="mt-3 text-xs text-muted">
-            <span className="font-medium text-ink-soft">{t('Also on record:')}</span>{' '}
-            {extra.map(docLabel).join(', ')} — submitted but not in this sub-category's list.
+            {/* One sentence with the list as a placeholder: the clause after it
+                does not fall at the end in Arabic, so it cannot be left as
+                loose JSX text trailing the expression. */}
+            {t("Also on record: {documents} — submitted but not in this sub-category's list.", {
+              documents: extra.map(docLabel).join(', '),
+            })}
           </p>
         )}
 

@@ -424,6 +424,20 @@ const AR_EXTRA: Record<string, string> = {
   'restore your session': 'استعادة جلستك',
   'sign you in': 'تسجيل دخولك',
 
+  // Essential Documents (frmDocuments). The two list headings come from the
+  // legacy captions; these are the screen's own copy.
+  'documents for sub category': 'مستندات التصنيف الفرعي',
+  "what this customer's sama sub-category requires, and what was submitted":
+    'ما يتطلبه التصنيف الفرعي لساما لهذا العميل، وما تم تقديمه.',
+  'no documents configured for this sub-category': 'لا توجد مستندات محددة لهذا التصنيف الفرعي.',
+  'no documents recorded as submitted for this customer':
+    'لا توجد مستندات مسجلة كمقدَّمة لهذا العميل.',
+  "also on record: {documents} — submitted but not in this sub-category's list":
+    'مسجل أيضاً: {documents} — مقدَّمة لكنها ليست ضمن قائمة هذا التصنيف الفرعي.',
+  'none recorded': 'لا يوجد',
+  'marking documents submitted is a create-time action, not part of this enquiry':
+    'تحديد المستندات كمقدَّمة إجراء يتم عند الإنشاء، وليس جزءاً من هذا الاستعلام',
+
   // Chrome the shared components ask for.
   'fetching from server': 'جاري الجلب من الخادم…',
   'please wait a moment': 'الرجاء الانتظار لحظة…',
