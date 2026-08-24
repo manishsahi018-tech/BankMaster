@@ -168,7 +168,12 @@ switch, not something to leave on.
 | `GET /api/accounts/{accNo}/stop-cheques` | stop cheque search | cbbranch2.c | DB #1 `pyd0data` |
 | `GET /api/accounts/{accNo}/sama-status-history` | 57 requestType 1 | cbothers.c getAcctStatusHistory | DB #1 `stacclog` (SAMA columns — not stsamaacc) |
 
-Tier-1 endpoints (screens not yet built in bank-ui; specs in QUERY-SPECS.md Part 2):
+The rest of the endpoints, specified in QUERY-SPECS.md Part 2. That part calls
+them the "tier-1 missing screens" because none of them existed when it was
+written; all of them are built now — every row below is reachable in bank-ui
+(see the navigation map in `.claude/skills/verify/SKILL.md`). They are listed
+apart from the table above only because they answer to no single cbrouter
+service code, so the spec section is the reference instead:
 
 | Endpoint | Spec | Data source |
 |---|---|---|
@@ -193,9 +198,10 @@ Tier-1 endpoints (screens not yet built in bank-ui; specs in QUERY-SPECS.md Part
 | `GET /api/customers/{custNo}/owners` | §22 | DB #1 `stowntab` |
 | `GET /api/codes` | — | DB #1 `stctltab` recTypes + legacy Access combo tables (samamaincategoryinfo etc.) |
 
-Pagination follows the legacy convention: 20 rows per page (`PagedResult`,
-`hasMore` = a full page was returned; the UI's "More" button requests
-`page+1`).
+Pagination keeps the legacy's SHAPE but not its page size: the legacy server
+returned 20 rows via `lastRecCount`, and the revamp standardises on 10 —
+`PagedResult.PAGE_SIZE`, which says so in its own javadoc. `hasMore` = a full
+page was returned; the UI's "More" button requests `page+1`.
 
 ## Architecture (onion)
 
