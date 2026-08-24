@@ -102,23 +102,30 @@ public class JdbcSignatoryRepository implements SignatoryRepository {
                 """,
                 Map.of("bankingDate", bankingDate.bankingDate(),
                         "accNo", accNo, "signatoryNo", signatoryNo),
+                // Trimmed, like the customer profile's ID rows: this screen shows
+                // the same stidtab issued-at, and idType/activeStatus are resolved
+                // through code sets that a CHAR-padded value would not match.
                 (rs, i) -> new SignatoryDetail(
-                        rs.getString("accNo"), rs.getString("signatoryNo"),
-                        rs.getString("custBranchCode"), rs.getString("idType"),
-                        rs.getString("idNo"), rs.getString("idDateType"),
-                        rs.getString("idIssuedAt"),
+                        trim(rs.getString("accNo")), trim(rs.getString("signatoryNo")),
+                        trim(rs.getString("custBranchCode")), trim(rs.getString("idType")),
+                        trim(rs.getString("idNo")), trim(rs.getString("idDateType")),
+                        trim(rs.getString("idIssuedAt")),
                         BmForms.actualDate(rs.getString("idIssueDateH")), BmForms.actualDate(rs.getString("idIssueDateG")),
                         BmForms.actualDate(rs.getString("idExpiryDateH")), BmForms.actualDate(rs.getString("idExpiryDateG")),
-                        rs.getString("signatoryShortName"),
-                        rs.getString("aFirstName"), rs.getString("aSecondName"),
-                        rs.getString("aThirdName"), rs.getString("aLastName"),
-                        rs.getString("aShortName"),
-                        rs.getString("eFirstName"), rs.getString("eSecondName"),
-                        rs.getString("eThirdName"), rs.getString("eLastName"),
-                        rs.getString("eShortName"),
-                        rs.getString("activeStatus"), rs.getString("reason"),
+                        trim(rs.getString("signatoryShortName")),
+                        trim(rs.getString("aFirstName")), trim(rs.getString("aSecondName")),
+                        trim(rs.getString("aThirdName")), trim(rs.getString("aLastName")),
+                        trim(rs.getString("aShortName")),
+                        trim(rs.getString("eFirstName")), trim(rs.getString("eSecondName")),
+                        trim(rs.getString("eThirdName")), trim(rs.getString("eLastName")),
+                        trim(rs.getString("eShortName")),
+                        trim(rs.getString("activeStatus")), trim(rs.getString("reason")),
                         BmForms.actualDate(rs.getString("signatureActionDate")),
-                        rs.getString("diplomaticPpNo")));
+                        trim(rs.getString("diplomaticPpNo"))));
         return rows.stream().findFirst();
+    }
+
+    private static String trim(String s) {
+        return s == null ? "" : s.trim();
     }
 }

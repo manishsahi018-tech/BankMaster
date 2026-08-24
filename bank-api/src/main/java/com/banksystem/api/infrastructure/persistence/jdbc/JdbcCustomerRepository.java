@@ -133,6 +133,15 @@ public class JdbcCustomerRepository implements CustomerRepository {
      * lastUpdateDateTime are the intended target of that read, not noise —
      * they are deliberately NOT filtered out.
      *
+     * Which is exactly why the sort COALESCEs, as updateHistory's read of this
+     * same column does. A blank stamp can reach the view as NULL, and NULL
+     * ordering is engine-defined and delegated by Denodo — on an engine that
+     * sorts NULLS FIRST on DESC, the LATEST read would take a pending row off
+     * the top and report its branch and maker as the Update Branch and Update
+     * Maker. Coalesced to '', a blank sorts lowest in both directions: first
+     * on ASC, which is the earliest read's intended target, and last on DESC,
+     * which leaves the genuinely newest row on top.
+     *
      * The per-year archive files (custlog2000…) the C loops over collapse to
      * this one view in the archival schema (QUERY-SPECS cross-cutting #3), so
      * the loop becomes a single ordered read.
@@ -142,7 +151,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
             FROM   stcustlog
             WHERE  BankingDate = :bankingDate
               AND  custNo = :custNo
-            ORDER  BY lastUpdateDateTime %s
+            ORDER  BY COALESCE(lastUpdateDateTime, '') %s
             FETCH  FIRST 1 ROWS ONLY
             """;
 
@@ -213,7 +222,10 @@ public class JdbcCustomerRepository implements CustomerRepository {
     private static final RowMapper<Map<String, String>> PROFILE_COLUMN_MAPPER = (rs, i) -> {
         Map<String, String> m = new HashMap<>();
         for (String col : PROFILE_COLUMNS) {
-            m.put(col, rs.getString(col));
+            // Trimmed: a CHAR-padded column reaches the screen as a control
+            // full of spaces, which reads as blank but is not empty, and a
+            // padded code matches no code-set entry.
+            m.put(col, trim(rs.getString(col)));
         }
         return m;
     };
@@ -274,14 +286,25 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 List.of(), OpenUpdateInfo.empty());
     }
 
+    /**
+     * TRIMMED, all of it. The screens pick their document rows by an EXACT
+     * idType match (IndividualOthers.tsx byType, and the Saudi/juristic pages
+     * beside it), so a value the view hands back CHAR-padded — "P " for "P" —
+     * matches nothing and drops that row to its stcusttab fallback, which
+     * carries the bare number and no issued-at, calendar or dates at all. The
+     * failure is silent and looks exactly like a customer with no documents.
+     * The sibling readers below (party details, the as-of overlay) already
+     * trimmed; this one did not.
+     */
     private static final RowMapper<IdDocument> ID_DOCUMENT_MAPPER = (rs, i) -> new IdDocument(
-            rs.getString("idType"), rs.getString("idNo"), rs.getString("idIssuedAt"),
-            rs.getString("idDateType"), rs.getString("iqamaType"),
+            trim(rs.getString("idType")), trim(rs.getString("idNo")),
+            trim(rs.getString("idIssuedAt")),
+            trim(rs.getString("idDateType")), trim(rs.getString("iqamaType")),
             BmForms.actualDate(rs.getString("idIssueDateH")),
             BmForms.actualDate(rs.getString("idIssueDateG")),
             BmForms.actualDate(rs.getString("idExpiryDateH")),
             BmForms.actualDate(rs.getString("idExpiryDateG")),
-            rs.getString("idRefName"));
+            trim(rs.getString("idRefName")));
 
     private final NamedParameterJdbcTemplate jdbc;
     private final BankingDateProvider bankingDate;
@@ -583,8 +606,14 @@ public class JdbcCustomerRepository implements CustomerRepository {
         try {
             return jdbc.query(ID_DOCUMENTS_SQL, params, ID_DOCUMENT_MAPPER);
         } catch (DataAccessException e) {
-            log.warn("stidtab read failed for the ID rows; falling back to the "
-                    + "stcusttab numbers: {}", e.getMessage());
+            // ERROR, not warn: stidtab is not one of the views DENODO-VIEWS.md
+            // records as absent, so a failure here is a fault. It degrades to
+            // the same empty list as "this customer has no documents", and the
+            // screens cannot tell the two apart — the log is the only place
+            // that can, so it has to say so loudly.
+            log.error("stidtab read FAILED for the ID rows of this customer; the profile "
+                    + "will show the bare stcusttab numbers with no issued-at, calendar "
+                    + "or dates, exactly as if no documents existed", e);
             return List.of();
         }
     }
@@ -611,9 +640,15 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     latest == null ? "" : trim(latest.get("userId")),
                     updateSupervisorId);
         } catch (DataAccessException e) {
-            log.warn("stcustlog read failed for the open/update frames: {}", e.getMessage());
-            // the C tolerates both log reads failing and still returns the
-            // stcusttab-sourced fields
+            // ERROR, not warn — same reasoning as the stidtab read above.
+            // The C tolerates both log reads failing and still returns the
+            // stcusttab-sourced fields, so the frame keeps its two dates and
+            // the update supervisor and loses only the branches and makers.
+            // That is a perfectly plausible-looking screen, so nothing but
+            // this line distinguishes it from a customer with no log rows.
+            log.error("stcustlog read FAILED for the open/update frames; the profile will "
+                    + "show its Open/Update dates but NO branch, maker or open supervisor, "
+                    + "exactly as if the customer had no update history", e);
             return new OpenUpdateInfo(openDate, "", "", "", lastUpdateDate, "", "", updateSupervisorId);
         }
     }
@@ -725,7 +760,9 @@ public class JdbcCustomerRepository implements CustomerRepository {
                         Map<String, String> r = new HashMap<>();
                         for (String col : new String[] {"idType", "idNo", "idIssuedAt",
                                 "idIssueDateH", "idIssueDateG", "idExpiryDateH", "idExpiryDateG"}) {
-                            r.put(col, rs.getString(col));
+                            // Trimmed for the same reason as PROFILE_COLUMN_MAPPER —
+                            // these values are overlaid INTO that map.
+                            r.put(col, trim(rs.getString(col)));
                         }
                         return r;
                     });
