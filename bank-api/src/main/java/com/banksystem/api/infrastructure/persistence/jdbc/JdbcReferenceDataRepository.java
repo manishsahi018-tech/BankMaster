@@ -377,9 +377,7 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
         // cardType is stcardtab/stcardlog; transferStatus is rid0data's
         // statusFlag, which the transfer repository hands over as
         // "paymentType" (JdbcTransferRepository:254) — a name it shares with
-        // sod0data.paymentType and emphatically NOT the same domain;
-        // signatureNature is stcusttab, 0/1 and not the J/S the juristic
-        // screen used to test for.
+        // sod0data.paymentType and emphatically NOT the same domain.
         sets.put("cardType", fixed(language,
                 new Fixed("R", "Regular", "عادية"),
                 new Fixed("I", "International", "دولية"),
@@ -410,9 +408,6 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
                 new Fixed("2", "SWIFT/Telex", "سويفت/تلكس"),
                 new Fixed("3", "Postal/Fax", "بريد/فاكس"),
                 new Fixed("4", "Telephone", "هاتف")));
-        sets.put("signatureNature", fixed(language,
-                new Fixed("0", "Single", "مفرد"),
-                new Fixed("1", "Joint", "مشترك")));
         sets.put("chequeType", fixed(language,
                 new Fixed("1", "Personal", "شخصي"),
                 new Fixed("2", "Corporate", "تجاري")));

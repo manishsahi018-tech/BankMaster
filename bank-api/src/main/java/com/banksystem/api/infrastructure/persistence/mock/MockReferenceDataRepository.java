@@ -227,8 +227,6 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("0", "Initialised"), new CodeEntry("1", "Direct Transfer"),
                     new CodeEntry("2", "SWIFT/Telex"), new CodeEntry("3", "Postal/Fax"),
                     new CodeEntry("4", "Telephone"))),
-            Map.entry("signatureNature", List.of(
-                    new CodeEntry("0", "Single"), new CodeEntry("1", "Joint"))),
             // The four standing-order lists — stctltab recTypes ST / PT / PM /
             // PF under denodo. Codes are the ONE character sod0data stores;
             // the wording is that column's own documented domain.
@@ -445,7 +443,6 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
             Map.entry("transferType/0", "مبدئية"), Map.entry("transferType/1", "حوالة مباشرة"),
             Map.entry("transferType/2", "سويفت/تلكس"), Map.entry("transferType/3", "بريد/فاكس"),
             Map.entry("transferType/4", "هاتف"),
-            Map.entry("signatureNature/0", "مفرد"), Map.entry("signatureNature/1", "مشترك"),
             Map.entry("orderType/0", "أمر ثابت محدد"),
             Map.entry("orderType/1", "تحويل آلي من حساب الأمر الثابت"),
             Map.entry("orderType/2", "تحويل آلي إلى حساب الأمر الثابت"),
