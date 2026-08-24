@@ -213,7 +213,10 @@ public class JdbcCustomerRepository implements CustomerRepository {
     private static final RowMapper<Map<String, String>> PROFILE_COLUMN_MAPPER = (rs, i) -> {
         Map<String, String> m = new HashMap<>();
         for (String col : PROFILE_COLUMNS) {
-            m.put(col, rs.getString(col));
+            // Trimmed: a CHAR-padded column reaches the screen as a control
+            // full of spaces, which reads as blank but is not empty, and a
+            // padded code matches no code-set entry.
+            m.put(col, trim(rs.getString(col)));
         }
         return m;
     };
@@ -274,14 +277,25 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 List.of(), OpenUpdateInfo.empty());
     }
 
+    /**
+     * TRIMMED, all of it. The screens pick their document rows by an EXACT
+     * idType match (IndividualOthers.tsx byType, and the Saudi/juristic pages
+     * beside it), so a value the view hands back CHAR-padded — "P " for "P" —
+     * matches nothing and drops that row to its stcusttab fallback, which
+     * carries the bare number and no issued-at, calendar or dates at all. The
+     * failure is silent and looks exactly like a customer with no documents.
+     * The sibling readers below (party details, the as-of overlay) already
+     * trimmed; this one did not.
+     */
     private static final RowMapper<IdDocument> ID_DOCUMENT_MAPPER = (rs, i) -> new IdDocument(
-            rs.getString("idType"), rs.getString("idNo"), rs.getString("idIssuedAt"),
-            rs.getString("idDateType"), rs.getString("iqamaType"),
+            trim(rs.getString("idType")), trim(rs.getString("idNo")),
+            trim(rs.getString("idIssuedAt")),
+            trim(rs.getString("idDateType")), trim(rs.getString("iqamaType")),
             BmForms.actualDate(rs.getString("idIssueDateH")),
             BmForms.actualDate(rs.getString("idIssueDateG")),
             BmForms.actualDate(rs.getString("idExpiryDateH")),
             BmForms.actualDate(rs.getString("idExpiryDateG")),
-            rs.getString("idRefName"));
+            trim(rs.getString("idRefName")));
 
     private final NamedParameterJdbcTemplate jdbc;
     private final BankingDateProvider bankingDate;
@@ -583,8 +597,14 @@ public class JdbcCustomerRepository implements CustomerRepository {
         try {
             return jdbc.query(ID_DOCUMENTS_SQL, params, ID_DOCUMENT_MAPPER);
         } catch (DataAccessException e) {
-            log.warn("stidtab read failed for the ID rows; falling back to the "
-                    + "stcusttab numbers: {}", e.getMessage());
+            // ERROR, not warn: stidtab is not one of the views DENODO-VIEWS.md
+            // records as absent, so a failure here is a fault. It degrades to
+            // the same empty list as "this customer has no documents", and the
+            // screens cannot tell the two apart — the log is the only place
+            // that can, so it has to say so loudly.
+            log.error("stidtab read FAILED for the ID rows of this customer; the profile "
+                    + "will show the bare stcusttab numbers with no issued-at, calendar "
+                    + "or dates, exactly as if no documents existed", e);
             return List.of();
         }
     }
@@ -725,7 +745,9 @@ public class JdbcCustomerRepository implements CustomerRepository {
                         Map<String, String> r = new HashMap<>();
                         for (String col : new String[] {"idType", "idNo", "idIssuedAt",
                                 "idIssueDateH", "idIssueDateG", "idExpiryDateH", "idExpiryDateG"}) {
-                            r.put(col, rs.getString(col));
+                            // Trimmed for the same reason as PROFILE_COLUMN_MAPPER —
+                            // these values are overlaid INTO that map.
+                            r.put(col, trim(rs.getString(col)));
                         }
                         return r;
                     });
