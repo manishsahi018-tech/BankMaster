@@ -133,6 +133,15 @@ public class JdbcCustomerRepository implements CustomerRepository {
      * lastUpdateDateTime are the intended target of that read, not noise —
      * they are deliberately NOT filtered out.
      *
+     * Which is exactly why the sort COALESCEs, as updateHistory's read of this
+     * same column does. A blank stamp can reach the view as NULL, and NULL
+     * ordering is engine-defined and delegated by Denodo — on an engine that
+     * sorts NULLS FIRST on DESC, the LATEST read would take a pending row off
+     * the top and report its branch and maker as the Update Branch and Update
+     * Maker. Coalesced to '', a blank sorts lowest in both directions: first
+     * on ASC, which is the earliest read's intended target, and last on DESC,
+     * which leaves the genuinely newest row on top.
+     *
      * The per-year archive files (custlog2000…) the C loops over collapse to
      * this one view in the archival schema (QUERY-SPECS cross-cutting #3), so
      * the loop becomes a single ordered read.
@@ -142,7 +151,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
             FROM   stcustlog
             WHERE  BankingDate = :bankingDate
               AND  custNo = :custNo
-            ORDER  BY lastUpdateDateTime %s
+            ORDER  BY COALESCE(lastUpdateDateTime, '') %s
             FETCH  FIRST 1 ROWS ONLY
             """;
 
@@ -631,9 +640,15 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     latest == null ? "" : trim(latest.get("userId")),
                     updateSupervisorId);
         } catch (DataAccessException e) {
-            log.warn("stcustlog read failed for the open/update frames: {}", e.getMessage());
-            // the C tolerates both log reads failing and still returns the
-            // stcusttab-sourced fields
+            // ERROR, not warn — same reasoning as the stidtab read above.
+            // The C tolerates both log reads failing and still returns the
+            // stcusttab-sourced fields, so the frame keeps its two dates and
+            // the update supervisor and loses only the branches and makers.
+            // That is a perfectly plausible-looking screen, so nothing but
+            // this line distinguishes it from a customer with no log rows.
+            log.error("stcustlog read FAILED for the open/update frames; the profile will "
+                    + "show its Open/Update dates but NO branch, maker or open supervisor, "
+                    + "exactly as if the customer had no update history", e);
             return new OpenUpdateInfo(openDate, "", "", "", lastUpdateDate, "", "", updateSupervisorId);
         }
     }
