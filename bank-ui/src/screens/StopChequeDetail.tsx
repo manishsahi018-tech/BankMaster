@@ -1,6 +1,6 @@
 import { SectionCard } from '../components/fields.tsx'
 import type { GridRow } from '../components/GridScreen.tsx'
-import { formatAmount } from '../schema/helpers.ts'
+import { formatAmount, formatChequeNoBare } from '../schema/helpers.ts'
 import { RoText, Field, DateTriple, BackArrow } from '../components/legacyForm.tsx'
 
 import { t } from '../i18n/index.ts'
@@ -40,7 +40,7 @@ export default function StopChequeDetail({
           <p className="mt-1 text-sm text-muted">{t('Read-only enquiry.')}</p>
         </div>
         <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
-          {t('Cheque {chequeNo}', { chequeNo: String(detail.chequeNo ?? '') })}
+          {t('Cheque {chequeNo}', { chequeNo: formatChequeNoBare(detail.chequeNo) })}
         </span>
       </div>
 
@@ -57,10 +57,10 @@ export default function StopChequeDetail({
               <DateTriple value={detail.dateStop} />
             </Field>
             <Field label="From Cheque">
-              <RoText value={detail.chequeFrom} className="tabular-nums" />
+              <RoText value={formatChequeNoBare(detail.chequeFrom)} className="tabular-nums" />
             </Field>
             <Field label="To Cheque No.">
-              <RoText value={detail.chequeNo} className="tabular-nums" />
+              <RoText value={formatChequeNoBare(detail.chequeNo)} className="tabular-nums" />
             </Field>
             <Field label="Cheque Amount">
               <RoText value={formatAmount(detail.amount)} className="tabular-nums" />

@@ -145,7 +145,12 @@ export function AccountHolding({
    *  profile keeps it in its page-2 lower frame, beside the references */
   withGracePeriod?: boolean
 }) {
-  const holding = a.singleJointAcc === 'S' ? 0 : a.singleJointAcc === 'J' ? 1 : 2
+  // stcusttab.singleJointAcc is 0-single / 1-joint / 2-unknown (workbook row
+  // 98), and the legacy reads blank as Single — globalFunctions.bas:6843
+  // (Others) and :7427 (Saudi) branch identically. Testing for 'S'/'J',
+  // values the column never holds, fell through to Unidentified for EVERY
+  // customer.
+  const holding = a.singleJointAcc === '1' ? 1 : a.singleJointAcc === '2' ? 2 : 0
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <Field label="Single / Joint A/c">
@@ -169,11 +174,18 @@ export function AccountHolding({
   )
 }
 
-/** frmIndividual*AcctInfo's design-time option defaults, as Picture4.png shows
- *  them: Elec.Intl, Primary/Secondary card No, delivery to GPS. */
+/**
+ * frmIndividual*AcctInfo's design-time option defaults, read from the .frm
+ * itself: Elec.Int'l, Primary/Secondary card No, delivered to Customer Branch.
+ * Each is the one button in its group carrying {@code Value = -1 'True'}.
+ *
+ * Delivery was GPS here, on the strength of Picture4.png. A screen capture
+ * shows whatever the operator had selected when it was taken; the FORM is what
+ * an unselected frame draws, and the form marks optCardDeliveredToBranch.
+ */
 const CARD_TYPE_DEFAULT = 0
 const CARD_REQUIRED_DEFAULT = 1
-const DELIVERY_DEFAULT = 3
+const DELIVERY_DEFAULT = 0
 
 /**
  * The Card & Delivery frame, on the form's defaults.

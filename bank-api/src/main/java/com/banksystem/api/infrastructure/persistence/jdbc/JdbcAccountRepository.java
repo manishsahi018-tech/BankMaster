@@ -456,10 +456,13 @@ public class JdbcAccountRepository implements AccountRepository {
         // checker ids); ids are raw like the type-'2' history rows — the C
         // never overlays them in this flow (cbothers.c:8015-8022).
         put(snapshot, "lastAmendUser", str(row, "userId"));
-        put(snapshot, "lastUpdateCsd", str(row, "dateTime"));
+        // Normalised like accountDetail's pair below — same columns, same
+        // positional slicing on the screen, same garbled date boxes without it.
+        put(snapshot, "lastUpdateCsd", BmForms.isoToBmTimestamp(str(row, "dateTime")));
         // Pending rows ('1'/'2') have no approval yet — blanked like §7-8.
         put(snapshot, "supervisorId", pending ? "" : str(row, "supervisorId"));
-        put(snapshot, "supervisorApproved", pending ? "" : str(row, "lastUpdateDateTime"));
+        put(snapshot, "supervisorApproved",
+                pending ? "" : BmForms.isoToBmTimestamp(str(row, "lastUpdateDateTime")));
         return snapshot;
     }
 
@@ -522,12 +525,36 @@ public class JdbcAccountRepository implements AccountRepository {
         }
         Map<String, Object> row = rows.get(0);
         Map<String, String> d = new LinkedHashMap<>();
-        put(d, "accountStatus", str(row, "accStatus"));
-        put(d, "samaStatus", str(row, "samaAccStatus"));
+        // gld0data.accStatus is gldRec.passwd — the workbook labels the column
+        // "PSSWORD PROTECTION FLAG" — and holds ONE character, while the 'AS'
+        // code set (and stacclog.accStatus, which the as-of snapshot reads) is
+        // two. The C widens it with a literal leading zero before the form
+        // ever sees it, sprintf(tmpStr, "0%c", gldRec.passwd)
+        // (cbbranch2.c:7397-7398), so the bare "2" this used to hand over
+        // matched nothing in the set and reached the operator as an
+        // unresolved code — in the field, in the status badge and in the
+        // summary band. samaAccStatus is the same one-to-two case one line
+        // further down in the C (:7399-7400); codes.ts tail-matches that one,
+        // which is why only accStatus showed the symptom, but it is widened
+        // here too so both leave this method in the domain they document.
+        put(d, "accountStatus", widen2(str(row, "accStatus")));
+        put(d, "samaStatus", widen2(str(row, "samaAccStatus")));
         String inactive = str(row, "inactiveAccFlag");
         put(d, "dormant", inactive.isEmpty() ? "" : ("1".equals(inactive) ? "Yes" : "No"));
-        put(d, "stmtFrequency", str(row, "statementFrequency"));
-        put(d, "statementDay", str(row, "statementDay"));
+        // gld0data.statementFrequency is the 3-character "XNN" form — a
+        // frequency LETTER followed by the cycle's start month ("M01", "Q02")
+        // — and not an 'SF' code at all, so the raw column arrived on the
+        // screen as an unresolved "M01". The C maps the letter to the
+        // two-digit code the combo is keyed on (cbbranch2.c:7401-7417).
+        String stmtFreq = str(row, "statementFrequency");
+        put(d, "stmtFrequency", stmtFreqCode(stmtFreq));
+        // Statement Day comes off that SAME column, not off
+        // gld0data.statementDay: that column is a day of the MONTH (1-31),
+        // and feeding it to the screen's "0 = Br.Stmt.Day, anything else =
+        // Month End" toggle put nearly every account on Month End. The C
+        // derives it instead (cbbranch2.c:7419-7428) — Month End only for a
+        // monthly frequency whose cycle does not start in month 01.
+        put(d, "statementDay", statementDay(stmtFreq));
         put(d, "intApplication", str(row, "intApplication"));
         put(d, "intFreqCode", str(row, "intApplicationFreq"));
         put(d, "intApplDay", str(row, "intApplicationDay"));
@@ -559,13 +586,26 @@ public class JdbcAccountRepository implements AccountRepository {
         // collateral (gldRec.drawerName, cbbranch2.c:7455) is NOT carried by the
         // archival gld0data view (no drawer/name column) — left to the screen.
 
-        // Maker/checker from the most-recent non-'9' stacclog row
-        // (getAccLastUpdateUserId, cbbranch2.c): last amend user/date + supervisor.
+        // Maker/checker from the most-recent COMPLETED stacclog row
+        // (getAccLastUpdateUserId, cbbranch2.c:7527-7542): last amend
+        // user/date + supervisor.
+        //
+        // The C walks the account's log BACKWARDS on key 5 (accNo +
+        // lastUpdateDateTime) and skips every row that is not completed:
+        //
+        //     if ( acctLogRec.bmUpdateStatus != '9' )  continue;
+        //
+        // so the row it stops on is the last one that actually reached
+        // BankMaster. A '<>' here read that test backwards and answered with
+        // the maker of an entered-but-never-completed or rejected request —
+        // or with nothing at all on an account whose amendments all
+        // completed. statusUpdReason below comes off the same row, so the
+        // screen's status-change reason was wrong for the same reason.
         List<Map<String, Object>> logRows = jdbc.queryForList("""
                 SELECT userId, supervisorId, datetime_bigdata AS dateTime, lastUpdateDateTime, accStatusChangeReason
                 FROM   stacclog
                 WHERE  BankingDate = :bankingDate
-                  AND  accNo = :accNo AND bmUpdateStatus <> '9'
+                  AND  accNo = :accNo AND bmUpdateStatus = '9'
                 ORDER  BY lastUpdateDateTime DESC
                 FETCH FIRST 1 ROWS ONLY
                 """,
@@ -574,9 +614,17 @@ public class JdbcAccountRepository implements AccountRepository {
         if (!logRows.isEmpty()) {
             Map<String, Object> lr = logRows.get(0);
             put(d, "lastAmendUser", str(lr, "userId"));
-            put(d, "lastUpdateCsd", str(lr, "dateTime"));
+            // Both stamps go through isoToBmTimestamp, as every other read of
+            // these two columns does (updateHistory, statusHistory, the cheque
+            // and card repositories): the screen slices YYYYMMDD off the front
+            // positionally, so a view that types them as a TIMESTAMP rather
+            // than a 14-char string rendered "2009-07-11 10:33:00.0" as
+            // 7-/-0/2009 in the audit card's date boxes. A no-op on a value
+            // that already arrives in the 14-char form.
+            put(d, "lastUpdateCsd", BmForms.isoToBmTimestamp(str(lr, "dateTime")));
             put(d, "supervisorId", str(lr, "supervisorId"));
-            put(d, "supervisorApproved", str(lr, "lastUpdateDateTime"));
+            put(d, "supervisorApproved",
+                    BmForms.isoToBmTimestamp(str(lr, "lastUpdateDateTime")));
             put(d, "statusUpdReason", str(lr, "accStatusChangeReason"));
         }
         return d;
@@ -1202,6 +1250,59 @@ public class JdbcAccountRepository implements AccountRepository {
 
     private static String trim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    /**
+     * The C's {@code sprintf("0%c", ...)} — a one-character gld0data status
+     * widened to the two characters its code set is keyed on
+     * (cbbranch2.c:7397-7400). A value that is already two characters wide (or
+     * empty) is handed back untouched, so this stays correct if a view ever
+     * carries the wider form.
+     */
+    private static String widen2(String value) {
+        return value.length() == 1 ? "0" + value : value;
+    }
+
+    /**
+     * gld0data.statementFrequency ("XNN") to the two-digit 'SF' code, per the
+     * ladder at cbbranch2.c:7401-7417. Each frequency accepts two letters —
+     * the legacy's own alternate is the second of each pair. An unrecognised
+     * letter yields "", which is the blank the C leaves in a response field it
+     * never writes.
+     */
+    private static String stmtFreqCode(String frequency) {
+        if (frequency.isEmpty()) {
+            return "";
+        }
+        return switch (frequency.charAt(0)) {
+            case 'N', 'I' -> "01";  // non-automatic
+            case 'D', 'A' -> "02";  // daily
+            case 'W', 'B' -> "03";  // weekly
+            case 'M', 'C' -> "04";  // monthly
+            case 'Q', 'E' -> "05";  // quarterly
+            case 'H', 'F' -> "06";  // half yearly
+            case 'Y', 'G' -> "07";  // yearly
+            default -> "";
+        };
+    }
+
+    /**
+     * Statement day from the same "XNN" column (cbbranch2.c:7419-7428): '1'
+     * (Month End) only when the frequency is monthly AND the cycle starts
+     * somewhere other than month 01, '0' (Branch Statement Day) otherwise —
+     * including for every non-monthly frequency.
+     *
+     * <p>A monthly frequency with no start month behind it ("M" alone) is
+     * Month End, which is what the C's strncmp against a space-padded field
+     * also decides.
+     */
+    private static String statementDay(String frequency) {
+        if (frequency.isEmpty()) {
+            return "";
+        }
+        char code = frequency.charAt(0);
+        boolean monthly = code == 'M' || code == 'C';
+        return monthly && !frequency.regionMatches(1, "01", 0, 2) ? "1" : "0";
     }
 
     /** Column value from a queryForList row (case-insensitive keys). */

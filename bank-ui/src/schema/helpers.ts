@@ -57,6 +57,37 @@ export function formatDate(value: unknown): string {
   return `${v.slice(6, 8)}/${v.slice(4, 6)}/${v.slice(0, 4)}`
 }
 
+/**
+ * pyd0data's cheque columns are declared 8-char strings, but the pre-2025
+ * numeric ETL ("Changed Data Type from Number to String fron 31/7/2025")
+ * dropped their leading zeros, so 00023456 arrives as 23456. Restore the
+ * field's declared width for display.
+ *
+ * This is the GRID's convention, where a uniform width keeps the column
+ * aligned. The detail FORM shows the same values bare, as the legacy did —
+ * see formatChequeNoBare.
+ *
+ * A blank stays blank: a single stopped cheque carries no from-cheque, and
+ * that must not render as 00000000.
+ */
+export function formatChequeNo(value: unknown): string {
+  const v = String(value ?? '').trim()
+  return /^\d{1,8}$/.test(v) ? v.padStart(8, '0') : v
+}
+
+/**
+ * The other direction, for the stop-cheque detail FORM: the cheque number
+ * shows bare, without the stored column's leading zeros — which is what the
+ * legacy form did to every cheque box it filled
+ * (`txtChequeNo = Val(recvStopChqDetail.chequeNo)`, globalFunctions.bas:4591).
+ *
+ * The grid keeps the stored 8-wide form, so its rows stay aligned.
+ */
+export function formatChequeNoBare(value: unknown): string {
+  const v = String(value ?? '').trim()
+  return /^\d+$/.test(v) ? v.replace(/^0+(?=\d)/, '') : v
+}
+
 // Archival timestamps are YYYYMMDDHH24MISS strings.
 export function formatTimestamp(value: unknown): string {
   const v = String(value ?? '')

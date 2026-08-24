@@ -2,7 +2,7 @@ import GridScreen from '../components/GridScreen.tsx'
 import type { GridRow } from '../components/GridScreen.tsx'
 import type { Account, Customer } from '../types.ts'
 import { pyd0data } from '../schema/index.ts'
-import { column } from '../schema/helpers.ts'
+import { column, formatChequeNo } from '../schema/helpers.ts'
 
 // Mirrors legacy frmStopChequeGrid.frm ("Stop Cheque Grid").
 // Rows are pyd0data records (recType CH = stopped cheque, SP = stop payment).
@@ -15,7 +15,7 @@ const COLUMNS = [
   // (frmStopChequeGrid.frm rowTitle(3)); the detail form calls the same value
   // "Reason". Both beat the workbook's column name, which reads as a payee.
   column(pyd0data, 'payeeName', { label: 'Details' }),
-  column(pyd0data, 'chequeFrom', { label: 'From Cheque Number' }),
+  column(pyd0data, 'chequeFrom', { label: 'From Cheque Number', render: formatChequeNo }),
 ]
 
 export default function StopChequeGrid({
