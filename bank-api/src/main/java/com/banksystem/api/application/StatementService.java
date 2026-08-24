@@ -9,8 +9,12 @@ import java.util.Locale;
 import org.springframework.stereotype.Service;
 
 /**
- * Historical Statement use case — legacy frmHistStmt, reached from the
- * frmAccount cmdHistStmt button.
+ * The two archived-statement use cases, both served from DB #3.
+ *
+ * <p>{@link #historicalStatements} is legacy frmHistStmt (the frmAccount
+ * cmdHistStmt button and its deleted-account route) and reads the BM archive.
+ * {@link #pdpStatements} is the PDP Statements screen, which has no legacy form
+ * at all, and reads the PDP archive.
  *
  * <p>Everything the legacy checked before it would extract anything is
  * reproduced here, in its order. The row-level gates that ran BEFORE the form
@@ -26,7 +30,7 @@ public class StatementService {
     /** The staff branch. Hard-coded in the legacy too (frmHistStmt.frm:783). */
     private static final String STAFF_BRANCH = "0175";
 
-    /** The two archives the screen's System selector offers. */
+    /** The two archives DB #3 holds. */
     private static final String BM = "BM";
     private static final String PDP = "PDP";
 
@@ -47,6 +51,21 @@ public class StatementService {
     private static final String ERR_TO_MONTH = "To month cannot be blank..please enter it...";
     private static final String ERR_STAFF_BRANCH =
             "Not authorized to print the statement for the staff branch";
+
+    /**
+     * The PDP screen has no legacy form, so there is no MsgBox to transcribe.
+     * Worded like the ones that are, because it appears beside them.
+     */
+    private static final String ERR_CUST_OR_ACCOUNT =
+            "Customer number or account number cannot be spaces...Please enter one of them...";
+
+    /**
+     * The two identifiers are EXCLUSIVE. The screen disables one as soon as the
+     * other is keyed, but a disabled input is not a control, so the rule is
+     * enforced here as well as reflected there.
+     */
+    private static final String ERR_BOTH_KEYED =
+            "Enter either a customer number or an account number, not both";
 
     /**
      * Not a legacy message — the System selector is new, so there is no MsgBox
@@ -75,8 +94,11 @@ public class StatementService {
      * @param branchCode     the account's GL branch, which the legacy copies from
      *                       the grid into txtBranchCode (frmAccount.frm:853).
      *                       Validated here and used for the staff-branch rule
-     *                       below; it also FILTERS the PDP header query, and
-     *                       only that one — see {@code JdbcStatementRepository}.
+     *                       below. BLANK on the deleted-account route, which has
+     *                       no grid row to copy one from and no longer offers a
+     *                       box — both the length check and the staff-branch
+     *                       rule are skipped there, and neither ever gave this
+     *                       route anything (BM does not filter on branch).
      * @param fromYearMonth  YYYYMM inclusive
      * @param toYearMonth    YYYYMM inclusive
      * @param system         which archive to read: {@code "BM"} or {@code "PDP"},
@@ -104,7 +126,15 @@ public class StatementService {
         // cmdGenerate_Click (:686) checks branch code first, then the account,
         // then the four date parts — keep the order so the operator gets the
         // same message the legacy would have shown for the same input.
-        if (branch.length() != 4) {
+        //
+        // Except on the deleted-account route, which no longer carries a branch
+        // at all. It never USED one: branch is not a predicate for BM (it chose
+        // which Btrieve file to open, and DB #3 has no such partition), and the
+        // one rule that reads it — the staff-branch refusal below — is guarded
+        // by `tag <> "D"` and cannot fire here. Requiring four characters of a
+        // value nothing consults would refuse the enquiry over a field the
+        // screen no longer offers.
+        if (!deletedAccount && branch.length() != 4) {
             throw new BadRequestException(ERR_BRANCH_CODE);
         }
         if (account.isEmpty()) {
@@ -141,6 +171,67 @@ public class StatementService {
         // produce for the same form.
         return statements.historicalStatements(
                 account, branch, trim(fromYearMonth), trim(toYearMonth), archiveOf(system));
+    }
+
+    /**
+     * PDP Statements — the other archive DB #3 holds, on its own screen.
+     *
+     * <p>Not a variant of {@link #historicalStatements}: the PDP header carries
+     * CUST_NUM, which the BM header does not, so this enquiry can start from a
+     * CUSTOMER and its answer can span every account that customer holds. That
+     * is the whole reason it is a separate screen rather than a selector.
+     *
+     * <p>There is no legacy form behind it — frmHistStmt read one Btrieve index
+     * tree keyed on the account. So the validation below is the legacy's
+     * wherever the same input exists (branch, the four date parts, the range
+     * direction) and new only where the input itself is new.
+     *
+     * @param branchCode 4-digit branch. A real predicate here, not only the
+     *                   staff-branch key it is for BM — a customer-number
+     *                   enquiry without it would sweep every branch.
+     * @param custNo     PDP CUST_NUM, or blank
+     * @param accNo      account number, or blank. EXACTLY ONE of the two is
+     *                   required — a customer number answers for every account
+     *                   that customer holds, an account number for that one
+     *                   account, and there is no combined form.
+     */
+    public List<HistoricalStatement> pdpStatements(
+            String branchCode, String custNo, String accNo, String fromYearMonth,
+            String toYearMonth, EnquiryUser caller) {
+
+        String branch = trim(branchCode);
+        String customer = trim(custNo);
+        String account = trim(accNo);
+
+        // Same order as cmdGenerate_Click for the inputs it shares, so an
+        // operator moving between the two screens gets the same message for the
+        // same mistake.
+        if (branch.length() != 4) {
+            throw new BadRequestException(ERR_BRANCH_CODE);
+        }
+        if (customer.isEmpty() && account.isEmpty()) {
+            throw new BadRequestException(ERR_CUST_OR_ACCOUNT);
+        }
+        if (!customer.isEmpty() && !account.isEmpty()) {
+            throw new BadRequestException(ERR_BOTH_KEYED);
+        }
+        requireYearMonth(fromYearMonth, ERR_FROM_YEAR, ERR_FROM_MONTH);
+        requireYearMonth(toYearMonth, ERR_TO_YEAR, ERR_TO_MONTH);
+        if (trim(fromYearMonth).compareTo(trim(toYearMonth)) > 0) {
+            throw new BadRequestException("From Date cannot be later than To Date");
+        }
+
+        // frmHistStmt.frm:782. The rule protects the STAFF branch's statements
+        // from everyone outside it, and that is a property of the data, not of
+        // the screen it is reached through — so it applies here too. It applies
+        // with more force, if anything: the branch is typed on this screen
+        // rather than carried from a grid row the operator already had.
+        if (STAFF_BRANCH.equals(branch) && !STAFF_BRANCH.equals(caller.branchCode())) {
+            throw new BadRequestException(ERR_STAFF_BRANCH);
+        }
+
+        return statements.pdpStatements(
+                branch, customer, account, trim(fromYearMonth), trim(toYearMonth));
     }
 
     /**

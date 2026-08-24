@@ -14,8 +14,9 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Historical statements — legacy frmHistStmt (the frmAccount cmdHistStmt
- * button), served from DB #3.
+ * Archived statements from DB #3 — the Historical Statement screen (legacy
+ * frmHistStmt, the frmAccount cmdHistStmt button) and the PDP Statements
+ * screen, which has no legacy counterpart.
  *
  * <p>Unlike every other enquiry here the legacy read this from a mapped drive
  * rather than from cbcmssrv: a Btrieve index per branch per month naming zipped,
@@ -48,7 +49,10 @@ public class StatementController {
     @GetMapping("/accounts/{accNo}/historical-statement")
     public List<HistoricalStatement> historicalStatement(
             @PathVariable String accNo,
-            @RequestParam String branchCode,
+            // Blank on the deleted-account route: no grid row carries a branch
+            // and the screen has no box for one. Required in practice for the
+            // normal route, where the client always copies it from the row.
+            @RequestParam(defaultValue = "") String branchCode,
             @RequestParam String fromYearMonth,
             @RequestParam String toYearMonth,
             @RequestParam(defaultValue = "BM") String system,
@@ -74,5 +78,37 @@ public class StatementController {
         }
         return statements.historicalStatements(
                 accNo, branchCode, fromYearMonth, toYearMonth, system, deletedAccount, user);
+    }
+
+    /**
+     * PDP statements for a branch, by customer number and/or account number.
+     *
+     * <p>Not under {@code /accounts/{accNo}} because an account number is not
+     * required: the PDP header carries CUST_NUM, so the enquiry can be keyed on
+     * a CUSTOMER and answer with every account that customer holds. At least one
+     * of {@code custNo} and {@code accNo} must be given — the service refuses a
+     * request with neither rather than returning the whole branch.
+     *
+     * <p>Same authority as the historical screen. The PDP archive holds the same
+     * kind of thing — a customer's archived statements — so there is no case for
+     * a stricter or a looser gate, and inventing a new authority code would put
+     * one in the enquiry system that the legacy's table never defined.
+     */
+    @GetMapping("/pdp-statements")
+    public List<HistoricalStatement> pdpStatements(
+            @RequestParam String branchCode,
+            @RequestParam(defaultValue = "") String custNo,
+            @RequestParam(defaultValue = "") String accNo,
+            @RequestParam String fromYearMonth,
+            @RequestParam String toYearMonth,
+            HttpServletRequest request) {
+
+        EnquiryUser user = caller.resolve(request);
+        if (!user.has("~60") && !user.has("~61") && !user.has("~62")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "PDP statements require account enquiry authority (~60, ~61 or ~62)");
+        }
+        return statements.pdpStatements(
+                branchCode, custNo, accNo, fromYearMonth, toYearMonth, user);
     }
 }

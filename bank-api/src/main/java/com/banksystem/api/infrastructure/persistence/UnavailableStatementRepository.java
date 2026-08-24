@@ -41,4 +41,15 @@ public class UnavailableStatementRepository implements StatementRepository {
                         + "and online sources — set bank.statement-db.* and "
                         + "STATEMENT_DB_ENABLED=true to switch it on.");
     }
+
+    @Override
+    public List<HistoricalStatement> pdpStatements(
+            String branchCode, String custNum, String acctNum,
+            String fromYearMonth, String toYearMonth) {
+        throw new NotAvailableException(
+                "PDP statements are not available in this environment: the statement "
+                        + "archive is not configured. It is a separate database from the archival "
+                        + "and online sources — set bank.statement-db.* and "
+                        + "STATEMENT_DB_ENABLED=true to switch it on.");
+    }
 }

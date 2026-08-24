@@ -421,6 +421,28 @@ export const api = {
     ),
 
   /**
+   * PDP statements (the Historical Statement — PDP screen) — the OTHER archive
+   * DB #3 holds. Not keyed on an account: the PDP header carries CUST_NUM, so
+   * the enquiry can start from a customer and answer with every account that
+   * customer holds. EXACTLY ONE of custNo / accNo is sent — the server refuses
+   * neither and refuses both.
+   */
+  pdpStatements: (params: {
+    branchCode: string
+    /** PDP CUST_NUM, or '' when searching by account instead. */
+    custNo: string
+    /** Account number — 19 digits in the PDP tables — or '' when searching by customer. */
+    accNo: string
+    fromYearMonth: string
+    toYearMonth: string
+  }) =>
+    get<HistoricalStatement[]>(
+      '/api/pdp-statements',
+      'generate the PDP statement',
+      params,
+    ),
+
+  /**
    * On-demand Statement (legacy frmInputform, service 07) — one gateway page.
    * Day-granular. Page by sending back lastTransPtr until completionFlag "1".
    */

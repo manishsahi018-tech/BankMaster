@@ -76,15 +76,24 @@ import org.springframework.stereotype.Repository;
  * shelled over the merged print file, {@code prtall.$s! -> prtall.$a!}, plus
  * {@code prtall.$h!} for the HO variant, four buttons in all) and the FTP
  * request itself. Both operate on RENDERED TEXT on a mapped drive; neither has
- * a meaning against a relational archive. Descoped, not overlooked. Which pair a request reads is the
- * OPERATOR's choice — the screen's System selector sends BM or PDP and exactly
- * that pair is queried — and the answer is still tagged with {@code source} so
- * a printed sheet says which archive produced it. All four names are
- * configuration — correct them in application.yml, do not edit the SQL.
+ * a meaning against a relational archive. Descoped, not overlooked.
+ *
+ * <h2>Two entry points, one pair each</h2>
+ * Which pair a request reads is decided by the SCREEN it came from, not by a
+ * control: {@link #historicalStatements} serves Historical Statement Printing
+ * and reads BM, {@link #pdpStatements} serves PDP Statements and reads PDP.
+ * Exactly one pair is ever queried, and the answer is tagged with
+ * {@code source} so a printed sheet says which archive produced it. All four
+ * table names are configuration — correct them in application.yml, do not edit
+ * the SQL.
+ *
+ * <p>The two differ in more than the tables. Only the PDP header carries
+ * CUST_NUM, so only the PDP call can be keyed on a CUSTOMER, and only its
+ * answer can therefore span several accounts.
  *
  * <h2>Branch code</h2>
- * The screen's Branch Code filters the PDP header query and NOTHING ELSE. The
- * legacy never filtered on it — branch chose which Btrieve file to open
+ * Branch Code filters the PDP header query and NOTHING ELSE. The legacy never
+ * filtered on it — branch chose which Btrieve file to open
  * ({@code <STMTPATH><brn3>\s<brn3><bmYY><MM>.idx}), and DB #3 has no such
  * partition — so for BM it stays what it was here: a validated input and the
  * staff-branch authorisation key, not a predicate. PDP filters on it by
@@ -102,10 +111,9 @@ public class JdbcStatementRepository implements StatementRepository {
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
     /**
-     * One header/detail pair — one of the two SYSTEMS the screen offers.
+     * One header/detail pair — one of the two archives DB #3 holds.
      *
-     * @param source    {@code "BM"} or {@code "PDP"}; this is both the value
-     *                  the screen's selector sends and the tag every statement
+     * @param source    {@code "BM"} or {@code "PDP"}; the tag every statement
      *                  from the pair carries.
      *
      * @param usesStmtNum whether STMT_NUM is part of the join key AND selected
@@ -122,7 +130,7 @@ public class JdbcStatementRepository implements StatementRepository {
     }
 
     private final NamedParameterJdbcTemplate jdbc;
-    /** Keyed on the system the screen sends: "BM" or "PDP". */
+    /** Keyed on the archive name: "BM" or "PDP". */
     private final Map<String, Pair> pairs;
 
     public JdbcStatementRepository(
@@ -179,8 +187,86 @@ public class JdbcStatementRepository implements StatementRepository {
 
         // One pair only — the operator chose it. Oldest first, then by statement
         // number for the months that carry more than one.
-        List<HistoricalStatement> all = new ArrayList<>(load(pair, params));
+        String onAccount = "ACCT_NUM = :acctNum";
+        List<HistoricalStatement> all = new ArrayList<>(
+                load(pair, params, onAccount, onAccount,
+                        pair.filterByBranch() ? "AND  BRANCH_CODE = :branchCode" : ""));
         all.sort(Comparator.comparing(HistoricalStatement::stmtDate)
+                .thenComparing(HistoricalStatement::stmtNum));
+        return all;
+    }
+
+    /**
+     * PDP statements for a branch, by customer number OR account number — the
+     * Historical Statement — PDP screen. Always the PDP pair; there is nothing
+     * to select, which is the whole point of it being its own entry point.
+     *
+     * <p>StatementService passes exactly one of the two identifiers. Both are
+     * still applied if both arrive: an argument that is silently dropped is
+     * worse than one that narrows, and it keeps this method's answer a function
+     * of its arguments alone.
+     */
+    @Override
+    public List<HistoricalStatement> pdpStatements(
+            String branchCode, String custNum, String acctNum,
+            String fromYearMonth, String toYearMonth) {
+
+        Pair pair = pairs.get("PDP");
+        if (pair == null) {
+            throw new NotAvailableException(
+                    "The PDP statement archive is not configured: "
+                            + "bank.statement-db.pdp-hdr-table and .pdp-txn-table are blank. "
+                            + "Name the real tables there.");
+        }
+
+        LocalDate from = firstDayOf(fromYearMonth);
+        LocalDate toExclusive = firstDayOf(toYearMonth).plusMonths(1);
+
+        String customer = custNum == null ? "" : custNum.trim();
+        String account = acctNum == null ? "" : acctNum.trim();
+
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("branchCode", branchCode == null ? "" : branchCode.trim())
+                .addValue("custNum", customer)
+                .addValue("acctNum", account)
+                .addValue("fromDate", Date.valueOf(from))
+                .addValue("toDate", Date.valueOf(toExclusive));
+
+        // Branch always; the other two only when given. Validated upstream to be
+        // exactly one of the two, so this can never degrade to "every account at
+        // the branch". These are fixed fragments with BOUND parameters — no
+        // operator value ever reaches the SQL text.
+        List<String> filters = new ArrayList<>();
+        filters.add("AND  BRANCH_CODE = :branchCode");
+        if (!customer.isEmpty()) {
+            filters.add("AND  CUST_NUM = :custNum");
+        }
+        if (!account.isEmpty()) {
+            filters.add("AND  ACCT_NUM = :acctNum");
+        }
+
+        // The PDP DETAIL table has no CUST_NUM — it is keyed (ACCT_NUM,
+        // STMT_DATE) — so a customer-number enquiry cannot filter it directly.
+        // Rather than two round trips (headers, collect the accounts, then the
+        // details) the detail query takes the header query as a subquery on
+        // ACCT_NUM. That keeps it to one scan per table AND guarantees the two
+        // halves agree on exactly the same set of statements. Used even when an
+        // account number WAS given, so a customer/account pair that does not
+        // belong together yields nothing rather than a pile of headerless lines.
+        String lineAccounts = """
+                ACCT_NUM IN (SELECT ACCT_NUM
+                             FROM   %s
+                             WHERE  STMT_DATE >= :fromDate
+                               AND  STMT_DATE <  :toDate
+                               %s)
+                """.formatted(pair.hdrTable(), joined(filters, 15)).stripTrailing();
+
+        // The account is no longer fixed, so it leads the ordering — one
+        // customer's statements read account by account, oldest first within.
+        List<HistoricalStatement> all = new ArrayList<>(
+                load(pair, params, lineAccounts, "1 = 1", joined(filters, 2)));
+        all.sort(Comparator.comparing(HistoricalStatement::acctNum)
+                .thenComparing(HistoricalStatement::stmtDate)
                 .thenComparing(HistoricalStatement::stmtNum));
         return all;
     }
@@ -189,32 +275,43 @@ public class JdbcStatementRepository implements StatementRepository {
     // One pair: detail rows first, then headers, joined in memory
     // ------------------------------------------------------------------
 
-    private List<HistoricalStatement> load(Pair pair, MapSqlParameterSource params) {
+    /**
+     * @param lineAccounts   the DETAIL table's ACCT_NUM predicate
+     * @param headerAccounts the HEADER table's ACCT_NUM predicate, or
+     *                       {@code "1 = 1"} when the header is selected by other
+     *                       columns instead
+     * @param headerFilters  extra header-only predicates, each already prefixed
+     *                       with {@code AND}, or empty
+     */
+    private List<HistoricalStatement> load(Pair pair, MapSqlParameterSource params,
+            String lineAccounts, String headerAccounts, String headerFilters) {
         // Two range scans per pair rather than one header query plus a detail
         // query per statement — a five-year request would otherwise be 60+
         // round trips. Both are keyed on (ACCT_NUM, STMT_DATE), which both
         // detail tables are indexed on.
-        Map<String, List<HistoricalStatementLine>> linesByStatement = lines(pair, params);
-        return headers(pair, params, linesByStatement);
+        Map<String, List<HistoricalStatementLine>> linesByStatement =
+                lines(pair, params, lineAccounts);
+        return headers(pair, params, headerAccounts, headerFilters, linesByStatement);
     }
 
     private Map<String, List<HistoricalStatementLine>> lines(
-            Pair pair, MapSqlParameterSource params) {
+            Pair pair, MapSqlParameterSource params, String accounts) {
         String stmtNumCol = pair.usesStmtNum() ? "STMT_NUM," : "";
         String sql = """
-                SELECT STMT_DATE, %s TXN_ORDER, TXN_BRANCH_CODE, TXN_DATE, VALUE_DATE,
+                SELECT ACCT_NUM, STMT_DATE, %s TXN_ORDER, TXN_BRANCH_CODE, TXN_DATE, VALUE_DATE,
                        NARRATIVE1, NARRATIVE2, NARRATIVE3, NARRATIVE4,
                        CR_AMT, DR_AMT, RUN_BAL, RUN_BAL_TYPE
                 FROM   %s
-                WHERE  ACCT_NUM = :acctNum
+                WHERE  %s
                   AND  STMT_DATE >= :fromDate
                   AND  STMT_DATE <  :toDate
-                ORDER  BY STMT_DATE, %s TXN_ORDER
-                """.formatted(stmtNumCol, pair.txnTable(), stmtNumCol);
+                ORDER  BY ACCT_NUM, STMT_DATE, %s TXN_ORDER
+                """.formatted(stmtNumCol, pair.txnTable(), accounts, stmtNumCol);
 
         Map<String, List<HistoricalStatementLine>> byStatement = new LinkedHashMap<>();
         jdbc.query(sql, params, rs -> {
-            String key = key(date(rs, "STMT_DATE"), pair.usesStmtNum() ? str(rs, "STMT_NUM") : "");
+            String key = key(str(rs, "ACCT_NUM"), date(rs, "STMT_DATE"),
+                    pair.usesStmtNum() ? str(rs, "STMT_NUM") : "");
             byStatement.computeIfAbsent(key, k -> new ArrayList<>())
                     .add(new HistoricalStatementLine(
                             str(rs, "TXN_ORDER"),
@@ -234,7 +331,7 @@ public class JdbcStatementRepository implements StatementRepository {
     }
 
     private List<HistoricalStatement> headers(
-            Pair pair, MapSqlParameterSource params,
+            Pair pair, MapSqlParameterSource params, String accounts, String extraFilters,
             Map<String, List<HistoricalStatementLine>> linesByStatement) {
 
         // The two headers differ in their identity columns; everything else is
@@ -243,23 +340,24 @@ public class JdbcStatementRepository implements StatementRepository {
         String identity = pair.splitName()
                 ? "CUST_NUM, TITLE, FIRST_NAME, SECOND_NAME, PAGE_NUM, BRANCH_DATA"
                 : "STMT_NUM, CUST_NAME, IBAN, REF_NUM";
-        String order = pair.usesStmtNum() ? "STMT_DATE, STMT_NUM" : "STMT_DATE, PAGE_NUM";
-        // PDP only, for now. Applied to the HEADER alone: the detail query is
-        // keyed on (ACCT_NUM, STMT_DATE) and any line whose header the filter
-        // excluded simply never finds one, which is what the orphan count below
-        // measures — so read that warning with this in mind for PDP.
-        String branchFilter = pair.filterByBranch() ? "AND  BRANCH_CODE = :branchCode" : "";
+        String order = pair.usesStmtNum()
+                ? "ACCT_NUM, STMT_DATE, STMT_NUM"
+                : "ACCT_NUM, STMT_DATE, PAGE_NUM";
+        // extraFilters are HEADER-only: the detail query is keyed on
+        // (ACCT_NUM, STMT_DATE) and any line whose header they excluded simply
+        // never finds one, which is what the orphan count below measures — so
+        // read that warning with this in mind.
         String sql = """
                 SELECT ACCT_NUM, STMT_DATE, BRANCH_CODE, BRANCH_NAME, ACCT_TYPE,
                        CUST_ADR1, CUST_ADR2, CUST_ADR3, CUST_ADR4,
                        CRNCY, LANG_CODE, FILE_NAME, %s
                 FROM   %s
-                WHERE  ACCT_NUM = :acctNum
+                WHERE  %s
                   AND  STMT_DATE >= :fromDate
                   AND  STMT_DATE <  :toDate
                   %s
                 ORDER  BY %s
-                """.formatted(identity, pair.hdrTable(), branchFilter, order);
+                """.formatted(identity, pair.hdrTable(), accounts, extraFilters, order);
 
         // The PDP header carries PAGE_NUM, so it may hold one row per printed
         // page of the same statement. Fold those into one statement keyed on
@@ -269,9 +367,10 @@ public class JdbcStatementRepository implements StatementRepository {
         // page. A header with one row per statement simply yields pageCount 1.
         Map<String, HistoricalStatement> byStatement = new LinkedHashMap<>();
         jdbc.query(sql, params, rs -> {
+            String acctNum = str(rs, "ACCT_NUM");
             String stmtDate = date(rs, "STMT_DATE");
             String stmtNum = pair.usesStmtNum() ? str(rs, "STMT_NUM") : "";
-            String key = key(stmtDate, stmtNum);
+            String key = key(acctNum, stmtDate, stmtNum);
             HistoricalStatement existing = byStatement.get(key);
             if (existing != null) {
                 byStatement.put(key, withPageCount(existing, existing.pageCount() + 1));
@@ -279,7 +378,7 @@ public class JdbcStatementRepository implements StatementRepository {
             }
             byStatement.put(key, new HistoricalStatement(
                     pair.source(),
-                    str(rs, "ACCT_NUM"),
+                    acctNum,
                     stmtDate,
                     stmtNum,
                     str(rs, "BRANCH_CODE"),
@@ -339,8 +438,14 @@ public class JdbcStatementRepository implements StatementRepository {
     // Column readers
     // ------------------------------------------------------------------
 
-    private static String key(String stmtDate, String stmtNum) {
-        return stmtDate + "|" + stmtNum;
+    /**
+     * Statement identity. ACCT_NUM is part of it because a PDP customer-number
+     * enquiry spans every account that customer holds, and two accounts can
+     * perfectly well carry a statement on the same STMT_DATE — without the
+     * account in the key their lines would merge into one statement.
+     */
+    private static String key(String acctNum, String stmtDate, String stmtNum) {
+        return acctNum + "|" + stmtDate + "|" + stmtNum;
     }
 
     private static String str(ResultSet rs, String column) throws SQLException {
@@ -374,6 +479,15 @@ public class JdbcStatementRepository implements StatementRepository {
         int year = Integer.parseInt(yearMonth.substring(0, 4));
         int month = Integer.parseInt(yearMonth.substring(4, 6));
         return LocalDate.of(year, month, 1);
+    }
+
+    /**
+     * Predicates as one SQL fragment, every line after the first indented to
+     * {@code column} so the assembled query still reads as SQL. It is written
+     * verbatim to the SQL audit log, which people read.
+     */
+    private static String joined(List<String> predicates, int column) {
+        return String.join("\n" + " ".repeat(column), predicates);
     }
 
     private static boolean isBlank(String value) {
