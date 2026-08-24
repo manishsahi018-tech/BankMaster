@@ -10,12 +10,13 @@ import { Segmented } from '../components/legacyForm.tsx'
 // is out of scope.
 
 /**
- * The Yes/No OptionButton pairs frmJuristicAccountInfo draws. A blank column
- * means the flag was never set, and the legacy leaves both buttons clear
- * rather than defaulting to No — Segmented takes -1 for that.
+ * The Yes/No OptionButton pairs frmJuristicAccountInfo draws. Each is a plain
+ * two-button group, and the legacy tests only for "1" — internetBankAcc,
+ * custAdviceFlag and updatedForSama all select No on "0" AND on blank
+ * (globalFunctions.bas), so neither pair is ever left clear.
  */
 const yesNo = (v: unknown) => (
-  <Segmented options={['Yes', 'No']} selected={v === '1' ? 0 : v === '0' ? 1 : -1} />
+  <Segmented options={['Yes', 'No']} selected={v === '1' ? 0 : 1} />
 )
 
 export default function JuristicAccountInfo({
@@ -102,10 +103,18 @@ export default function JuristicAccountInfo({
           fields: [
             {
               label: 'Nature of Signature',
-              // stcusttab.signatureNature is 0-single / 1-joint. This tested
-              // for 'J' and 'S', which the column never holds, so the field
-              // rendered EMPTY for every customer in both locales.
-              value: codeLabel('signatureNature', info.signatureNature),
+              // stcusttab.signatureNature is 0-single / 1-joint, and the
+              // legacy draws it as the optSignSingle/optSignJoint pair:
+              // Single on "0" OR BLANK, Joint on anything else
+              // (globalFunctions.bas). Reading it through codeLabel left the
+              // field EMPTY whenever the column was blank, where the legacy
+              // shows Single.
+              node: (
+                <Segmented
+                  options={['Single', 'Joint']}
+                  selected={info.signatureNature === '1' ? 1 : 0}
+                />
+              ),
             },
             { label: 'Internet Facility', node: yesNo(info.internetFlag) },
             { label: 'Customer Advice', node: yesNo(info.customerAdvice) },

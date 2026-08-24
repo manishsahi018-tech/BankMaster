@@ -152,7 +152,10 @@ export function AccountHolding({
         <Segmented options={['Single', 'Joint', 'Unidentified']} selected={holding} />
       </Field>
       <Field label="Nature of Signature">
-        <Segmented options={['Single', 'Joint']} selected={a.signatureNature === 'J' ? 1 : 0} />
+        {/* 0-single / 1-joint; testing for 'J' — a value the column never
+            holds — showed Single for every joint customer. Blank reads
+            Single, as the legacy pair does. */}
+        <Segmented options={['Single', 'Joint']} selected={a.signatureNature === '1' ? 1 : 0} />
       </Field>
       {withGracePeriod && (
         <Field label="Freezing Grace Period">
