@@ -7,6 +7,7 @@ import { api } from '../api.ts'
 import { hasAuthority } from '../session.ts'
 import { formatDate, formatPlainAmount } from '../schema/helpers.ts'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmHistStmt.frm ("Historical Statement Printing", the
 // frmAccount cmdHistStmt button, authority ~60/~61/~62).
 //
@@ -121,7 +122,7 @@ function StatementCard({ statement }: { statement: Statement }) {
             <h2 className="text-base font-semibold text-ink">
               Statement for {monthLabel(s.stmtDate)}
               {s.stmtNum && (
-                <span className="ml-2 text-sm font-normal text-muted">No. {s.stmtNum}</span>
+                <span className="ms-2 text-sm font-normal text-muted">No. {s.stmtNum}</span>
               )}
             </h2>
             <p className="mt-0.5 text-sm text-muted">
@@ -130,7 +131,7 @@ function StatementCard({ statement }: { statement: Statement }) {
               {s.crncy && ` · ${s.crncy}`}
             </p>
           </div>
-          <div className="text-right text-xs text-muted-soft">
+          <div className="text-end text-xs text-muted-soft">
             {/* Which archive this came from — the System that was selected,
                 echoed back by the server. Redundant on screen while the
                 selector is in view, but it is what makes a saved or printed
@@ -145,14 +146,14 @@ function StatementCard({ statement }: { statement: Statement }) {
 
         <dl className="mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
           <div>
-            <dt className="text-xs uppercase tracking-wider text-muted-soft">Customer</dt>
+            <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Customer')}</dt>
             <dd className="text-ink-soft">
               {s.custName || '—'}
-              {s.custNum && <span className="ml-1 text-muted">({s.custNum})</span>}
+              {s.custNum && <span className="ms-1 text-muted">({s.custNum})</span>}
             </dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-wider text-muted-soft">Branch</dt>
+            <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Branch')}</dt>
             <dd className="text-ink-soft">
               {s.branchCode}
               {s.branchName && ` — ${s.branchName}`}
@@ -160,19 +161,19 @@ function StatementCard({ statement }: { statement: Statement }) {
           </div>
           {s.iban && (
             <div>
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">IBAN</dt>
+              <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('IBAN')}</dt>
               <dd className="font-mono text-xs text-ink-soft">{s.iban}</dd>
             </div>
           )}
           {s.refNum && (
             <div>
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">Reference</dt>
+              <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Reference')}</dt>
               <dd className="text-ink-soft">{s.refNum}</dd>
             </div>
           )}
           {address.length > 0 && (
             <div className="sm:col-span-2 lg:col-span-1">
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">Address</dt>
+              <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Address')}</dt>
               <dd className="text-ink-soft">{address.join(', ')}</dd>
             </div>
           )}
@@ -185,14 +186,14 @@ function StatementCard({ statement }: { statement: Statement }) {
           {s.langCode && (
             <div>
               <dt className="text-xs uppercase tracking-wider text-muted-soft">
-                Statement Language
+                {t('Statement Language')}
               </dt>
               <dd className="text-ink-soft">{languageLabel(s.langCode)}</dd>
             </div>
           )}
           {s.pageNum && (
             <div>
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">Page</dt>
+              <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Page')}</dt>
               <dd className="text-ink-soft">{s.pageNum}</dd>
             </div>
           )}
@@ -201,20 +202,20 @@ function StatementCard({ statement }: { statement: Statement }) {
 
       {s.lines.length === 0 ? (
         <p className="px-4 py-6 text-sm text-muted sm:px-5">
-          This statement has a header but no transaction lines in the archive.
+          {t('This statement has a header but no transaction lines in the archive.')}
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-edge-soft text-left text-xs uppercase tracking-wider text-muted-soft">
-                <th className="px-4 py-2.5 font-semibold">Date</th>
-                <th className="px-4 py-2.5 font-semibold">Value Date</th>
-                <th className="px-4 py-2.5 font-semibold">Narrative</th>
-                <th className="px-4 py-2.5 font-semibold">Branch</th>
-                <th className="px-4 py-2.5 text-right font-semibold">Debit</th>
-                <th className="px-4 py-2.5 text-right font-semibold">Credit</th>
-                <th className="px-4 py-2.5 text-right font-semibold">Balance</th>
+              <tr className="border-b border-edge-soft text-start text-xs uppercase tracking-wider text-muted-soft">
+                <th className="px-4 py-2.5 font-semibold">{t('Date')}</th>
+                <th className="px-4 py-2.5 font-semibold">{t('Value Date')}</th>
+                <th className="px-4 py-2.5 font-semibold">{t('Narrative')}</th>
+                <th className="px-4 py-2.5 font-semibold">{t('Branch')}</th>
+                <th className="px-4 py-2.5 text-end font-semibold">{t('Debit')}</th>
+                <th className="px-4 py-2.5 text-end font-semibold">{t('Credit')}</th>
+                <th className="px-4 py-2.5 text-end font-semibold">{t('Balance')}</th>
               </tr>
             </thead>
             <tbody>
@@ -249,19 +250,19 @@ function StatementCard({ statement }: { statement: Statement }) {
                     <td className="whitespace-nowrap px-4 py-2.5 text-muted">
                       {line.txnBranchCode}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-ink-soft">
+                    <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums text-ink-soft">
                       {formatPlainAmount(line.drAmt) || '—'}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-ink-soft">
+                    <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums text-ink-soft">
                       {formatPlainAmount(line.crAmt) || '—'}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums font-medium text-ink">
+                    <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-medium text-ink">
                       {formatPlainAmount(line.runBal)}
                       {/* RUN_BAL_TYPE is the DR/CR marker the printed statement
                           carried beside the running balance. Shown verbatim —
                           the legacy never interpreted it either. */}
                       {line.runBalType && (
-                        <span className="ml-1 text-xs font-normal text-muted">
+                        <span className="ms-1 text-xs font-normal text-muted">
                           {line.runBalType}
                         </span>
                       )}
@@ -279,7 +280,7 @@ function StatementCard({ statement }: { statement: Statement }) {
           reconciles against those archive filenames. */}
       {s.fileName && (
         <footer className="border-t border-edge-soft px-4 py-2 text-xs text-muted-soft sm:px-5">
-          Archive file <span className="font-mono">{s.fileName}</span>
+          {t('Archive file')} <span className="font-mono">{s.fileName}</span>
           {s.branchData && <> · branch data {s.branchData}</>}
         </footer>
       )}
@@ -390,9 +391,9 @@ export default function HistoricalStatement({
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="mb-6">
-        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">Account</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{t('Account')}</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
-          Historical Statement Printing
+          {t('Historical Statement Printing')}
         </h1>
       </div>
 
@@ -452,7 +453,7 @@ export default function HistoricalStatement({
                 value={accNo}
                 maxLength={14}
                 inputMode="numeric"
-                placeholder="14 digits"
+                placeholder={t('14 digits')}
                 onChange={(e) => {
                   setAccNo(digitsOnly(e.target.value))
                   setStatements(null)
@@ -485,7 +486,7 @@ export default function HistoricalStatement({
               </div>
               <div className="w-28 shrink-0">
                 <TextInput
-                  aria-label="From year"
+                  aria-label={t('From year')}
                   inputMode="numeric"
                   value={form.fromYear}
                   maxLength={4}
@@ -509,7 +510,7 @@ export default function HistoricalStatement({
               </div>
               <div className="w-28 shrink-0">
                 <TextInput
-                  aria-label="To year"
+                  aria-label={t('To year')}
                   inputMode="numeric"
                   value={form.toYear}
                   maxLength={4}
@@ -537,7 +538,7 @@ export default function HistoricalStatement({
             disabled={generating}
             className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong disabled:cursor-not-allowed disabled:bg-faint"
           >
-            {generating ? 'Generating…' : 'Generate Stmt'}
+            {generating ? t('Generating…') : t('Generate Stmt')}
           </button>
 
           {/* Legacy cmdPrintStmt shells the spool file to the printer in
@@ -550,15 +551,15 @@ export default function HistoricalStatement({
             title={hasReport ? undefined : 'Generate a statement first'}
             className={secondaryBtn}
           >
-            Print Statement
+            {t('Print Statement')}
           </button>
 
           <button
             type="button"
             onClick={onExit}
-            className="ml-auto rounded-lg border border-danger/30 bg-surface px-4 py-2.5 text-sm font-medium text-danger shadow-xs transition-colors hover:bg-danger-soft"
+            className="ms-auto rounded-lg border border-danger/30 bg-surface px-4 py-2.5 text-sm font-medium text-danger shadow-xs transition-colors hover:bg-danger-soft"
           >
-            Exit
+            {t('Exit')}
           </button>
         </div>
       </div>
@@ -595,12 +596,12 @@ export default function HistoricalStatement({
               </caption>
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Value Date</th>
-                  <th>Narrative</th>
-                  <th className="right">Debit</th>
-                  <th className="right">Credit</th>
-                  <th className="right">Balance</th>
+                  <th>{t('Date')}</th>
+                  <th>{t('Value Date')}</th>
+                  <th>{t('Narrative')}</th>
+                  <th className="right">{t('Debit')}</th>
+                  <th className="right">{t('Credit')}</th>
+                  <th className="right">{t('Balance')}</th>
                 </tr>
               </thead>
               <tbody>

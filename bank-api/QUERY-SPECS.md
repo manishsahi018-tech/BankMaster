@@ -3,16 +3,23 @@
 Source: `docs/CSD C Code` (cbbranch.c, cbbranch2.c, cbothers.c, cbblock.c,
 cbswift.c, cbsadad.c, cbsama.c, cblogin.c).
 
-**Part 1 (§1–9)** maps each implemented bank-api repository method to the exact
-legacy ISAM read logic and a draft SQL equivalent for the future
-`Jdbc*Repository` implementations. **Part 2 (§10+)** specifies the tier-1
-missing screens (stubbed buttons in the current UI) ahead of their build.
+**Part 1 (§1–9)** maps each bank-api repository method to the exact legacy ISAM
+read logic and an SQL equivalent. **Part 2 (§10+)** does the same for the batch
+of screens this document calls tier-1.
+
+Both parts were written AHEAD of the code they describe — Part 1 for the
+then-future `Jdbc*Repository` implementations, Part 2 for screens the UI had
+only stubbed buttons for. Both have since been built: the repositories are in
+`infrastructure/persistence/jdbc` and all 47 screens exist. Read what follows as
+the record of what the C does and where the SQL came from, NOT as a list of what
+is outstanding.
 
 **Conventions used throughout**
 - *Pagination:* every enquiry returns at most **20 rows**; the request carries
   `lastRecCount` (rows already delivered) → SQL `OFFSET :lastRecCount FETCH NEXT 20 ROWS ONLY`.
   A short page (< 20) signals the last page. bank-api models this as `page` ×
-  `PagedResult.PAGE_SIZE`.
+  `PagedResult.PAGE_SIZE`, and that constant is **10**, not the legacy's 20 —
+  same shape, smaller page.
 - *Archival key caveat:* the archival DB tables prefix every primary key with
   `BankingDate` (the restore date) — a column the live ISAM files did not have. Every
   query below therefore needs an additional `BankingDate` predicate (e.g. latest
@@ -285,7 +292,7 @@ WHERE  BankingDate = :bankingDate AND accNo = :accNo
 ORDER  BY accNo, dateTime
 FETCH FIRST 50 ROWS ONLY;
 
--- requestType '0' — account status change (future "A/C Status History" screen)
+-- requestType '0' — account status change ("A/C Status History" screen)
 SELECT userId, supervisorId, branchCode, dateTime AS changeDateTime,
        fromStatus, toStatus, accStatusChangeReason, lastUpdateDateTime
 FROM   stacclog
@@ -350,11 +357,13 @@ FROM   stctltab  WHERE BankingDate = :bankingDate AND recType = 'SC' AND branchC
 
 ---
 
-# Part 2 — Tier-1 missing screens
+# Part 2 — Tier-1 screens
 
-Specs for the screens stubbed as "to be built" in the current UI, extracted from
-the same C code. Same conventions as Part 1 (20-row pages via `lastRecCount`,
-BankingDate predicate to add, BM↔actual number conversions).
+Specs for the tier-1 batch of screens, extracted from the same C code. They were
+stubbed buttons in the UI when this was written; all of them are built now. Same
+conventions as Part 1 (20-row legacy pages via `lastRecCount`, which bank-api
+serves 10 at a time, BankingDate predicate to add, BM↔actual number
+conversions).
 
 ## 10. Stop cheque detail (frmStopChqDetails)
 

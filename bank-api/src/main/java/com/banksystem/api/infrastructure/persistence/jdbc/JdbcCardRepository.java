@@ -201,6 +201,67 @@ public class JdbcCardRepository implements CardRepository {
         return rows.stream().findFirst();
     }
 
+    /**
+     * View Detail on Card Update History — the card as ONE stcardlog row wrote
+     * it (service 25 requestType '01', cbbranch2.c).
+     *
+     * <p>The C answers this by copying 401 bytes straight from {@code cardLogRec}
+     * starting at {@code cardNo} into the reply, then overwriting four fields
+     * explicitly: custNo from {@code coreCustNo}, coreAccNo, newOrUpdate and the
+     * supervisor pair. So the log row IS the card record for this purpose, and
+     * every column below is read from it rather than from stcardtab — the point
+     * of the screen is what the card looked like AT that update, which the live
+     * row no longer tells you.
+     *
+     * <p>Two departures from {@link #detail}, both forced by the log's shape:
+     * {@code newOrUpdate} is the log's own column (the C uses it directly)
+     * rather than the requestType derivation the live read applies, and
+     * stcardlog has no {@code sequenceNo}, so that field comes back blank.
+     *
+     * <p>The row is keyed on {@code datetime_bigdata}, not on the bare
+     * {@code dateTime} the workbook documents — see the class note above. The
+     * grid hands back the value it was given, which came from the same column
+     * through the {@code AS dateTime} alias, so the two sides agree.
+     * {@code customerBranch} stands in for the live row's
+     * {@code deliveryBranchCode}: it is the branch column at that offset of the
+     * copied block, but the mapping is inferred from the layout rather than
+     * stated anywhere, so treat it as the one field here worth a second look
+     * against real data.
+     */
+    @Override
+    public Optional<CardDetail> snapshot(String cardNo, String branchCode, String userId, String dateTime) {
+        List<CardDetail> rows = jdbc.query("""
+                SELECT l.cardNo, l.custNo,
+                       COALESCE(NULLIF(TRIM(c.aShortName), ''), c.eShortName) AS custName,
+                       c.packageAcc,
+                       l.requestStatus, l.customerBranch, l.cardType,
+                       l.nameOnTheCard, l.bmAccNo, l.coreAccNo, l.newOrUpdate
+                FROM   stcardlog l
+                LEFT JOIN stcusttab c
+                       ON  c.BankingDate = :bankingDate
+                       AND c.custNo = l.custNo
+                WHERE  l.BankingDate = :bankingDate
+                  AND  l.cardNo = :cardNo
+                  AND  l.branchCode = :branchCode
+                  AND  l.userId = :userId
+                  AND  l.datetime_bigdata = :dateTime
+                FETCH FIRST 1 ROWS ONLY
+                """,
+                new java.util.HashMap<>(Map.of(
+                        "bankingDate", bankingDate.bankingDate(),
+                        "cardNo", cardNo,
+                        "branchCode", branchCode,
+                        "userId", userId,
+                        "dateTime", dateTime)),
+                (rs, i) -> new CardDetail(
+                        s(rs, "cardNo"), s(rs, "custNo"), s(rs, "custName"),
+                        custCategory(s(rs, "packageAcc")), s(rs, "requestStatus"),
+                        s(rs, "customerBranch"), s(rs, "cardType"),
+                        s(rs, "nameOnTheCard"), s(rs, "bmAccNo"),
+                        s(rs, "coreAccNo"), "", s(rs, "newOrUpdate")));
+        return rows.stream().findFirst();
+    }
+
     /** §14: requestType '0' (initial card) → 'N', anything else → 'U'. */
     private static String newOrUpdate(String requestType) {
         return "0".equals(requestType) ? "N" : "U";

@@ -14,6 +14,13 @@ deploy/drivers/*.jar
 
 # ---- Logs ----
 logs/
+
+# Runtime configuration. The app creates one next to itself on first start, so
+# a dev run drops bank-api/bank-runtime.properties into the source tree; that
+# copy holds one machine's allow-list and is not the repo's business. The
+# SHIPPED template under deploy/ is tracked on purpose.
+bank-runtime.properties
+!deploy/bank-runtime.properties
 *.log
 npm-debug.log*
 yarn-debug.log*

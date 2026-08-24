@@ -23,12 +23,14 @@ export default function JointHolders({
   rows,
   hasMore = false,
   onMore,
+  onEnquiry,
   onExit,
 }: {
   customer: Customer
   rows: GridRow[]
   hasMore?: boolean
   onMore?: () => void
+  onEnquiry: (row: GridRow) => void
   onExit: () => void
 }) {
   return (
@@ -46,6 +48,20 @@ export default function JointHolders({
       onMore={onMore}
       buttonGroups={[
         [
+          {
+            // frmIndividualJoint opens the holder's full record on a grid
+            // DOUBLE-CLICK (jointInfoGrid_DblClick → fetchJointDetailInfo);
+            // ported as this app's Enquiry button.
+            label: 'Enquiry',
+            kind: 'primary',
+            onClick: ({ row, notify }) => {
+              if (!row) {
+                notify('warn', 'Empty row selected — please select a joint holder.')
+                return
+              }
+              onEnquiry(row)
+            },
+          },
           { label: 'Exit', kind: 'danger', alignEnd: true, onClick: () => onExit() },
         ],
       ]}

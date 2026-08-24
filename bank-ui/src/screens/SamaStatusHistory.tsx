@@ -3,6 +3,7 @@ import type { GridRow } from '../components/GridScreen.tsx'
 import type { Account } from '../types.ts'
 import { stsamaacc } from '../schema/index.ts'
 import { column } from '../schema/helpers.ts'
+import { codeLabel } from '../codes.ts'
 
 // Mirrors legacy frmAcctStatusHistory.frm ("SAMA account status history details").
 // Rows are stsamaacc records. The legacy form split date and time into two
@@ -14,8 +15,14 @@ const COLUMNS = [
   column(stsamaacc, 'userId', { label: 'User Id' }),
   column(stsamaacc, 'supervisorId', { label: 'Supervisor Id' }),
   column(stsamaacc, 'lastUpdateDateTime', { label: 'Approved Date & Time' }),
-  column(stsamaacc, 'fromStatus', { label: 'From Status' }),
-  column(stsamaacc, 'toStatus', { label: 'To Status' }),
+  column(stsamaacc, 'fromStatus', {
+    label: 'From Status',
+    render: (v) => codeLabel('samaStatus', v),
+  }),
+  column(stsamaacc, 'toStatus', {
+    label: 'To Status',
+    render: (v) => codeLabel('samaStatus', v),
+  }),
   column(stsamaacc, 'accStatusChangeReason', { label: 'Reason for Changing' }),
 ]
 

@@ -27,6 +27,8 @@ shown, with nothing on screen explaining the difference.
 **`crd0data` is required, not optional** (added to this list 2026-08-19). It
 supplies the customer name, address and language on the two cbrt01 enquiries,
 and the stcusttab-miss name fallback on Transfer Detail and Transaction Detail.
+It is keyed on **`custNo`** — see item 2 below, where the earlier packed-`accNo`
+decision is reversed.
 Nothing degrades around it: `JdbcOnlineEnquiryRepository` queries it FIRST and
 throws `NotAvailableException` (HTTP 501) if it cannot be read, before a single
 transaction is fetched, because on a banking enquiry a nameless customer header
@@ -59,11 +61,18 @@ filters on it**:
 WHERE ... AND <alias>.BankingDate = :bankingDate
 ```
 
-The value is one property, `bank.archival-db.banking-date`, bound from
-`BankingDateProvider`; a blank property falls back to `MAX(BankingDate) FROM
-stcusttab` with a warning. It is a plain string compared with `=`, so it must be
-written exactly as the views store it — a format mismatch is not an error, it is
-every screen returning no rows.
+The value is one setting, `banking-date` in the runtime configuration file
+(`bank-runtime.properties`, next to the jar), read through `BankingDateProvider`;
+a blank value falls back to `MAX(BankingDate) FROM stcusttab` with a warning. It
+is a plain string compared with `=`, so it must be written exactly as the views
+store it — `2009-07-11` if BankingDate is a DATE column, `20090711` if it is a
+YYYYMMDD string. A format mismatch is not an error, it is every screen returning
+no rows, which is why the file is validated on load and an unusable date is
+refused outright rather than applied.
+
+**It can be changed while the application is running.** Save the file and the
+next query binds the new date — no restart, no dropped session — so moving the
+screens onto another restore snapshot is an operational act, not a redeploy.
 
 Why it is mandatory rather than optional: several views hold the SAME record
 once per restore snapshot (a real account in `sod0data` was measured with four
@@ -196,22 +205,34 @@ legacy, which is why they are the ones most likely to be missing.
    (`CCMMMNNNNNNNSS`) per the workbook, and the customer scan uses
    `gld0data.custNo`. The legacy C used the 13-char BM form. `bkd0data` keeps
    the 13-char key. Needs one real-data probe to validate.
-   **`crd0data` is the exception, decided 2026-08-19: it is keyed the LEGACY
-   way** — the 6-char PACKED BM customer `actualToBmCust(&accNo[5])` builds
-   (`BmForms.bmCust`), not the actual form the other views carry. The rule is
-   that the legacy read is the specification; inferring a key from a
-   neighbouring view's convention is what produced the earlier BankingDate and
-   accounts-key mistakes. Note the packing is only visible above 1,000,000 —
-   below that it is just the last six digits, so a view keyed either way agrees
-   on low customers and diverges only on high ones. If crd0data turns out to be
-   ETL'd to the actual form after all, the symptom is high-numbered customers
-   losing their name while low ones keep it.
+   **`crd0data` was made an exception on 2026-08-19 and the exception is
+   REVERSED (2026-08-20): it is keyed on `custNo`, the plain 7-digit customer**,
+   like every other archival view. It was keyed the legacy way — `accNo` bound
+   to the 6-char PACKED customer `actualToBmCust(&accNo[5])` builds
+   (`BmForms.bmCust`) — on the rule that the legacy read is the specification
+   and that inferring a key from a neighbouring view's convention is what
+   produced the earlier BankingDate and accounts-key mistakes.
+
+   That rule is right about LOGIC and does not extend to COLUMN NAMES. The
+   workbook has no `accNo` on this view at all (`crd0data.ts`: `custNo`, string,
+   size 7), so the read could not miss rows the way a wrong key form does — it
+   threw `BadSqlGrammarException` on every call. On Transfer Detail that landed
+   unguarded after the main query and turned the whole enquiry into a 500
+   ("Could not open this transfer…" with a support reference, the row already
+   fetched and thrown away); the size-7 column also settles the key FORM, since
+   the packed form is six.
+
+   Note the two forms differ only by a leading zero below 1,000,000 and
+   genuinely diverge above it, so had the column existed under the legacy name
+   this would have been a subset-of-accounts bug found months later. **When a
+   view's own dictionary and the C record layout disagree on a column, the
+   dictionary wins — it describes what was actually delivered.**
 3. **`aad0data` account column** is `FinoneAlcoAccNo` in the workbook, not the
    spec's `accNo`.
 4. **`crd0data` is now required** (2026-08-19). It was previously left out
    because its only consumer was the cheque-book search's
    `alternativeBranchCode`; the two cbrt01 enquiries changed that.
-   Columns needed now: `accNo` (6, the key — see item 2), `shortName` (30),
+   Columns needed now: `custNo` (7, the key — see item 2), `shortName` (30),
    `address1` (30), `address2` (30), `language` (1).
    **Ask for `address1` AND `address2`.** `cbrt01.c` copies 60 bytes starting at
    `address1`, which is only 30 wide (`cbslib/layout.h:751`), so the reply's

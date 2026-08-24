@@ -1,7 +1,9 @@
 // Legacy frmLogin (staticData.frm) — the LOGON WINDOW. Faithful behaviors:
-// Enter on User Id moves focus to Password (staticData.frm:803), user id is
-// upcased (:811), password rejects non-ASCII chars (errNoArabicCharacters,
-// :791), and after a 000 response the client still applies the legacy
+// Enter on User Id moves focus to Password (staticData.frm:803) and password
+// rejects non-ASCII chars (errNoArabicCharacters, :791). The legacy client
+// also upcased the user id (:811) and capped both field lengths — dropped
+// here: the id goes up as typed and the API normalises it. After a 000
+// response the client still applies the legacy
 // "insufficient privileges" gate (:474 — must hold one of ~00 ~01 ~02 ~4
 // ~6 ~3 ~99 ~8). The branch-match gate (:490) is dropped: the web client
 // has no local statdata.ini branch; the branch comes from the profile.
@@ -11,6 +13,8 @@ import { api } from '../api.ts'
 import { applySession, setToken } from '../session.ts'
 import { initCodes } from '../codes.ts'
 
+import LocalePicker from '../components/LocalePicker.tsx'
+import { t } from '../i18n/index.ts'
 const ALLOWED_AT_LOGIN = ['~00', '~01', '~02', '~4', '~6', '~3', '~99', '~8']
 
 export default function Login({ onLogin }: { onLogin: () => void }) {
@@ -23,13 +27,13 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!userId.trim() || !password) {
-      setError('Please enter User Id and Password')
+      setError(t('Please enter User Id and Password'))
       return
     }
     setBusy(true)
     setError(null)
     api
-      .login(userId.trim().toUpperCase(), password)
+      .login(userId.trim(), password)
       .then(async (r) => {
         if (r.status !== '000' || !r.session) {
           setError(r.message)
@@ -38,7 +42,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
         }
         const auth = r.session.authorityLevel + (r.session.authorityLevel2 ?? '')
         if (!ALLOWED_AT_LOGIN.some((code) => auth.includes(code))) {
-          setError('You are not authorised to use this application')
+          setError(t('You are not authorised to use this application'))
           return
         }
         if (r.token) setToken(r.token)
@@ -61,19 +65,29 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
         onSubmit={submit}
         className="relative w-full max-w-md rounded-2xl border border-edge bg-surface p-8 shadow-sm"
       >
-        {/* The date/time readout that sat opposite the logo is gone, so this is
-            no longer a two-column row — just the mark. */}
-        <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-strong text-white shadow-sm">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-6 w-6">
-            <path d="M3 9.5 12 4l9 5.5" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M5 10v7M9.5 10v7M14.5 10v7M19 10v7" strokeLinecap="round" />
-            <path d="M3 20h18" strokeLinecap="round" />
-          </svg>
+        {/* The legacy's date/time readout sat opposite the mark; the locale
+            link takes that slot, so the row is two-column again. justify-between
+            rather than a pinned corner: under RTL the mark moves to the right
+            and the link follows to the left, which is what "opposite the logo"
+            has to mean in a mirrored layout. */}
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-strong text-white shadow-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-6 w-6">
+              <path d="M3 9.5 12 4l9 5.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M5 10v7M9.5 10v7M14.5 10v7M19 10v7" strokeLinecap="round" />
+              <path d="M3 20h18" strokeLinecap="round" />
+            </svg>
+          </div>
+          {/* The operator has to be able to reach the Arabic screens before
+              they have a session. */}
+          <LocalePicker />
         </div>
 
-        <h1 className="text-lg font-semibold tracking-wide text-ink">STATIC DATA MAINTENANCE</h1>
-        <p className="mt-1 text-sm font-medium text-muted">Logon Window</p>
-        <p className="text-xs text-muted-soft">Ver 2.5 — Enquiry</p>
+        <h1 className="text-lg font-semibold tracking-wide text-ink">
+          {t('Static Data Maintenance').toUpperCase()}
+        </h1>
+        <p className="mt-1 text-sm font-medium text-muted">{t('Logon Window')}</p>
+        <p className="text-xs text-muted-soft">{t('Ver {version} — Enquiry', { version: '2.5' })}</p>
 
         {error && (
           <div className="mt-5 rounded-xl border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">
@@ -83,32 +97,31 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
 
         <div className="mt-6 space-y-4">
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-ink-soft">User Id</span>
+            <span className="mb-1.5 block text-sm font-medium text-ink-soft">{t('User Id')}</span>
             <input
               type="text"
+              dir="ltr"
               value={userId}
-              maxLength={20}
               autoFocus
               autoComplete="username"
               onChange={(e) => setUserId(e.target.value)}
-              onBlur={() => setUserId((u) => u.toUpperCase())}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && userId.trim()) {
                   e.preventDefault()
                   passwordRef.current?.focus()
                 }
               }}
-              className="w-full rounded-lg border border-edge-strong bg-surface px-3.5 py-2.5 text-sm uppercase shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              className="w-full rounded-lg border border-edge-strong bg-surface px-3.5 py-2.5 text-sm shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             />
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-ink-soft">Password</span>
+            <span className="mb-1.5 block text-sm font-medium text-ink-soft">{t('Password')}</span>
             <input
               ref={passwordRef}
               type="password"
+              dir="ltr"
               value={password}
-              maxLength={16}
               autoComplete="current-password"
               onChange={(e) => {
                 // Legacy rejects chars > 127 in the password field.
@@ -125,9 +138,10 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
             disabled={busy}
             className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:bg-faint"
           >
-            {busy ? 'Logging on…' : 'Login'}
+            {busy ? t('Logging on…') : t('Login')}
           </button>
         </div>
+
       </form>
     </div>
   )

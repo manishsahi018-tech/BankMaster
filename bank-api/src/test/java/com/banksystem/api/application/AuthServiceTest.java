@@ -9,6 +9,7 @@ import com.banksystem.api.domain.model.LoginResult;
 import com.banksystem.api.domain.repository.UserProfileRepository;
 import com.banksystem.api.domain.repository.UserProfileRepository.UserProfile;
 import com.banksystem.api.infrastructure.auth.AesPasswordCipher;
+import com.banksystem.api.infrastructure.runtimeconfig.RuntimeSettings;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
@@ -54,14 +55,36 @@ class AuthServiceTest {
     // Empty allowed-users => allow all, so these tests exercise the credential
     // ladder without the allow-list gate interfering.
     private final AuthService auth = new AuthService(
-            new StubRepo(users), cipher, NO_DIRECTORY, "~ADMIN~", "0001", "");
+            new StubRepo(users), cipher, NO_DIRECTORY, "~ADMIN~", "0001",
+            RuntimeSettings.fixed("", ""));
 
     @Test
     void validLoginReturns000WithSession() {
-        LoginResult r = login("oper1", "Passw0rd"); // lower-case id is upper-cased
+        LoginResult r = login("OPER1", "Passw0rd");
         assertThat(r.status()).isEqualTo("000");
         assertThat(r.session()).isNotNull();
         assertThat(r.session().userId()).isEqualTo("OPER1");
+    }
+
+    /**
+     * The id is NEVER upcased: a lower-case operator still logs in (the lookup is
+     * case-insensitive), and the session carries back exactly what was typed.
+     */
+    @Test
+    void userIdKeepsTheCaseItWasTypedIn() {
+        LoginResult r = login("oper1", "Passw0rd");
+        assertThat(r.status()).isEqualTo("000");
+        assertThat(r.session().userId()).isEqualTo("oper1");
+    }
+
+    /** The allow-list matches regardless of the case the operator typed. */
+    @Test
+    void allowListMatchesAnyCase() {
+        AuthService gated = new AuthService(
+                new StubRepo(users), cipher, NO_DIRECTORY, "~ADMIN~", "0001",
+                RuntimeSettings.fixed("OPER1", ""));
+        assertThat(gated.login("oper1", cipher.encrypt("Passw0rd"), "").status()).isEqualTo("000");
+        assertThat(gated.login("ghost", cipher.encrypt("Passw0rd"), "").status()).isNotEqualTo("000");
     }
 
     @Test
@@ -126,10 +149,18 @@ class AuthServiceTest {
         return auth.login(userId, cipher.encrypt(password), "0001");
     }
 
+    /**
+     * Mirrors the real repositories: the operator's id is never upcased, so the
+     * lookup itself is case-insensitive (JdbcUserProfileRepository compares with
+     * UPPER() on both sides).
+     */
     private record StubRepo(Map<String, UserProfile> users) implements UserProfileRepository {
         @Override
         public Optional<UserProfile> findByUserId(String userId, String homeBranch) {
-            return Optional.ofNullable(users.get(userId));
+            return users.entrySet().stream()
+                    .filter(e -> e.getKey().equalsIgnoreCase(userId == null ? "" : userId.trim()))
+                    .map(Map.Entry::getValue)
+                    .findFirst();
         }
     }
 }

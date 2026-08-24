@@ -2,6 +2,7 @@ package com.banksystem.api.infrastructure.persistence.mock;
 
 import com.banksystem.api.domain.model.CustUpdateHistoryEntry;
 import com.banksystem.api.domain.model.CustomerProfile;
+import com.banksystem.api.domain.model.EssentialDocuments;
 import com.banksystem.api.domain.model.HeirEntry;
 import com.banksystem.api.domain.model.IdDocument;
 import com.banksystem.api.domain.model.JointHolderEntry;
@@ -177,6 +178,7 @@ public class MockCustomerRepository implements CustomerRepository {
                     "01", "", "01", "", "01", "4261827", "", "37948",
                     "52551", "20060531000000", "0", "",
                     "", "", "", "", "", "", "", "0", "", "",
+                    "", "",
                     List.of(
                             new IdDocument("I", "1009326404", "القطيف", "0", "",
                                     "14140128", "19930717", "14340402", "20130212", ""),
@@ -199,6 +201,7 @@ public class MockCustomerRepository implements CustomerRepository {
                     "01", "220", "01", "", "01", "4614501", "", "",
                     "54302", "20190812103000", "1", "V4471209",
                     "", "", "", "", "", "", "", "0", "", "",
+                    "", "",
                     List.of(
                             new IdDocument("Q", "1004458821", "الرياض", "0", "1",
                                     "14250310", "20040429", "14480515", "20261125", ""),
@@ -208,6 +211,31 @@ public class MockCustomerRepository implements CustomerRepository {
                                     "14400210", "20181019", "14420210", "20200928", "")),
                     new OpenUpdateInfo("20040502", "0001", "MIGRATION", "MIGRATION",
                             "20190812", "0001", "54302", "51002")),
+            // The SAUDI POST profile (addressType "1"): gprsNo and unitNo are
+            // populated and poBox is empty, which is how a Wasel address is
+            // held. address1 carries the street/area name, NOT a packed
+            // "gprs street" string — the screens read the two columns.
+            "0415743", new CustomerProfile("0415743", "P", "01", "04", "0127", "001", "1",
+                    "Q", "1006677341", "الدمام", "14330519", "20120411", "14530519", "20310923",
+                    "عمر", "فيصل", "", "الحربي", "عمر فيصل الحربي",
+                    "Omar", "Faisal", "", "Al-Harbi", "Omar F. Al-Harbi",
+                    "", "", "", "", "", "", "", "",
+                    "14051120", "19850806", "M", "S", "002",
+                    "شارع الملك سعود - حي الفيصلية", "مبنى 4204", "", "الدمام", "34212", "001",
+                    "6648120", "8203311", "0544120983", "omar.h@example.com", "20120311", "",
+                    "0000", "01", "", "0000000000",
+                    "0", "0", "2", "0",
+                    "1", "8412", "27",
+                    "K7781209", "", "", "", "",
+                    "01", "", "01", "", "01", "8203312", "", "",
+                    "54302", "20240418093000", "0", "",
+                    "", "", "", "", "", "", "", "0", "", "",
+                    "", "",
+                    List.of(
+                            new IdDocument("Q", "1006677341", "الدمام", "0", "1",
+                                    "14330519", "20120411", "14530519", "20310923", "")),
+                    new OpenUpdateInfo("20120311", "0127", "54302", "52551",
+                            "20240418", "0127", "54302", "52551")),
             "0417003", new CustomerProfile("0417003", "C", "02", "01", "0127", "001", "1",
                     "C", "4030099812", "جدة", "", "", "", "",
                     "", "", "", "", "",
@@ -227,6 +255,7 @@ public class MockCustomerRepository implements CustomerRepository {
                     "التجارية", "Trading Establishment", "ALNOOR",
                     "Commercial trading operations and imports", "000", "100", "000",
                     "0", "L-4030-2211", "AP-330219",
+                    "", "",
                     List.of(
                             new IdDocument("C", "4030099812", "جدة", "0", "",
                                     "14150601", "19941104", "14200601", "19991011", ""),
@@ -308,6 +337,7 @@ public class MockCustomerRepository implements CustomerRepository {
                 t.aOrgName2(), t.eOrgName2(), t.orgAlphaSearchCode(), t.purposeOfAccount(),
                 t.govtShareHoldingPerc(), t.saudiShareHoldingPerc(), t.foreignShareHoldingPerc(),
                 t.crIssueDateType(), t.licenseNo(), t.approvalRefNo(),
+                t.contractNo(), t.diplomaticCardNo(),
                 List.of(new IdDocument(c.idType(), c.idNo(), t.idIssuedAt(), t.idDateType(), "",
                         t.idIssueDateH(), t.idIssueDateG(), t.idExpiryDateH(), t.idExpiryDateG(), "")),
                 new OpenUpdateInfo(c.openDate(), c.branchCode(), "MIGRATION", "MIGRATION",
@@ -359,7 +389,8 @@ public class MockCustomerRepository implements CustomerRepository {
                 "1", "01", "04", "1", "00",
                 "0", "", "", "",
                 "108", "01", "05", "0", "00",
-                "J", "1", "1", "0",
+                // signatureNature is 0-single / 1-joint (workbook row 92).
+                "1", "1", "1", "0",
                 p.relationshipManager(), "Trade licence renewed 1994", "", "0"));
     }
 
@@ -384,6 +415,83 @@ public class MockCustomerRepository implements CustomerRepository {
     /** Synthetic 10-digit national/iqama number, stable per party. */
     private static String partyId(String custNo, int salt) {
         return String.valueOf(1000000000L + DemoData.seed(custNo, salt) % 899999999L);
+    }
+
+    @Override
+    public java.util.Optional<com.banksystem.api.domain.model.PartyDetail> referenceDetail(
+            String custNo, String referenceNo) {
+        return references(custNo).stream()
+                .filter(r -> r.referenceNo().equals(referenceNo.trim()))
+                .findFirst()
+                .map(r -> party("reference", custNo, r.referenceNo(), r.referenceType(),
+                        r.shortName(), r.idType(), r.idNo(), r.activeStatus(),
+                        // The six packed flags the panel shows as check boxes.
+                        DemoData.pick(custNo + referenceNo, 90, 2) == 0 ? "000100" : "010000",
+                        "", "", ""));
+    }
+
+    @Override
+    public java.util.Optional<com.banksystem.api.domain.model.PartyDetail> heirDetail(
+            String custNo, String heirNo) {
+        return heirs(custNo).stream()
+                .filter(h -> h.heirNo().equals(heirNo.trim()))
+                .findFirst()
+                .map(h -> party("heir", custNo, h.heirNo(), h.heirType(),
+                        h.shortName(), h.idType(), h.idNo(), h.activeStatus(),
+                        "", h.proxyNo(), h.proxyIssueDateH(), h.proxyIssueDateG()));
+    }
+
+    @Override
+    public java.util.Optional<com.banksystem.api.domain.model.JointHolderDetail> jointHolderDetail(
+            String custNo, String jointCustNo) {
+        return jointHolders(custNo).stream()
+                .filter(j -> j.jointCustNo().equals(jointCustNo.trim()))
+                .findFirst()
+                .map(j -> {
+                    DemoData.Customer c = DemoData.customer(custNo);
+                    String key = custNo + jointCustNo;
+                    return new com.banksystem.api.domain.model.JointHolderDetail(
+                            custNo, j.jointCustNo(), j.branchCode(), j.activeStatus(),
+                            j.jointOpenDate(),
+                            "منيرة", "خالد", "", "الحربي", j.shortName(),
+                            "Munira", "Khalid", "", "Al-Harbi", j.shortName(),
+                            j.idType(), j.idNo(), c.city(), "1",
+                            "", "20010914", "", "20310913",
+                            "0", j.nationality(), "01",
+                            "1", "", "19790622", "F", "0", "M",
+                            String.valueOf(DemoData.pick(key, 95, 5)), "0", "0004",
+                            "طريق العليا", "", "4" + DemoData.pick(key, 96, 9000),
+                            c.city(), c.zipCode(), "001", "0", "", "",
+                            "011", String.valueOf(4000000 + DemoData.pick(key, 97, 900000)), "",
+                            "011", String.valueOf(4000000 + DemoData.pick(key, 98, 900000)), "",
+                            "", "", "", j.mobileNo(), "", "",
+                            // Two characters, as stjointtab stores them (rows
+                            // 58-61) — see the note on acctInfo below.
+                            "03", "06", "05", "02", "010000", "1",
+                            "شركة الاتصالات السعودية", "قسم المبيعات", "6677", c.city(), c.zipCode());
+                });
+    }
+
+    /** Both panels are the same shape; only the extras differ. */
+    private com.banksystem.api.domain.model.PartyDetail party(
+            String kind, String custNo, String partyNo, String partyType, String shortName,
+            String idType, String idNo, String activeStatus, String referenceReqdFor,
+            String proxyNo, String proxyIssueDateH, String proxyIssueDateG) {
+        DemoData.Customer c = DemoData.customer(custNo);
+        String key = custNo + kind + partyNo;
+        var address = new com.banksystem.api.domain.model.OwnerDetail.Address(
+                "طريق الأمير سلطان", "", "3" + DemoData.pick(key, 91, 9000),
+                c.city(), c.zipCode(), "001", "0", "",
+                "011", String.valueOf(4000000 + DemoData.pick(key, 92, 900000)), "",
+                "011", String.valueOf(4000000 + DemoData.pick(key, 93, 900000)), "",
+                "", "", "", "05" + DemoData.pick(key, 94, 90000000), "", "");
+        return new com.banksystem.api.domain.model.PartyDetail(
+                kind, custNo, partyNo, partyType, activeStatus, "", c.branchCode(),
+                "سعد", "علي", "", "القحطاني", shortName,
+                "Saad", "Ali", "", "Al-Qahtani", shortName,
+                idType, idNo, c.city(), "1", "", "19970418", "", "20270417",
+                referenceReqdFor, proxyNo, proxyNo.isEmpty() ? "" : "1",
+                proxyIssueDateH, proxyIssueDateG, address);
     }
 
     @Override
@@ -440,6 +548,36 @@ public class MockCustomerRepository implements CustomerRepository {
     }
 
     @Override
+    public java.util.Optional<com.banksystem.api.domain.model.OwnerDetail> ownerDetail(
+            String custNo, String ownerNo) {
+        // Built from the same seed as the grid row, so the detail an operator
+        // opens always matches the row they clicked.
+        return owners(custNo).stream()
+                .filter(o -> o.ownerNo().equals(ownerNo.trim()))
+                .findFirst()
+                .map(o -> {
+                    DemoData.Customer c = DemoData.customer(custNo);
+                    String key = custNo + ownerNo;
+                    var local = new com.banksystem.api.domain.model.OwnerDetail.Address(
+                            "شارع الملك فهد", "", "5" + DemoData.pick(key, 80, 9000),
+                            c.city(), c.zipCode(), "001", "0", "",
+                            "011", String.valueOf(4000000 + DemoData.pick(key, 81, 900000)), "",
+                            "011", String.valueOf(4000000 + DemoData.pick(key, 82, 900000)), "",
+                            "011", String.valueOf(4000000 + DemoData.pick(key, 83, 900000)), "",
+                            "05" + DemoData.pick(key, 84, 90000000), "",
+                            "owner" + o.ownerNo() + "@example.com");
+                    return new com.banksystem.api.domain.model.OwnerDetail(
+                            custNo, o.ownerNo(), o.ownerType(), o.ownerEnabled(),
+                            o.branchCode(), o.shareHoldingPerc(), o.parentCompanyName(),
+                            "عبدالله", "محمد", "", "الشمري", o.shortName(),
+                            "Abdullah", "Mohammed", "", "Al-Shammari", o.shortName(),
+                            o.idType(), o.idNo(), c.city(), "1",
+                            "", "19990312", "", "20290311",
+                            local, com.banksystem.api.domain.model.OwnerDetail.Address.empty());
+                });
+    }
+
+    @Override
     public List<OwnerEntry> owners(String custNo) {
         DemoData.Customer c = DemoData.customer(custNo);
         if (!c.juristic()) {
@@ -468,18 +606,26 @@ public class MockCustomerRepository implements CustomerRepository {
 
     @Override
     public java.util.Map<String, String> acctInfo(String custNo) {
-        return java.util.Map.ofEntries(
-                java.util.Map.entry("education", "0003"),
-                java.util.Map.entry("profession", "0006"),
-                java.util.Map.entry("position", "0005"),
-                java.util.Map.entry("monthlyIncome", "0003"),
+        java.util.Map<String, String> base = java.util.Map.ofEntries(
+                // TWO characters, as stcusttab stores them (workbook rows
+                // 73-76) — NOT the four of the stctltab ctlCode they resolve
+                // against. The reference code "0003" carries "03" in its last
+                // two places, and codes.ts matches on that tail exactly as the
+                // legacy did. Seeding the wide form here would have made the
+                // mock the only place the lookup succeeds.
+                java.util.Map.entry("education", "03"),
+                java.util.Map.entry("profession", "06"),
+                java.util.Map.entry("position", "05"),
+                java.util.Map.entry("monthlyIncome", "03"),
                 java.util.Map.entry("segmentation", "1"),
                 java.util.Map.entry("employerName", "البنك العربي الوطني"),
                 java.util.Map.entry("employerPoBox", "61128"),
                 java.util.Map.entry("employerCity", "الرياض"),
                 java.util.Map.entry("employerZipCode", "11565"),
                 java.util.Map.entry("packageAcc", "0"),
-                java.util.Map.entry("signatureNature", "S"),
+                // 0-single / 1-joint, as stcusttab stores it (workbook row 92)
+                // — NOT the 'S'/'J' initials the screens used to match on.
+                java.util.Map.entry("signatureNature", "0"),
                 java.util.Map.entry("custAdviceFlag", "1"),
                 java.util.Map.entry("updatedForSama", "1"),
                 java.util.Map.entry("relationshipManager", ""),
@@ -504,10 +650,65 @@ public class MockCustomerRepository implements CustomerRepository {
                 java.util.Map.entry("otherAcStmtFreq", "03"),
                 java.util.Map.entry("otherAcChequeBook", "0"),
                 java.util.Map.entry("otherAcStatus", "00"));
+        java.util.Map<String, String> all = new java.util.LinkedHashMap<>(base);
+        // frmIndividualOthers2 ("Customers Maintenance Page 2 - For Other
+        // Individuals"). Seeded for an expatriate, since that is the profile the
+        // page belongs to: an abroad address and a home-country ID that the
+        // Saudi-national page has no frame for.
+        all.put("department", "قسم الخزينة");
+        // Six positional flags: rented house, own house, company accommodation,
+        // rented car, own car, company transport.
+        all.put("ownerShip", "010010");
+        // 0-single / 1-joint / 2-unknown (workbook row 87).
+        all.put("singleJointAcc", "0");
+        all.put("excludeFromAtmFees", "0");
+        all.put("excludeFromMinBalFees", "0");
+        all.put("pkgStmtFreqOverride", "0");
+        all.put("interGroupAccNo", "");
+        all.put("specialRefNo", "");
+        // stidtab 'M' — home country id.
+        all.put("homeCountryId", "A1234567");
+        all.put("homeCountryIdDateType", "1");
+        all.put("homeCountryIdIssueDateG", "20030315");
+        all.put("homeCountryIdExpiryDateG", "20130314");
+        // stidtab 'S' — SAMA authorisation; its date is the ID's ISSUE date.
+        all.put("samaAuthNo", "");
+        all.put("samaAuthDateType", "1");
+        // stidtab 'A' — approval document + approver name.
+        all.put("approvalRefNo", "");
+        all.put("appDateType", "1");
+        all.put("appRefName", "");
+        // staddrtab addressType '01' — the abroad/home-country address.
+        all.put("homeAddress1", "ش 30 مارس 58");
+        all.put("homeAddress2", "");
+        all.put("homePoBox", "0");
+        all.put("homeCityName", "قنا");
+        all.put("homeZipCode", "0");
+        all.put("homeCountry", "019");
+        all.put("homeTelOffAreaCode", "");
+        all.put("homeTelOffNo", "");
+        all.put("homeTelOffExt", "");
+        all.put("homeTelHomeAreaCode", "");
+        all.put("homeTelHomeNo", "0966580998");
+        all.put("homeTelHomeExt", "");
+        all.put("homeFaxAreaCode", "");
+        all.put("homeFaxNo", "");
+        all.put("homeFaxExt", "");
+        all.put("homeMobileNo", "");
+        all.put("homePagerNo", "");
+        all.put("homeEmail", "");
+        return java.util.Map.copyOf(all);
     }
 
     @Override
-    public List<String> requiredDocuments(String custNo) {
-        return List.of("001", "002", "008", "009", "025", "051", "074");
+    public EssentialDocuments documents(String custNo, String asOfDateTime) {
+        // Supplied is a strict subset of required, packed the way
+        // stcusttab.documentsSupplied holds it — 3-char codes, space-padded to
+        // 60 — so the splitting path is exercised rather than bypassed.
+        String packed = "001002008025" + " ".repeat(48);
+        return new EssentialDocuments(
+                List.of("001", "002", "008", "009", "025", "051", "074"),
+                EssentialDocuments.splitCodes(packed),
+                "Salary certificate pending");
     }
 }

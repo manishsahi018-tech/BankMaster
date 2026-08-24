@@ -1,94 +1,99 @@
-import DetailScreen from '../components/DetailScreen.tsx'
+import { SectionCard } from '../components/fields.tsx'
+import HistoryBanner from '../components/HistoryBanner.tsx'
 import type { Customer } from '../types.ts'
 import { codeLabel } from '../codes.ts'
+import { btnKinds, PrevPageButton } from '../components/legacyForm.tsx'
+import { AccountFacilities, AccountHolding, CardAndDelivery } from './profilePageFields.tsx'
 
-// Mirrors legacy frmIndividualOthersAcctInfo.frm — page 2 of the Individual
-// Others profile — as a READ-ONLY enquiry.
+import { t } from '../i18n/index.ts'
+// Mirrors legacy frmIndividualOthersAcctInfo.frm ("Account Details-Other
+// Individuals", headed "Individuals Other Customer details - Page 3") as a
+// READ-ONLY enquiry. It is the THIRD page of the Others profile, reached from
+// IndividualOthersPage2 — frmIndividualOthers2.frm:2473-2493 — not the second;
+// the port used to jump here straight from page 1.
 //
 // This form is NOT the Others equivalent of frmIndividualSaudiAcctInfo's
 // content. Its control set is a strict SUBSET of the Saudi form's (45 of 76,
 // nothing unique), and none of the 31 the Saudi form adds — education,
 // profession, income, employer, segmentation, memos, relationship manager — are
-// here. What remains is three frames: the accounts block, card type/delivery,
-// and signature nature. So the two page-2 screens legitimately show different
-// things; this one is not a trimmed copy of the other.
+// here. On the Others profile those live one page earlier, on
+// frmIndividualOthers2 (IndividualOthersPage2), which is exactly why that page
+// had to exist rather than being folded into this one.
 //
-// Card type and delivery are omitted. Which card to issue and where to post it
-// is a create-time instruction with no archival counterpart, and cards that
-// actually exist have their own screens off stcardtab (Card Info on page 1).
-// The accounts block is different in kind: getAcctInfo reads it BACK from the
-// account log (cbothers.c:7183-7306), and frmJuristicAccountInfo already
-// renders exactly these fields as enquiry data — so it is shown here too, from
-// the same derivation.
-
-const yesNo0 = (v?: string): string =>
-  v === '1' ? 'Yes' : v === '0' || v === '' || v == null ? 'No' : v
-const signature = (v?: string): string => (v === 'J' ? 'Joint' : v === 'S' ? 'Single' : (v ?? ''))
+// What this form holds is four frames: the accounts block, single/joint holding
+// with signature nature, the card request and its delivery address — every one
+// of them shared with the Saudi page 2, so all four are built from
+// profilePageFields rather than restated here. The accounts block is genuine
+// enquiry data: getAcctInfo reads it BACK from the account log
+// (cbothers.c:7183-7306), and frmJuristicAccountInfo renders the same fields the
+// same way. The card frame is not; see CardAndDelivery.
 
 export default function IndividualOthersAcctInfo({
   customer,
   acctInfo,
+  historyAsOf,
   onPrevPage,
   onDocuments,
   onCancel,
 }: {
   customer: Customer | null
   acctInfo: Record<string, string>
+  historyAsOf?: string
   onPrevPage: () => void
   onDocuments: () => void
   onCancel: () => void
 }) {
   const a = acctInfo
-
-  // The legacy renders a facility's row only when its check-box is set; the
-  // flag slots carry "1" when the account log had a row. An absent facility
-  // says "Not requested" rather than showing four blanks, matching how
-  // JuristicAccountInfo handles the same slots.
-  const facility = (
-    title: string,
-    present: boolean,
-    fields: { label: string; value: string }[],
-  ): { title: string; fields: { label: string; value: string; wide?: boolean }[] } => ({
-    title,
-    fields: present ? fields : [{ label: '', value: 'Not requested.', wide: true }],
-  })
+  const mainCategory = codeLabel('samaMainCategory', customer?.mainCategoryCode)
+  const subCategory = codeLabel('samaSubCategory', customer?.subCategoryCode)
 
   return (
-    <DetailScreen
-      kicker="Individual — Others"
-      title="Account Details"
-      subtitle="Read-only enquiry — page 2: account facilities and signature."
-      chips={[
-        { label: 'Customer No', value: customer?.custNo },
-        { label: 'Nature of Signature', value: signature(a.signatureNature) },
-      ]}
-      sections={[
-        facility('Current Account', a.currentAcFlag === '1', [
-          { label: 'Currency', value: codeLabel('currency', a.currentAcCurrency) },
-          { label: 'Stmt. Frequency', value: codeLabel('stmtFreq', a.currentAcStmtFreq) },
-          { label: 'Cheque Book', value: yesNo0(a.currentAcChequeBook) },
-          { label: 'A/c Status', value: codeLabel('accStatus', a.currentAcStatus) },
-        ]),
-        facility('Saving Account', a.savingAcFlag === '1', [
-          { label: 'Currency', value: codeLabel('currency', a.savingAcCurrency) },
-          { label: 'Stmt. Frequency', value: codeLabel('stmtFreq', a.savingAcStmtFreq) },
-          { label: 'A/c Status', value: codeLabel('accStatus', a.savingAcStatus) },
-        ]),
-        // "Other" has no flag slot of its own — the legacy keys it on the
-        // ledger code it carries (cbothers.c:7256), so that is the presence test.
-        facility('Other Account', !!a.otherAcLedger, [
-          { label: 'Ledger', value: codeLabel('ledger', a.otherAcLedger) },
-          { label: 'Currency', value: codeLabel('currency', a.otherAcCurrency) },
-          { label: 'Stmt. Frequency', value: codeLabel('stmtFreq', a.otherAcStmtFreq) },
-          { label: 'Cheque Book', value: yesNo0(a.otherAcChequeBook) },
-          { label: 'A/c Status', value: codeLabel('accStatus', a.otherAcStatus) },
-        ]),
-      ]}
-      buttons={[
-        { label: 'Previous Page', kind: 'primary', onClick: onPrevPage },
-        { label: 'Documents', onClick: onDocuments },
-        { label: 'Cancel', kind: 'danger', onClick: onCancel },
-      ]}
-    />
+    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">
+            {t('Individual — Other Nationality')}
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{t('Account Details')}</h1>
+          <p className="mt-1 text-sm text-muted">
+            {t('Page 3 of 3 — account facilities, signature and card request.')}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
+          <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
+            {t('Customer {custNo}', { custNo: customer?.custNo ?? '' })}
+          </span>
+          {(mainCategory || subCategory) && (
+            <p className="text-xs text-muted">
+              <span className="font-medium text-ink-soft">{t('Category')}</span> {mainCategory}
+              {subCategory ? ` · ${subCategory}` : ''}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <HistoryBanner asOf={historyAsOf} />
+
+      <div className="grid gap-5">
+        <SectionCard title="Accounts to Open">
+          <AccountFacilities a={a} />
+          <div className="mt-5 border-t border-edge-soft pt-4">
+            <AccountHolding a={a} />
+          </div>
+        </SectionCard>
+
+        <CardAndDelivery />
+
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
+          <PrevPageButton onClick={onPrevPage} />
+          <button type="button" onClick={onDocuments} className={btnKinds.secondary}>
+            {t('Documents')}
+          </button>
+          <button type="button" onClick={onCancel} className={`${btnKinds.danger} ms-auto`}>
+            {t('Cancel')}
+          </button>
+        </div>
+      </div>
+    </main>
   )
 }

@@ -3,6 +3,7 @@ import type { GridRow } from '../components/GridScreen.tsx'
 import type { Account, Customer } from '../types.ts'
 import { stchqtab } from '../schema/index.ts'
 import { column } from '../schema/helpers.ts'
+import { codeLabel } from '../codes.ts'
 
 // Mirrors legacy frmChequeBookGrid.frm ("Cheque Book Request Information").
 
@@ -16,10 +17,18 @@ const ENQUIRY_ONLY = true
 const COLUMNS = [
   column(stchqtab, 'deliveryBranchCode', { label: 'Delivery Branch' }),
   column(stchqtab, 'requestUserId', { label: 'Request User' }),
-  column(stchqtab, 'chequeType'),
+  // stchqtab's own descriptions carry both domains — 1 personal / 2 corporate,
+  // and 1 Requested … 9 Rejected by branch — so the grid shows "1-Personal"
+  // rather than a bare digit, as the legacy combos do.
+  column(stchqtab, 'chequeType', {
+    render: (v) => codeLabel('chequeType', v as string) || (v as string),
+  }),
   column(stchqtab, 'booksRequested', { label: '# Books Requested', align: 'right' }),
   column(stchqtab, 'reqDate', { label: 'Req. Date' }),
-  column(stchqtab, 'requestStatus', { label: 'Request Status' }),
+  column(stchqtab, 'requestStatus', {
+    label: 'Request Status',
+    render: (v) => codeLabel('chequeBookStatus', v as string) || (v as string),
+  }),
   // The workbook mistypes these two as Date (they are 8-digit cheque
   // numbers), which would trigger the date formatter — render them raw.
   column(stchqtab, 'chequeNoFrom', { label: 'From Cheque No', render: (v) => v }),

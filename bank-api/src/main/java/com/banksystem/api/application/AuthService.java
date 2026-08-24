@@ -8,13 +8,11 @@ import com.banksystem.api.domain.model.LoginResult;
 import com.banksystem.api.domain.model.SessionInfo;
 import com.banksystem.api.domain.repository.UserProfileRepository;
 import com.banksystem.api.domain.repository.UserProfileRepository.UserProfile;
+import com.banksystem.api.infrastructure.runtimeconfig.RuntimeSettings;
 import java.time.LocalDate;
 import java.time.chrono.HijrahDate;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
-import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,10 +29,13 @@ import org.springframework.stereotype.Service;
  *   <li><b>Directory bind</b> — AUTHENTICATED proceeds; REJECTED is final (never
  *       falls back); UNAVAILABLE may fall back to the local ladder when policy
  *       allows it. This is the LoanOriginationSystem three-state pattern.</li>
- *   <li><b>Allow-list</b> — the userId must appear in {@code bank.auth.allowed-users}
- *       (comma-separated). A directory-authenticated user who is not on the list is
- *       refused with "User is not allowed to access the application." An empty list
- *       means "allow all" (dev convenience) and logs a warning.</li>
+ *   <li><b>Allow-list</b> — the userId must appear in the comma-separated
+ *       {@code allowed-users} of the runtime configuration file (see
+ *       {@link RuntimeSettings}). A directory-authenticated user who is not on the
+ *       list is refused with "User is not allowed to access the application." An
+ *       empty list means "allow all" (dev convenience) and logs a warning. The list
+ *       is read on EVERY login, so adding or removing a user takes effect on their
+ *       next attempt — the application is not restarted.</li>
  * </ol>
  *
  * <p><b>Authority (interim):</b> per the porting brief, every authenticated user
@@ -63,7 +64,7 @@ public class AuthService {
     private final DirectoryAuthenticator directory;
     private final String adminAuthority;
     private final String adminBranch;
-    private final Set<String> allowedUsers;
+    private final RuntimeSettings settings;
 
     public AuthService(
             UserProfileRepository profiles,
@@ -74,26 +75,27 @@ public class AuthService {
             @Value("${bank.auth.admin-authority:"
                     + "~00~01~02~04~06~32~41~42~43~45~50~60~61~62~81~86~87~94~}") String adminAuthority,
             @Value("${bank.auth.admin-branch:0001}") String adminBranch,
-            @Value("${bank.auth.allowed-users:}") String allowedUsersCsv) {
+            RuntimeSettings settings) {
         this.profiles = profiles;
         this.cipher = cipher;
         this.directory = directory;
         this.adminAuthority = adminAuthority;
         this.adminBranch = adminBranch;
-        this.allowedUsers = parseAllowedUsers(allowedUsersCsv);
-        if (this.allowedUsers.isEmpty()) {
-            log.warn("[Login] bank.auth.allowed-users is empty — ALL directory-authenticated "
-                    + "users are allowed. Set the list before any real deployment.");
-        }
+        this.settings = settings;
     }
 
     /**
-     * @param rawUserId         the operator id (any case; {@code ANB\}/{@code @domain} accepted)
+     * @param rawUserId         the operator id, used everywhere in the case it was typed
+     *                          ({@code ANB\}/{@code @domain} prefixes/suffixes accepted)
      * @param encryptedPassword AES-encrypted password from the SPA (Base64(IV ‖ ciphertext))
      * @param homeBranch        the operating branch the operator logs into (may be blank)
      */
     public LoginResult login(String rawUserId, String encryptedPassword, String homeBranch) {
-        String userId = DirectoryUsername.bare(rawUserId).toUpperCase();
+        // The id is used EXACTLY as the operator typed it — the AD bind, the
+        // allow-list, the stuser/stusrbrn lookups and the JWT subject all get
+        // that same string. Nothing upcases it; the lookups that must tolerate
+        // a different stored case compare case-insensitively instead.
+        String userId = DirectoryUsername.bare(rawUserId);
         if (userId.isEmpty() || encryptedPassword == null || encryptedPassword.isEmpty()) {
             return LoginResult.failure("102", "Invalid User Id");
         }
@@ -119,8 +121,12 @@ public class AuthService {
         }
 
         // 2) Allow-list gate — authenticated, but is this user permitted in?
+        // Read per login, not captured at startup: the list is editable while the
+        // application runs (RuntimeSettings), so this sees the file as it is now.
+        Set<String> allowedUsers = settings.allowedUsers();
         if (!allowedUsers.isEmpty() && !allowedUsers.contains(userId)) {
-            log.info("[Login] {} authenticated but is not in bank.auth.allowed-users — denied.", userId);
+            log.info("[Login] {} authenticated but is not in allowed-users ({}) — denied.",
+                    userId, settings.source());
             return LoginResult.failure(STATUS_NOT_ALLOWED, "User is not allowed to access the application.");
         }
 
@@ -235,17 +241,6 @@ public class AuthService {
                 adminAuthority, "",
                 langPref, gregorian, hijri, gregorian,
                 "1", "0900");
-    }
-
-    private static Set<String> parseAllowedUsers(String csv) {
-        if (csv == null || csv.isBlank()) {
-            return Set.of();
-        }
-        return Arrays.stream(csv.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .map(s -> s.toUpperCase())
-                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     /**

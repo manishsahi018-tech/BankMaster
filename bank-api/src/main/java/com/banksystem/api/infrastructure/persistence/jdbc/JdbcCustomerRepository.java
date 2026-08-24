@@ -6,12 +6,16 @@ import com.banksystem.api.domain.model.CustUpdateHistoryEntry;
 import com.banksystem.api.domain.model.CustomerProfile;
 import com.banksystem.api.domain.model.CustomerSearchCriteria;
 import com.banksystem.api.domain.model.CustomerSummary;
+import com.banksystem.api.domain.model.EssentialDocuments;
 import com.banksystem.api.domain.model.HeirEntry;
 import com.banksystem.api.domain.model.IdDocument;
+import com.banksystem.api.domain.model.JointHolderDetail;
 import com.banksystem.api.domain.model.JointHolderEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
 import com.banksystem.api.domain.model.OpenUpdateInfo;
+import com.banksystem.api.domain.model.OwnerDetail;
 import com.banksystem.api.domain.model.OwnerEntry;
+import com.banksystem.api.domain.model.PartyDetail;
 import com.banksystem.api.domain.model.ReferenceEntry;
 import com.banksystem.api.domain.repository.CustomerRepository;
 import java.util.ArrayList;
@@ -93,7 +97,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                    lastUpdateUser, lastUpdateDateTime, vipCode, visaNo,
                    aOrgName2, eOrgName2, orgAlphaSearchCode, purposeOfAccount,
                    govtShareHoldingPerc, saudiShareHoldingPerc, foreignShareHoldingPerc,
-                   crIssueDateType, licenseNo, approvalRefNo
+                   crIssueDateType, licenseNo, approvalRefNo,
+                   contractNo, diplomaticCardNo
             FROM   stcusttab
             WHERE  BankingDate = :bankingDate
               AND  custNo = :custNo
@@ -170,7 +175,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                    lastUpdateUser, lastUpdateDateTime, vipCode, visaNo,
                    aOrgName2, eOrgName2, orgAlphaSearchCode, purposeOfAccount,
                    govtShareHoldingPerc, saudiShareHoldingPerc, foreignShareHoldingPerc,
-                   crIssueDateType, licenseNo, approvalRefNo
+                   crIssueDateType, licenseNo, approvalRefNo,
+                   contractNo, diplomaticCardNo
             FROM   stcustlog
             WHERE  BankingDate = :bankingDate
               AND  custNo = :custNo
@@ -199,7 +205,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
             "lastUpdateUser", "lastUpdateDateTime", "vipCode", "visaNo",
             "aOrgName2", "eOrgName2", "orgAlphaSearchCode", "purposeOfAccount",
             "govtShareHoldingPerc", "saudiShareHoldingPerc", "foreignShareHoldingPerc",
-            "crIssueDateType", "licenseNo", "approvalRefNo"};
+            "crIssueDateType", "licenseNo", "approvalRefNo",
+            "contractNo", "diplomaticCardNo"};
 
     /** Raw column values keyed by label — the as-of path overlays
      *  stidlog/staddrlog values into this map before the record is built. */
@@ -262,6 +269,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 m.get("govtShareHoldingPerc"), m.get("saudiShareHoldingPerc"),
                 m.get("foreignShareHoldingPerc"), m.get("crIssueDateType"),
                 m.get("licenseNo"), m.get("approvalRefNo"),
+                m.get("contractNo"), m.get("diplomaticCardNo"),
                 // filled by the point read; the as-of path leaves them empty
                 List.of(), OpenUpdateInfo.empty());
     }
@@ -864,15 +872,29 @@ public class JdbcCustomerRepository implements CustomerRepository {
      * the saving row, anything else the other row; later rows overwrite
      * earlier ones like the legacy strncpy. The C's 11-char info string
      * is currency(2)+ledger(3)+accStatus(2)+statementFreq(2)+
-     * checkBook(1)+droppedAcc(1); droppedAcc has no slot in the enquiry
-     * model, and the flag slots carry "1" for row-found (the screen's
-     * facility check-box). Returns the 14 facility slots in
+     * checkBook(1)+droppedAcc(1); droppedAcc has no slot of its own in
+     * the enquiry model and is consumed here instead — a dropped row is
+     * skipped, as the legacy reads it — and the flag slots carry "1" for
+     * row-found (the screen's facility check-box). Returns the 14 facility slots in
      * JuristicAccountInfo order; blanks on any failure — the C ignores
      * acclog open errors too.
      */
     private String[] acctFacilityRows(String branchCode, String createdUserId, String createdDateTime) {
         String[] slots = new String[14];
         Arrays.fill(slots, "");
+        // NORMALISE THE STAMP FIRST. stcusttab.createdDateTime is typed
+        // Timestamp in the workbook while stacclog.dateTime is a 14-char
+        // STRING, so a view that hands the driver an ISO timestamp for the
+        // customer leaves both bindings below in ISO form — the raw one
+        // because that is what arrived, the "Iso" one because bmToIso passes
+        // non-BM input straight through — and neither can equal a 14-digit
+        // string. Every facility row then goes missing and all three rows on
+        // the page read "Not requested", for every customer, however many
+        // accounts the session actually opened. juristicAccountInfo already
+        // guarded this at its call site (isoToBmTimestamp on the column); doing
+        // it HERE covers both callers, and is a no-op when the value is already
+        // the 14-digit form.
+        String bmDateTime = BmForms.isoToBmTimestamp(trim(createdDateTime));
         try {
             List<String[]> rows = jdbc.query("""
                     SELECT accNo, accStatus, statementFreq, checkBook, droppedAcc
@@ -885,9 +907,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     Map.of("bankingDate", bankingDate.bankingDate(),
                             "branchCode", branchCode == null ? "" : branchCode,
                             "userId", createdUserId == null ? "" : createdUserId,
-                            "dateTime", createdDateTime == null ? "" : createdDateTime,
-                            "dateTimeIso", BmForms.bmToIso(
-                                    createdDateTime == null ? "" : createdDateTime)),
+                            "dateTime", bmDateTime,
+                            "dateTimeIso", BmForms.bmToIso(bmDateTime)),
                     (rs, i) -> new String[] {
                             rs.getString("accNo"), rs.getString("accStatus"),
                             rs.getString("statementFreq"), rs.getString("checkBook"),
@@ -899,6 +920,13 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 String status = trim(r[1]);
                 String stmtFreq = trim(r[2]);
                 String chequeBook = trim(r[3]);
+                // A DROPPED row is not a facility: the legacy tests the info
+                // string's last byte and leaves the frame on "No" when it is
+                // "1" (globalFunctions.bas:6654, 6715, 6771 — droppedAcc is
+                // position 11 of the 11-char string getAcctInfo builds).
+                if ("1".equals(trim(r[4]))) {
+                    continue;
+                }
                 if ("008".equals(ledger)) {         // current account (cbothers.c:7244/7287)
                     slots[0] = "1";
                     slots[1] = currency;
@@ -919,7 +947,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 }
             }
         } catch (DataAccessException e) {
-            log.warn("stacclog unavailable; juristic account-facility rows left blank", e);
+            log.warn("stacclog unavailable; account-facility rows left blank", e);
             Arrays.fill(slots, "");
         }
         return slots;
@@ -1000,6 +1028,333 @@ public class JdbcCustomerRepository implements CustomerRepository {
                         rs.getString("activeStatus"), rs.getString("branchCode")));
     }
 
+    /**
+     * The owner form's detail panel — 54 controls the grid does not carry.
+     *
+     * <p>Three reads, keyed as the C keys them (cbsama.c:2302-2450):
+     * stowntab on custNo + ownerNo; stidtab on custNo + the owner's own idType
+     * and idNo with {@code idCategory = 'W'}, which is the OWNER bucket ('C' is
+     * the customer's own documents); and staddrtab on custNo where
+     * {@code addressNo} equals the ownerNo — type '03' local, '04' home. The C
+     * walks the customer's address rows and keeps those two; here they are two
+     * predicates on one read, which is the same set.
+     *
+     * <p>Both addresses are optional: an owner with neither still returns, with
+     * empty blocks, exactly as the legacy form shows empty frames.
+     */
+    @Override
+    public Optional<OwnerDetail> ownerDetail(String custNo, String ownerNo) {
+        Map<String, Object> params = Map.of(
+                "bankingDate", bankingDate.bankingDate(),
+                "custNo", padCust(custNo),
+                "ownerNo", ownerNo.trim());
+
+        List<Object[]> owner = jdbc.query("""
+                SELECT ownerNo, ownerType, ownerEnabled, branchCode, idType, idNo,
+                       shareHoldingPerc, parentCompanyName,
+                       aFirstName, aSecondName, aThirdName, aLastName, aShortName,
+                       eFirstName, eSecondName, eThirdName, eLastName, eShortName
+                FROM   stowntab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  ownerNo = :ownerNo
+                FETCH FIRST 1 ROWS ONLY
+                """, params, (rs, i) -> new Object[] {
+                        trim(rs.getString("ownerNo")), trim(rs.getString("ownerType")),
+                        trim(rs.getString("ownerEnabled")), trim(rs.getString("branchCode")),
+                        trim(rs.getString("idType")), trim(rs.getString("idNo")),
+                        trim(rs.getString("shareHoldingPerc")),
+                        trim(rs.getString("parentCompanyName")),
+                        trim(rs.getString("aFirstName")), trim(rs.getString("aSecondName")),
+                        trim(rs.getString("aThirdName")), trim(rs.getString("aLastName")),
+                        trim(rs.getString("aShortName")),
+                        trim(rs.getString("eFirstName")), trim(rs.getString("eSecondName")),
+                        trim(rs.getString("eThirdName")), trim(rs.getString("eLastName")),
+                        trim(rs.getString("eShortName"))});
+        if (owner.isEmpty()) {
+            return Optional.empty();
+        }
+        Object[] o = owner.get(0);
+
+        String[] id = partyIdRow(params, "W", (String) o[4], (String) o[5]);
+        Map<String, OwnerDetail.Address> addresses = partyAddresses(new HashMap<>(Map.of(
+                "bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo),
+                "partyNo", ownerNo.trim(), "addressTypes", List.of("03", "04"))));
+
+        return Optional.of(new OwnerDetail(
+                trim(custNo), (String) o[0], (String) o[1], (String) o[2], (String) o[3],
+                (String) o[6], (String) o[7],
+                (String) o[8], (String) o[9], (String) o[10], (String) o[11], (String) o[12],
+                (String) o[13], (String) o[14], (String) o[15], (String) o[16], (String) o[17],
+                (String) o[4], (String) o[5],
+                id[0], id[1], id[2], id[3], id[4], id[5],
+                addresses.getOrDefault("03", OwnerDetail.Address.empty()),
+                addresses.getOrDefault("04", OwnerDetail.Address.empty())));
+    }
+
+    /**
+     * The Joint Holders panel — frmIndividualJoint's grid double-click
+     * (fetchJointDetailInfo). One point read: stjointtab keeps a joint holder
+     * as a near-complete customer record, so unlike the owner, reference and
+     * heir panels there is no ID row or address row to fetch alongside.
+     */
+    @Override
+    public Optional<JointHolderDetail> jointHolderDetail(String custNo, String jointCustNo) {
+        List<JointHolderDetail> rows = jdbc.query("""
+                SELECT jointCustNo, branchCode, activeStatus, jointOpenDate,
+                       aFirstName, a2ndName, a3rdName, aLastName, aShortName,
+                       eFirstName, e2ndName, e3rdName, eLastName, eShortName,
+                       idType, idNo, idIssuedAt, idDateType,
+                       idIssueDateH, idIssueDateG, idExpiryDateH, idExpiryDateG,
+                       preferredLang, nationality, titleCode,
+                       dobDateType, dobDateH, dobDateG, sexCode, vipCode,
+                       marritalStatus, noOfDependents, residentStatus, businessType,
+                       address1, address2, poBox, cityName, zipCode, country,
+                       addressType, gprsNo, unitNo,
+                       telOffAreaCode, telOffNo, telOffExt,
+                       telHomeAreaCode, telHomeNo, telHomeExt,
+                       faxAreaCode, faxNo, faxExt, mobileNo, pagerNo, eMail,
+                       educationCode, professionCode, positionCode, monthlyIncome,
+                       ownerShip, segmenation, employerName, department,
+                       employerPoBox, employerCity, employerZipCode
+                FROM   stjointtab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  jointCustNo = :jointCustNo
+                FETCH FIRST 1 ROWS ONLY
+                """,
+                Map.of("bankingDate", bankingDate.bankingDate(),
+                        "custNo", padCust(custNo), "jointCustNo", jointCustNo.trim()),
+                (rs, i) -> new JointHolderDetail(
+                        trim(custNo),
+                        trim(rs.getString("jointCustNo")),
+                        trim(rs.getString("branchCode")),
+                        trim(rs.getString("activeStatus")),
+                        BmForms.actualDate(rs.getString("jointOpenDate")),
+                        trim(rs.getString("aFirstName")),
+                        trim(rs.getString("a2ndName")),
+                        trim(rs.getString("a3rdName")),
+                        trim(rs.getString("aLastName")),
+                        trim(rs.getString("aShortName")),
+                        trim(rs.getString("eFirstName")),
+                        trim(rs.getString("e2ndName")),
+                        trim(rs.getString("e3rdName")),
+                        trim(rs.getString("eLastName")),
+                        trim(rs.getString("eShortName")),
+                        trim(rs.getString("idType")),
+                        trim(rs.getString("idNo")),
+                        trim(rs.getString("idIssuedAt")),
+                        trim(rs.getString("idDateType")),
+                        BmForms.actualDate(rs.getString("idIssueDateH")),
+                        BmForms.actualDate(rs.getString("idIssueDateG")),
+                        BmForms.actualDate(rs.getString("idExpiryDateH")),
+                        BmForms.actualDate(rs.getString("idExpiryDateG")),
+                        trim(rs.getString("preferredLang")),
+                        trim(rs.getString("nationality")),
+                        trim(rs.getString("titleCode")),
+                        trim(rs.getString("dobDateType")),
+                        BmForms.actualDate(rs.getString("dobDateH")),
+                        BmForms.actualDate(rs.getString("dobDateG")),
+                        trim(rs.getString("sexCode")),
+                        trim(rs.getString("vipCode")),
+                        trim(rs.getString("marritalStatus")),
+                        trim(rs.getString("noOfDependents")),
+                        trim(rs.getString("residentStatus")),
+                        trim(rs.getString("businessType")),
+                        trim(rs.getString("address1")),
+                        trim(rs.getString("address2")),
+                        trim(rs.getString("poBox")),
+                        trim(rs.getString("cityName")),
+                        trim(rs.getString("zipCode")),
+                        trim(rs.getString("country")),
+                        trim(rs.getString("addressType")),
+                        trim(rs.getString("gprsNo")),
+                        trim(rs.getString("unitNo")),
+                        trim(rs.getString("telOffAreaCode")),
+                        trim(rs.getString("telOffNo")),
+                        trim(rs.getString("telOffExt")),
+                        trim(rs.getString("telHomeAreaCode")),
+                        trim(rs.getString("telHomeNo")),
+                        trim(rs.getString("telHomeExt")),
+                        trim(rs.getString("faxAreaCode")),
+                        trim(rs.getString("faxNo")),
+                        trim(rs.getString("faxExt")),
+                        trim(rs.getString("mobileNo")),
+                        trim(rs.getString("pagerNo")),
+                        trim(rs.getString("eMail")),
+                        trim(rs.getString("educationCode")),
+                        trim(rs.getString("professionCode")),
+                        trim(rs.getString("positionCode")),
+                        trim(rs.getString("monthlyIncome")),
+                        trim(rs.getString("ownerShip")),
+                        trim(rs.getString("segmenation")),
+                        trim(rs.getString("employerName")),
+                        trim(rs.getString("department")),
+                        trim(rs.getString("employerPoBox")),
+                        trim(rs.getString("employerCity")),
+                        trim(rs.getString("employerZipCode"))));
+        return rows.stream().findFirst();
+    }
+
+    /**
+     * The Reference / Legal Representative panel — frmIndividualSaudi2's
+     * double-click (referenceInfoGrid_DblClick :2722, readReferenceTabInfo
+     * cbsama.c:3400). stcreftab plus the 'R' ID row and the '02' address.
+     */
+    @Override
+    public Optional<PartyDetail> referenceDetail(String custNo, String referenceNo) {
+        return partyDetail("reference", custNo, referenceNo, """
+                SELECT referenceNo AS partyNo, referenceType AS partyType,
+                       referenceReqdFor, activeStatus, disabledDate, branchCode,
+                       idType, idNo,
+                       aFirstName, aSecondName, aThirdName, aLastName, aShortName,
+                       eFirstName, eSecondName, eThirdName, eLastName, eShortName,
+                       '' AS proxyNo, '' AS proxyDateType,
+                       '' AS proxyIssueDateH, '' AS proxyIssueDateG
+                FROM   stcreftab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  referenceNo = :partyNo
+                FETCH FIRST 1 ROWS ONLY
+                """, "R", "02");
+    }
+
+    /**
+     * The Heirs / Proxy panel — frmIndividualHeirs' double-click
+     * (heirInfoGrid_DblClick :2807). stheirtab plus the 'H' ID row and the '05'
+     * address. The proxy block is stheirtab's own, not an ID row.
+     */
+    @Override
+    public Optional<PartyDetail> heirDetail(String custNo, String heirNo) {
+        return partyDetail("heir", custNo, heirNo, """
+                SELECT heirNo AS partyNo, heirType AS partyType,
+                       '' AS referenceReqdFor, activeStatus, disabledDate, branchCode,
+                       idType, idNo,
+                       aFirstName, aSecondName, aThirdName, aLastName, aShortName,
+                       eFirstName, eSecondName, eThirdName, eLastName, eShortName,
+                       proxyNo, proxyDateType, proxyIssueDateH, proxyIssueDateG
+                FROM   stheirtab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  heirNo = :partyNo
+                FETCH FIRST 1 ROWS ONLY
+                """, "H", "05");
+    }
+
+    /**
+     * The shared half of the two panels: read the party row, then its ID row
+     * and its address. Only the table, the ID bucket and the address type
+     * differ, which is exactly what the C varies between
+     * readReferenceTabInfo and the heir path.
+     */
+    private Optional<PartyDetail> partyDetail(String kind, String custNo, String partyNo,
+            String sql, String idCategory, String addressType) {
+        Map<String, Object> params = new HashMap<>(Map.of(
+                "bankingDate", bankingDate.bankingDate(),
+                "custNo", padCust(custNo),
+                "partyNo", partyNo.trim()));
+
+        List<String[]> rows = jdbc.query(sql, params, (rs, i) -> new String[] {
+                trim(rs.getString("partyNo")), trim(rs.getString("partyType")),
+                trim(rs.getString("referenceReqdFor")), trim(rs.getString("activeStatus")),
+                BmForms.actualDate(rs.getString("disabledDate")), trim(rs.getString("branchCode")),
+                trim(rs.getString("idType")), trim(rs.getString("idNo")),
+                trim(rs.getString("aFirstName")), trim(rs.getString("aSecondName")),
+                trim(rs.getString("aThirdName")), trim(rs.getString("aLastName")),
+                trim(rs.getString("aShortName")),
+                trim(rs.getString("eFirstName")), trim(rs.getString("eSecondName")),
+                trim(rs.getString("eThirdName")), trim(rs.getString("eLastName")),
+                trim(rs.getString("eShortName")),
+                trim(rs.getString("proxyNo")), trim(rs.getString("proxyDateType")),
+                BmForms.actualDate(rs.getString("proxyIssueDateH")),
+                BmForms.actualDate(rs.getString("proxyIssueDateG"))});
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        String[] r = rows.get(0);
+
+        String[] id = partyIdRow(params, idCategory, r[6], r[7]);
+        Map<String, OwnerDetail.Address> addresses = partyAddresses(new HashMap<>(Map.of(
+                "bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo),
+                "partyNo", partyNo.trim(), "addressTypes", List.of(addressType))));
+
+        return Optional.of(new PartyDetail(
+                kind, trim(custNo), r[0], r[1], r[3], r[4], r[5],
+                r[8], r[9], r[10], r[11], r[12], r[13], r[14], r[15], r[16], r[17],
+                r[6], r[7], id[0], id[1], id[2], id[3], id[4], id[5],
+                r[2], r[18], r[19], r[20], r[21],
+                addresses.getOrDefault(addressType, OwnerDetail.Address.empty())));
+    }
+
+    /**
+     * One party's stidtab row. The idCategory letter is the bucket: 'W' owners
+     * (cbsama.c:2356), 'R' references (:3400), 'H' heirs (:1632), against the
+     * customer's own 'C' documents.
+     */
+    private String[] partyIdRow(Map<String, Object> base, String idCategory,
+            String idType, String idNo) {
+        Map<String, Object> params = new HashMap<>(base);
+        params.put("idType", idType);
+        params.put("idNo", idNo);
+        params.put("idCategory", idCategory);
+        List<String[]> rows = jdbc.query("""
+                SELECT idIssuedAt, idDateType, idIssueDateH, idIssueDateG,
+                       idExpiryDateH, idExpiryDateG
+                FROM   stidtab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  idCategory = :idCategory
+                  AND  idType = :idType
+                  AND  idNo = :idNo
+                FETCH FIRST 1 ROWS ONLY
+                """, params, (rs, i) -> new String[] {
+                        trim(rs.getString("idIssuedAt")), trim(rs.getString("idDateType")),
+                        BmForms.actualDate(rs.getString("idIssueDateH")),
+                        BmForms.actualDate(rs.getString("idIssueDateG")),
+                        BmForms.actualDate(rs.getString("idExpiryDateH")),
+                        BmForms.actualDate(rs.getString("idExpiryDateG"))});
+        return rows.isEmpty() ? new String[] {"", "", "", "", "", ""} : rows.get(0);
+    }
+
+    /**
+     * staddrtab rows hanging off a party number rather than the customer.
+     *
+     * <p>Every related party's address lives in the CUSTOMER's address file,
+     * keyed by {@code addressNo} = that party's number, with the type saying
+     * which party family it belongs to: '02' references, '03'/'04' owner local
+     * and home, '05' heirs (cbsama.c:1792, 2380, 2421, 3422).
+     */
+    private Map<String, OwnerDetail.Address> partyAddresses(Map<String, Object> params) {
+        Map<String, OwnerDetail.Address> byType = new HashMap<>();
+        jdbc.query("""
+                SELECT addressType, address1, address2, poBox, cityName, zipCode,
+                       country, addrType, unitNo,
+                       telOffAreaCode, telOffNo, telOffExt,
+                       telHomeAreaCode, telHomeNo, telHomeExt,
+                       faxAreaCode, faxNo, faxExt, mobileNo, pagerNo, eMail
+                FROM   staddrtab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  addressNo = :partyNo
+                  AND  addressType IN (:addressTypes)
+                """, params, (rs, i) -> {
+                    byType.put(trim(rs.getString("addressType")), new OwnerDetail.Address(
+                            trim(rs.getString("address1")), trim(rs.getString("address2")),
+                            trim(rs.getString("poBox")), trim(rs.getString("cityName")),
+                            trim(rs.getString("zipCode")), trim(rs.getString("country")),
+                            trim(rs.getString("addrType")), trim(rs.getString("unitNo")),
+                            trim(rs.getString("telOffAreaCode")), trim(rs.getString("telOffNo")),
+                            trim(rs.getString("telOffExt")),
+                            trim(rs.getString("telHomeAreaCode")), trim(rs.getString("telHomeNo")),
+                            trim(rs.getString("telHomeExt")),
+                            trim(rs.getString("faxAreaCode")), trim(rs.getString("faxNo")),
+                            trim(rs.getString("faxExt")), trim(rs.getString("mobileNo")),
+                            trim(rs.getString("pagerNo")), trim(rs.getString("eMail"))));
+                    return null;
+                });
+        return byType;
+    }
+
     @Override
     public List<OwnerEntry> owners(String custNo) {
         return jdbc.query("""
@@ -1046,12 +1401,22 @@ public class JdbcCustomerRepository implements CustomerRepository {
         // branchCode / createdUserId / createdDateTime are selected only to key
         // acctFacilityRows — the same three the juristic caller seeds it with
         // (cbjuristic.c:3304-3313) — and are not returned.
+        // The Others profile carries a page BETWEEN these two — frmIndividualOthers2,
+        // "Customers Maintenance Page 2 - For Other Individuals" — whose fields come
+        // from the same customer row plus two side reads (see homeAddress/idRows
+        // below). They ride on this call rather than a third endpoint because the C
+        // builds the whole reply in ONE pass (processIndividualOthersDetails,
+        // cbothers.c:2860-3200) and the Saudi page 2 already asks for the overlap;
+        // splitting it would mean two round trips for one legacy screen. The Saudi
+        // screen simply renders fewer of the keys.
         List<Map<String, String>> rows = jdbc.query("""
                 SELECT educationCode, professionCode, positionCode, monthlyIncome,
                        segmentation, employerName, employerPoBox, employerCity,
                        employerZipCode, packageAcc, signatureNature, custAdviceFlag,
                        updatedForSama, relationshipManager, generalMemo, marketingMemo,
-                       accFreezingGracePeriod,
+                       accFreezingGracePeriod, department, ownerShip, singleJointAcc,
+                       excludeFromAtmFees, excludeFromMinBalFees, pkgStmtFreqOverride,
+                       interGroupAccNo, specialRefNo,
                        branchCode, createdUserId, createdDateTime
                 FROM   stcusttab
                 WHERE  BankingDate = :bankingDate
@@ -1078,6 +1443,19 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     d.put("generalMemo", trim(rs.getString("generalMemo")));
                     d.put("marketingMemo", trim(rs.getString("marketingMemo")));
                     d.put("freezingGracePeriod", trim(rs.getString("accFreezingGracePeriod")));
+                    // frmIndividualOthers2 additions. ownerShip is SIX flags packed
+                    // into one string — rented house / own house / company
+                    // accommodation / rented car / own car / company transport, read
+                    // by position (globalFunctions.bas:6455-6485) — so it is passed
+                    // through raw and split in the UI, where the six labels live.
+                    d.put("department", trim(rs.getString("department")));
+                    d.put("ownerShip", trim(rs.getString("ownerShip")));
+                    d.put("singleJointAcc", trim(rs.getString("singleJointAcc")));
+                    d.put("excludeFromAtmFees", trim(rs.getString("excludeFromAtmFees")));
+                    d.put("excludeFromMinBalFees", trim(rs.getString("excludeFromMinBalFees")));
+                    d.put("pkgStmtFreqOverride", trim(rs.getString("pkgStmtFreqOverride")));
+                    d.put("interGroupAccNo", trim(rs.getString("interGroupAccNo")));
+                    d.put("specialRefNo", trim(rs.getString("specialRefNo")));
                     String[] f = acctFacilityRows(rs.getString("branchCode"),
                             rs.getString("createdUserId"), rs.getString("createdDateTime"));
                     d.put("currentAcFlag", f[0]);
@@ -1096,34 +1474,203 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     d.put("otherAcStatus", f[13]);
                     return d;
                 });
-        return rows.isEmpty() ? Map.of() : rows.get(0);
+        if (rows.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> info = new LinkedHashMap<>(rows.get(0));
+        info.putAll(homeCountryAddress(custNo));
+        info.putAll(identityBlocks(custNo));
+        return info;
     }
 
-    @Override
-    public List<String> requiredDocuments(String custNo) {
-        // Customer's SAMA category from stcusttab, then the required document
-        // codes from stctltabDC (documnetNo1..20) for that main+sub category
-        // (frmDocuments "Documents List for Sub Category").
-        //
-        // Codes only, because there is nothing here to resolve them against:
-        // stctltabDC carries the mapping and no name columns, and the legacy
-        // looked names up in a documentinfo table in the client's LOCAL Access
-        // database (frmDocuments.frm:337), which has no archival counterpart.
-        // The UI therefore holds the names; note that its map is incomplete —
-        // see the comment on DOCUMENT_NAMES in EssentialDocuments.tsx.
-        List<String[]> cat = jdbc.query("""
-                SELECT samaMainCategory, samaSubCategory
-                FROM   stcusttab
+    /**
+     * The "Home Country Address" frame on frmIndividualOthers2 — staddrtab's
+     * addressType '01' row.
+     *
+     * <p>The C walks the customer's staddrtab rows and keeps exactly two:
+     * '00' is the main/local address (already on page 1 of the profile) and
+     * '01' is the "customer abroad/home address" that fills this frame; every
+     * other addressType is skipped outright (cbothers.c:3112-3164). So this is
+     * one point read on '01' rather than a join — an expatriate with no abroad
+     * address simply has no such row, and the frame comes back empty, which is
+     * what the legacy shows too.
+     *
+     * <p>{@code addressNo = '0000'} is part of that filter and not optional:
+     * the C skips every row whose addressNo is not "0000" BEFORE it switches on
+     * the type ({@code if (strncmp(addrTabRec.addressNo, "0000", 4)) continue;},
+     * cbothers.c:3117). addressNo is key part 4 and numbers the PARTY the row
+     * belongs to — "0000" the account holder, "0001"+ the owners, heirs and
+     * references hanging off the same custNo. Without it this read is
+     * {@code FETCH FIRST 1 ROWS ONLY} over an unordered set and can return a
+     * related party's abroad address — or a sparsely filled one, which is how
+     * it shows up: Home Address, Phone (Res.) and Country blank on a customer
+     * who demonstrably has them. The juristic twin has always carried the
+     * filter (see {@code juristicAccountInfo}); this one had not.
+     */
+    private Map<String, String> homeCountryAddress(String custNo) {
+        List<Map<String, String>> rows = jdbc.query("""
+                SELECT address1, address2, poBox, cityName, zipCode, country,
+                       telOffAreaCode, telOffNo, telOffExt,
+                       telHomeAreaCode, telHomeNo, telHomeExt,
+                       faxAreaCode, faxNo, faxExt, mobileNo, pagerNo, eMail
+                FROM   staddrtab
                 WHERE  BankingDate = :bankingDate
                   AND  custNo = :custNo
+                  AND  addressType = '01' AND addressNo = '0000'
                 FETCH FIRST 1 ROWS ONLY
                 """,
                 Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
-                (rs, i) -> new String[] {trim(rs.getString("samaMainCategory")),
-                        trim(rs.getString("samaSubCategory"))});
-        if (cat.isEmpty()) {
-            return List.of();
+                (rs, i) -> {
+                    Map<String, String> d = new LinkedHashMap<>();
+                    d.put("homeAddress1", trim(rs.getString("address1")));
+                    d.put("homeAddress2", trim(rs.getString("address2")));
+                    d.put("homePoBox", trim(rs.getString("poBox")));
+                    d.put("homeCityName", trim(rs.getString("cityName")));
+                    d.put("homeZipCode", trim(rs.getString("zipCode")));
+                    d.put("homeCountry", trim(rs.getString("country")));
+                    d.put("homeTelOffAreaCode", trim(rs.getString("telOffAreaCode")));
+                    d.put("homeTelOffNo", trim(rs.getString("telOffNo")));
+                    d.put("homeTelOffExt", trim(rs.getString("telOffExt")));
+                    d.put("homeTelHomeAreaCode", trim(rs.getString("telHomeAreaCode")));
+                    d.put("homeTelHomeNo", trim(rs.getString("telHomeNo")));
+                    d.put("homeTelHomeExt", trim(rs.getString("telHomeExt")));
+                    d.put("homeFaxAreaCode", trim(rs.getString("faxAreaCode")));
+                    d.put("homeFaxNo", trim(rs.getString("faxNo")));
+                    d.put("homeFaxExt", trim(rs.getString("faxExt")));
+                    d.put("homeMobileNo", trim(rs.getString("mobileNo")));
+                    d.put("homePagerNo", trim(rs.getString("pagerNo")));
+                    d.put("homeEmail", trim(rs.getString("eMail")));
+                    return d;
+                });
+        return rows.isEmpty() ? Map.of() : rows.get(0);
+    }
+
+    /**
+     * The Home Country ID, SAMA authorisation and approval-document frames.
+     *
+     * <p>All three are stidtab ID ROWS, not customer columns — the C loops the
+     * customer's stidtab rows and switches on idType (cbothers.c:3025-3060):
+     * <ul>
+     *   <li>{@code 'M'} home country id → number, date type, issue and expiry</li>
+     *   <li>{@code 'S'} SAMA authorisation → number, date type, and the ISSUE
+     *       date as the approval date (there is no separate approval-date
+     *       column; the C reads idIssueDateH/G)</li>
+     *   <li>{@code 'A'} approval document → number, date type, issue, expiry,
+     *       and {@code idRefName} as the approver's name</li>
+     * </ul>
+     * stcusttab also carries {@code homeCountryId}, {@code samaAuthNo} and
+     * {@code approvalRefNo}, and taking them from there was the obvious
+     * shortcut — but those are single denormalised copies with NO dates beside
+     * them, and the dates are half of each frame. The ID rows are the C's
+     * source, so they are the source here.
+     *
+     * <p>Both date calendars are returned as stored (H = Hijri, G = Gregorian);
+     * {@code *DateType} says which one the operator entered ('0' Hijri), exactly
+     * as the form's radio pair reports it.
+     */
+    private Map<String, String> identityBlocks(String custNo) {
+        Map<String, String> out = new LinkedHashMap<>();
+        jdbc.query("""
+                SELECT idType, idNo, idDateType, idIssueDateH, idIssueDateG,
+                       idExpiryDateH, idExpiryDateG, idRefName
+                FROM   stidtab
+                WHERE  BankingDate = :bankingDate
+                  AND  custNo = :custNo
+                  AND  idCategory = 'C'
+                  AND  idType IN ('M', 'S', 'A')
+                """,
+                Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
+                (rs, i) -> {
+                    String type = trim(rs.getString("idType"));
+                    switch (type) {
+                        case "M" -> {
+                            out.put("homeCountryId", trim(rs.getString("idNo")));
+                            out.put("homeCountryIdDateType", trim(rs.getString("idDateType")));
+                            out.put("homeCountryIdIssueDateH", trim(rs.getString("idIssueDateH")));
+                            out.put("homeCountryIdIssueDateG", trim(rs.getString("idIssueDateG")));
+                            out.put("homeCountryIdExpiryDateH", trim(rs.getString("idExpiryDateH")));
+                            out.put("homeCountryIdExpiryDateG", trim(rs.getString("idExpiryDateG")));
+                        }
+                        case "S" -> {
+                            out.put("samaAuthNo", trim(rs.getString("idNo")));
+                            out.put("samaAuthDateType", trim(rs.getString("idDateType")));
+                            out.put("samaAuthDateH", trim(rs.getString("idIssueDateH")));
+                            out.put("samaAuthDateG", trim(rs.getString("idIssueDateG")));
+                        }
+                        case "A" -> {
+                            out.put("approvalRefNo", trim(rs.getString("idNo")));
+                            out.put("appDateType", trim(rs.getString("idDateType")));
+                            out.put("appIssueDateH", trim(rs.getString("idIssueDateH")));
+                            out.put("appIssueDateG", trim(rs.getString("idIssueDateG")));
+                            out.put("appExpiryDateH", trim(rs.getString("idExpiryDateH")));
+                            out.put("appExpiryDateG", trim(rs.getString("idExpiryDateG")));
+                            out.put("appRefName", trim(rs.getString("idRefName")));
+                        }
+                        default -> { }
+                    }
+                    return null;
+                });
+        return out;
+    }
+
+    @Override
+    public EssentialDocuments documents(String custNo, String asOfDateTime) {
+        // The customer's own row first: it carries BOTH the SAMA category that
+        // selects the required list AND the documents the customer actually
+        // supplied. The legacy reads all three off the same record — the C
+        // server ships custTabRec.documentsSupplied / .documentOther in the
+        // detail message (cbothers.c:3168-3169) and the form renders them into
+        // lstSelectedDoc / txtDocOthers (frmDocuments.frm:376-392).
+        //
+        // History mode reads the stcustlog snapshot instead, keyed the same way
+        // profileAsOf keys it — the legacy's custHistoryAction path is fed by
+        // processIndividual*PendingDetail off custLogRec (cbothers.c:3703-3704),
+        // so the categories and the supplied set are both the ones in force at
+        // that event, not today's.
+        boolean asOf = asOfDateTime != null && !asOfDateTime.isBlank();
+        Map<String, Object> params = new java.util.HashMap<>();
+        params.put("bankingDate", bankingDate.bankingDate());
+        params.put("custNo", padCust(custNo));
+        String sql;
+        if (asOf) {
+            // Bound in both forms for the same reason profileAsOf does it: the
+            // history grid may hand back a normalised ISO timestamp when the
+            // view types datetime_bigdata as a timestamp rather than a string.
+            params.put("dateTime", trim(asOfDateTime));
+            params.put("dateTimeIso", BmForms.bmToIso(trim(asOfDateTime)));
+            sql = """
+                    SELECT samaMainCategory, samaSubCategory, documentsSupplied, documentOther
+                    FROM   stcustlog
+                    WHERE  BankingDate = :bankingDate
+                      AND  custNo = :custNo
+                      AND  (datetime_bigdata = :dateTime OR datetime_bigdata = :dateTimeIso)
+                    FETCH FIRST 1 ROWS ONLY
+                    """;
+        } else {
+            sql = """
+                    SELECT samaMainCategory, samaSubCategory, documentsSupplied, documentOther
+                    FROM   stcusttab
+                    WHERE  BankingDate = :bankingDate
+                      AND  custNo = :custNo
+                    FETCH FIRST 1 ROWS ONLY
+                    """;
         }
+        List<String[]> cust = jdbc.query(sql, params,
+                (rs, i) -> new String[] {trim(rs.getString("samaMainCategory")),
+                        trim(rs.getString("samaSubCategory")),
+                        rs.getString("documentsSupplied"),
+                        trim(rs.getString("documentOther"))});
+        if (cust.isEmpty()) {
+            return EssentialDocuments.EMPTY;
+        }
+        String[] row = cust.get(0);
+        List<String> supplied = EssentialDocuments.splitCodes(row[2]);
+
+        // The required list for that category. Codes only — stctltabDC carries
+        // the mapping and no name columns, and the legacy resolved names in a
+        // documentinfo table in the client's LOCAL Access database
+        // (frmDocuments.frm:337), which has no archival counterpart. The UI
+        // resolves them against the stctltab 'DT' code set.
         List<List<String>> rows = jdbc.query("""
                 SELECT documnetNo1, documnetNo2, documnetNo3, documnetNo4, documnetNo5,
                        documnetNo6, documnetNo7, documnetNo8, documnetNo9, documnetNo10,
@@ -1135,18 +1682,23 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 FETCH FIRST 1 ROWS ONLY
                 """,
                 Map.of("bankingDate", bankingDate.bankingDate(),
-                        "main", cat.get(0)[0], "sub", cat.get(0)[1]),
+                        "main", row[0], "sub", row[1]),
                 (rs, i) -> {
                     List<String> docs = new java.util.ArrayList<>();
                     for (int n = 1; n <= 20; n++) {
                         String code = trim(rs.getString("documnetNo" + n));
-                        if (!code.isEmpty()) {
-                            docs.add(code);
+                        if (code.isEmpty()) {
+                            // The legacy walks a packed string and stops at the
+                            // first blank triplet (frmDocuments.frm:331), so a
+                            // gap ends the list rather than being skipped over.
+                            break;
                         }
+                        docs.add(code);
                     }
                     return docs;
                 });
-        return rows.isEmpty() ? List.of() : rows.get(0);
+        return new EssentialDocuments(
+                rows.isEmpty() ? List.of() : rows.get(0), supplied, row[3]);
     }
 
     private static String trim(String s) {

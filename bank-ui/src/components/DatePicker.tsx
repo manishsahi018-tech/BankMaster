@@ -1,13 +1,34 @@
 // Self-contained calendar date picker (no external dependency — the target PC is
 // offline). The stored value is the legacy YYYYMMDD string the API expects; the
 // button shows it as DD/MM/YYYY and a popover calendar edits it.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useT } from '../i18n/index.ts'
+import type { Locale } from '../i18n/locale.ts'
 
-const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
+/**
+ * Month and weekday names come from Intl, not from the translation dictionary:
+ * they are calendar data every platform already ships, and nineteen more
+ * dictionary entries would be nineteen more things to keep right.
+ *
+ * The locale tag is deliberately bare 'ar' rather than 'ar-SA'. ar-SA defaults
+ * to the ISLAMIC calendar, which would label a Gregorian date grid with Hijri
+ * month names — the archival dates are Gregorian, so `calendar: 'gregory'`
+ * pins it either way.
+ *
+ * The DAY NUMBERS in the grid are rendered as plain JS numbers, never through
+ * Intl, so they stay Western in both locales — as the legacy screens show.
+ */
+function calendarNames(locale: Locale) {
+  const tag = locale === 'ar' ? 'ar' : 'en-GB'
+  const monthFmt = new Intl.DateTimeFormat(tag, { month: 'long', calendar: 'gregory' })
+  const weekdayFmt = new Intl.DateTimeFormat(tag, { weekday: 'short', calendar: 'gregory' })
+  const monthShortFmt = new Intl.DateTimeFormat(tag, { month: 'short', calendar: 'gregory' })
+  // 2021-08-01 was a Sunday, which is where the grid's first column starts.
+  const weekdays = Array.from({ length: 7 }, (_, i) => weekdayFmt.format(new Date(2021, 7, 1 + i)))
+  const months = Array.from({ length: 12 }, (_, i) => monthFmt.format(new Date(2021, i, 1)))
+  const monthsShort = Array.from({ length: 12 }, (_, i) => monthShortFmt.format(new Date(2021, i, 1)))
+  return { weekdays, months, monthsShort }
+}
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -82,6 +103,9 @@ export function DatePicker({
       document.removeEventListener('keydown', onKey)
     }
   }, [open])
+
+  const { t, locale } = useT()
+  const { weekdays, monthsShort } = useMemo(() => calendarNames(locale), [locale])
 
   const year = view.getFullYear()
   const month = view.getMonth()
@@ -166,12 +190,12 @@ export function DatePicker({
           />
         </svg>
         <span className={display(value) ? 'text-ink' : 'text-muted-soft'}>
-          {display(value) || placeholder}
+          {display(value) || t(placeholder)}
         </span>
       </button>
 
       {open && (
-        <div className="absolute left-0 top-12 z-50 w-72 rounded-2xl border border-edge bg-surface p-3 shadow-lg">
+        <div className="absolute start-0 top-12 z-50 w-72 rounded-2xl border border-edge bg-surface p-3 shadow-lg">
           {/* Month and year are dropdowns, not just a label: reaching a date
               years back through the ‹ › arrows alone is 12 clicks per year. The
               arrows stay for stepping a month at a time. */}
@@ -180,10 +204,10 @@ export function DatePicker({
               type="button"
               onClick={() => setView(new Date(year, month - 1, 1))}
               disabled={!monthInRange(year, month - 1)}
-              aria-label="Previous month"
+              aria-label={t('Previous month')}
               className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
             >
-              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 rtl:-scale-x-100">
                 <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 0 1 0 1.06L9.06 10l3.73 3.71a.75.75 0 1 1-1.06 1.06l-4.25-4.24a.75.75 0 0 1 0-1.06l4.25-4.24a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
               </svg>
             </button>
@@ -192,19 +216,19 @@ export function DatePicker({
               <select
                 value={month}
                 onChange={(e) => showMonth(year, +e.target.value)}
-                aria-label="Month"
+                aria-label={t('Month')}
                 className={headerControl}
               >
-                {MONTHS.map((name, i) => (
+                {monthsShort.map((name, i) => (
                   <option key={name} value={i} disabled={!monthInRange(year, i)}>
-                    {name.slice(0, 3)}
+                    {name}
                   </option>
                 ))}
               </select>
               <select
                 value={year}
                 onChange={(e) => showMonth(+e.target.value, month)}
-                aria-label="Year"
+                aria-label={t('Year')}
                 className={headerControl}
               >
                 {years.map((y) => (
@@ -219,17 +243,17 @@ export function DatePicker({
               type="button"
               onClick={() => setView(new Date(year, month + 1, 1))}
               disabled={!monthInRange(year, month + 1)}
-              aria-label="Next month"
+              aria-label={t('Next month')}
               className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
             >
-              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 rtl:-scale-x-100">
                 <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 0 1 0-1.06L10.94 10 7.21 6.29a.75.75 0 1 1 1.06-1.06l4.25 4.24a.75.75 0 0 1 0 1.06l-4.25 4.24a.75.75 0 0 1-1.06 0Z" clipRule="evenodd" />
               </svg>
             </button>
           </div>
 
           <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[11px] font-medium text-muted-soft">
-            {WEEKDAYS.map((w) => (
+            {weekdays.map((w) => (
               <span key={w} className="py-1">
                 {w}
               </span>
@@ -262,7 +286,7 @@ export function DatePicker({
             })}
           </div>
 
-          <div className="mt-2 border-t border-edge-soft pt-2 text-right">
+          <div className="mt-2 border-t border-edge-soft pt-2 text-end">
             <button
               type="button"
               disabled={todayDisabled}
@@ -276,7 +300,7 @@ export function DatePicker({
                   : 'text-primary-ink hover:bg-primary-soft'
               }`}
             >
-              Today
+              {t('Today')}
             </button>
           </div>
         </div>

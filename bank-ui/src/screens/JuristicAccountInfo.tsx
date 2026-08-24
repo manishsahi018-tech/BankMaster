@@ -2,13 +2,22 @@ import DetailScreen from '../components/DetailScreen.tsx'
 import type { GridRow } from '../components/GridScreen.tsx'
 import { codeLabel } from '../codes.ts'
 
+import { Segmented } from '../components/legacyForm.tsx'
 // Mirrors legacy frmJuristicAccountInfo.frm ("Account Details") — page 2 of
 // the juristic profile. Enquiry subset: in history/search/supervisor modes
 // the legacy form disables every input frame, so this read-only rendering
 // matches the enquiry behavior. The create/approve/reject maintenance path
 // is out of scope.
 
-const yesNo = (v: unknown) => (v === '1' ? 'Yes' : v === '0' ? 'No' : '')
+/**
+ * The Yes/No OptionButton pairs frmJuristicAccountInfo draws. Each is a plain
+ * two-button group, and the legacy tests only for "1" — internetBankAcc,
+ * custAdviceFlag and updatedForSama all select No on "0" AND on blank
+ * (globalFunctions.bas), so neither pair is ever left clear.
+ */
+const yesNo = (v: unknown) => (
+  <Segmented options={['Yes', 'No']} selected={v === '1' ? 0 : 1} />
+)
 
 export default function JuristicAccountInfo({
   profile,
@@ -35,7 +44,7 @@ export default function JuristicAccountInfo({
   const facilityRow = (prefix: string) => [
     { label: 'Currency', value: codeLabel('currency', info[`${prefix}Currency`]) },
     { label: 'Stmt. Frequency', value: codeLabel('stmtFreq', info[`${prefix}StmtFreq`]) },
-    { label: 'Cheque Book', value: yesNo(info[`${prefix}ChequeBook`]) },
+    { label: 'Cheque Book', node: yesNo(info[`${prefix}ChequeBook`]) },
     { label: 'A/c Status', value: codeLabel('accStatus', info[`${prefix}Status`]) },
   ]
   return (
@@ -94,11 +103,22 @@ export default function JuristicAccountInfo({
           fields: [
             {
               label: 'Nature of Signature',
-              value: info.signatureNature === 'J' ? 'Joint' : info.signatureNature === 'S' ? 'Single' : '',
+              // stcusttab.signatureNature is 0-single / 1-joint, and the
+              // legacy draws it as the optSignSingle/optSignJoint pair:
+              // Single on "0" OR BLANK, Joint on anything else
+              // (globalFunctions.bas). Reading it through codeLabel left the
+              // field EMPTY whenever the column was blank, where the legacy
+              // shows Single.
+              node: (
+                <Segmented
+                  options={['Single', 'Joint']}
+                  selected={info.signatureNature === '1' ? 1 : 0}
+                />
+              ),
             },
-            { label: 'Internet Facility', value: yesNo(info.internetFlag) },
-            { label: 'Customer Advice', value: yesNo(info.customerAdvice) },
-            { label: 'Update for SAMA', value: yesNo(info.updateForSama) },
+            { label: 'Internet Facility', node: yesNo(info.internetFlag) },
+            { label: 'Customer Advice', node: yesNo(info.customerAdvice) },
+            { label: 'Update for SAMA', node: yesNo(info.updateForSama) },
           ],
         },
         {

@@ -32,6 +32,12 @@ public class CardService {
                 new NotFoundException("No record found for this card"));
     }
 
+    /** Card Update History's View Detail — the stcardlog row as a card detail. */
+    public CardDetail snapshot(String cardNo, String branchCode, String userId, String dateTime) {
+        return cards.snapshot(cardNo, branchCode, userId, dateTime).orElseThrow(() ->
+                new NotFoundException("No card record was written by that update."));
+    }
+
     public PagedResult<CardUpdateHistoryEntry> updateHistory(String cardNo, int page) {
         return PagedResult.page(cards.updateHistory(cardNo), page);
     }

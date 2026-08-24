@@ -16,9 +16,19 @@ import {
   type IdRowData,
 } from '../components/legacyForm.tsx'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmJuristicMain.frm — page 1 of the juristic customer profile,
-// field for field. The legacy variants (Diplomats / Non-Resident / Public-Corp)
-// differ by category, not layout.
+// field for field, and — through `variant` — its two siblings
+// frmJuristicDiplomats and frmJuristicNonResident.
+//
+// The three forms share 145 of their controls; each variant adds ONE
+// registration block and its own heading, which is why they are one component
+// with a variant rather than three files:
+//   diplomats    Diplomatic Card / Passport / Visa numbers with their dates
+//                (frmJuristicDiplomats: txtDiplomaticCardNo, txtPPNo, txtVisaNo)
+//   nonResident  Contract No with its dates (frmJuristicNonResident: txtContractNo)
+// Which one opens is decided by sub category, not by anything on the customer
+// record itself — see screenSet.ts.
 //
 // Differs from the individual forms: four registration rows (C.R. / Licence /
 // SAMA Auth / Approver) of which only C.R. carries an issued-at; a company-name
@@ -33,20 +43,29 @@ import {
 // write path and out of scope. Flip to false to restore it.
 const ENQUIRY_ONLY = true
 
+/** The three juristic forms, keyed as screenSet.ts names them. */
+export type JuristicVariant = 'main' | 'diplomats' | 'nonResident'
+
+const HEADINGS: Record<JuristicVariant, { kicker: string; title: string }> = {
+  main: { kicker: 'Juristic Customer', title: 'Customer Profile' },
+  diplomats: { kicker: 'Juristic — Diplomatic', title: 'Resident Juristic Customer' },
+  nonResident: { kicker: 'Juristic — Non-Resident', title: 'Non-Resident Juristic Customer' },
+}
+
 export default function JuristicMain({
   profile,
+  variant = 'main',
   historyAsOf,
   onAccounts,
   onOwners,
-  onReferences,
   onNextPage,
   onBack,
 }: {
   profile: GridRow
+  variant?: JuristicVariant
   historyAsOf?: string
   onAccounts: () => void
   onOwners: () => void
-  onReferences: () => void
   onNextPage: () => void
   onBack: () => void
 }) {
@@ -63,16 +82,29 @@ export default function JuristicMain({
   }
   const appRow: IdRowData = byType('A') ?? { idNo: profile.approvalRefNo }
   // Only the C.R. row has an issued-at, so it renders as its own table.
+  // cbjuristic.c:3097-3168 keys every registration document by idType:
+  // C commercial registration, L licence, S SAMA authority, P passport,
+  // D diplomatic card, V visa, T contract, A approval reference.
+  const variantRows =
+    variant === 'diplomats'
+      ? [
+          { label: 'Diplomatic Card No', row: byType('D') ?? { idNo: profile.diplomaticCardNo } },
+          { label: 'PP Number', row: byType('P') ?? { idNo: profile.passportNo } },
+          { label: 'Visa Number', row: byType('V') ?? { idNo: profile.visaNo } },
+        ]
+      : variant === 'nonResident'
+        ? [{ label: 'Contract No', row: byType('T') ?? { idNo: profile.contractNo } }]
+        : []
   const otherRows = [
     { label: 'License No', row: byType('L') ?? { idNo: profile.licenseNo } },
     { label: 'SAMA Auth No', row: byType('S') ?? { idNo: profile.samaAuthNo } },
     { label: 'Approver No.', row: appRow },
+    ...variantRows,
   ]
 
   // Date of Establishment reuses the DOB columns — cbjuristic.c:3212-3214
   const doeHijri = isFirst(profile.dobDateType)
   const poBoxMode = String(profile.addressType ?? '').trim() !== '1'
-  const addr1 = String(profile.address1 ?? '')
   const zip = String(profile.zipCode ?? '')
 
   return (
@@ -80,15 +112,17 @@ export default function JuristicMain({
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">
-            Juristic Customer
+            {HEADINGS[variant].kicker}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">Customer Profile</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
+            {HEADINGS[variant].title}
+          </h1>
           <p className="mt-1 text-sm text-muted">
-            Page 1 of 2 — registration, company and contact information.
+            {t('Page 1 of 2 — registration, company and contact information.')}
           </p>
         </div>
         <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
-          Customer {profile.custNo}
+          {t('Customer {custNo}', { custNo: profile.custNo })}
         </span>
       </div>
 
@@ -146,16 +180,16 @@ export default function JuristicMain({
               <span />
               {['First Name', '2nd Name', 'Short Name'].map((h) => (
                 <span key={h} className="text-xs font-semibold uppercase tracking-wide text-muted-soft">
-                  {h}
+                  {t(h)}
                 </span>
               ))}
 
-              <span className="self-center text-sm font-medium text-ink-soft">Arabic</span>
-              <RoText value={profile.aOrgName1} dir="rtl" className="text-right" />
-              <RoText value={profile.aOrgName2} dir="rtl" className="text-right" />
-              <RoText value={profile.aOrgShortName} dir="rtl" className="text-right" />
+              <span className="self-center text-sm font-medium text-ink-soft">{t('Arabic')}</span>
+              <RoText value={profile.aOrgName1} dir="rtl" className="text-start" />
+              <RoText value={profile.aOrgName2} dir="rtl" className="text-start" />
+              <RoText value={profile.aOrgShortName} dir="rtl" className="text-start" />
 
-              <span className="self-center text-sm font-medium text-ink-soft">English</span>
+              <span className="self-center text-sm font-medium text-ink-soft">{t('English')}</span>
               <RoText value={profile.eOrgName1} />
               <RoText value={profile.eOrgName2} />
               <RoText value={profile.eOrgShortName} />
@@ -196,10 +230,10 @@ export default function JuristicMain({
           </div>
         </SectionCard>
 
-        <SectionCard title="Address &amp; Contact">
+        <SectionCard title="Address & Contact">
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Address Type">
-              <Segmented options={['PO Box', 'GPS']} selected={poBoxMode ? 0 : 1} />
+              <Segmented options={['P.O. Box', 'Saudi Post']} selected={poBoxMode ? 0 : 1} />
             </Field>
             {poBoxMode ? (
               <>
@@ -212,11 +246,18 @@ export default function JuristicMain({
               </>
             ) : (
               <>
+                {/* stcusttab carries gprsNo (8) and unitNo (5) as their own
+                    columns, both "Added for Saudi postal address". These used
+                    to be sliced out of address1 — a packing the schema never
+                    describes, which showed the first five characters of the
+                    street as a GPS number and never showed gprsNo at all.
+                    JointHolderDetail reads the columns directly; so does this
+                    now. */}
                 <Field label="GPS Number">
-                  <RoText value={addr1.slice(0, 5)} />
+                  <RoText value={profile.gprsNo} className="tabular-nums" />
                 </Field>
                 <Field label="Street / Area Name">
-                  <RoText value={addr1.slice(6)} />
+                  <RoText value={profile.address1} />
                 </Field>
               </>
             )}
@@ -224,7 +265,7 @@ export default function JuristicMain({
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label={poBoxMode ? 'P.O. Box' : 'Unit'}>
-              <RoText value={profile.poBox} />
+              <RoText value={poBoxMode ? profile.poBox : profile.unitNo} />
             </Field>
             <Field label="City">
               <RoCombo value={profile.cityName} />
@@ -297,27 +338,29 @@ export default function JuristicMain({
 
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
           <button type="button" onClick={onAccounts} className={btnKinds.secondary}>
-            Account
+            {t('Account')}
           </button>
           <button type="button" onClick={onOwners} className={btnKinds.secondary}>
-            Owner / Management
+            {t('Owner / Management')}
           </button>
-          <button type="button" onClick={onReferences} className={btnKinds.secondary}>
-            References
-          </button>
+          {/* No References here. The juristic forms have no related-party page:
+              all three cmdNextPage_Click handlers go straight to
+              frmJuristicAccountInfo (frmJuristicMain.frm:3520 and the same in
+              Diplomats / NonResident), and stcreftab is only ever read for the
+              two individual sub categories. */}
           {!ENQUIRY_ONLY && (
             <button
               type="button"
               disabled
-              title="Available during supervisor approval only"
+              title={t('Available during supervisor approval only')}
               className={btnKinds.disabled}
             >
-              Supervisor Comments
+              {t('Supervisor Comments')}
             </button>
           )}
           <NextPageButton onClick={onNextPage} />
           <button type="button" onClick={onBack} className={btnKinds.danger}>
-            Cancel
+            {t('Cancel')}
           </button>
         </div>
       </div>

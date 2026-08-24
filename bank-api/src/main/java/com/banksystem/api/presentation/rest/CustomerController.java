@@ -5,10 +5,14 @@ import com.banksystem.api.domain.model.CustUpdateHistoryEntry;
 import com.banksystem.api.domain.model.CustomerProfile;
 import com.banksystem.api.domain.model.CustomerSearchCriteria;
 import com.banksystem.api.domain.model.CustomerSummary;
+import com.banksystem.api.domain.model.EssentialDocuments;
 import com.banksystem.api.domain.model.HeirEntry;
+import com.banksystem.api.domain.model.JointHolderDetail;
 import com.banksystem.api.domain.model.JointHolderEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
+import com.banksystem.api.domain.model.OwnerDetail;
 import com.banksystem.api.domain.model.OwnerEntry;
+import com.banksystem.api.domain.model.PartyDetail;
 import com.banksystem.api.domain.model.PagedResult;
 import com.banksystem.api.domain.model.ReferenceEntry;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -91,14 +95,48 @@ public class CustomerController {
         return customers.owners(custNo, page);
     }
 
+    /** The owner form's detail panel — frmJuristicOwner's grid double-click. */
+    @GetMapping("/{custNo}/owners/{ownerNo}")
+    public OwnerDetail ownerDetail(@PathVariable String custNo, @PathVariable String ownerNo) {
+        return customers.ownerDetail(custNo, ownerNo);
+    }
+
+    /** frmIndividualSaudi2's grid double-click. */
+    @GetMapping("/{custNo}/references/{referenceNo}")
+    public PartyDetail referenceDetail(
+            @PathVariable String custNo, @PathVariable String referenceNo) {
+        return customers.referenceDetail(custNo, referenceNo);
+    }
+
+    /** frmIndividualHeirs' grid double-click. */
+    @GetMapping("/{custNo}/heirs/{heirNo}")
+    public PartyDetail heirDetail(@PathVariable String custNo, @PathVariable String heirNo) {
+        return customers.heirDetail(custNo, heirNo);
+    }
+
+    /** frmIndividualJoint's grid double-click. */
+    @GetMapping("/{custNo}/joint-holders/{jointCustNo}")
+    public JointHolderDetail jointHolderDetail(
+            @PathVariable String custNo, @PathVariable String jointCustNo) {
+        return customers.jointHolderDetail(custNo, jointCustNo);
+    }
+
     @GetMapping("/{custNo}/acct-info")
     public java.util.Map<String, String> acctInfo(@PathVariable String custNo) {
         return customers.acctInfo(custNo);
     }
 
+    /** frmDocuments for the live customer record. */
     @GetMapping("/{custNo}/documents")
-    public java.util.List<String> requiredDocuments(@PathVariable String custNo) {
-        return customers.requiredDocuments(custNo);
+    public EssentialDocuments documents(@PathVariable String custNo) {
+        return customers.documents(custNo, null);
+    }
+
+    /** frmDocuments as it stood at one stcustlog event (legacy history mode). */
+    @GetMapping("/{custNo}/documents-asof/{dateTime}")
+    public EssentialDocuments documentsAsOf(
+            @PathVariable String custNo, @PathVariable String dateTime) {
+        return customers.documents(custNo, dateTime);
     }
 
     @GetMapping("/{custNo}/update-history")

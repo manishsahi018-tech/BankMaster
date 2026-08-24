@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.banksystem.api.application.NotAvailableException;
 import com.banksystem.api.domain.model.OnlineStatementPage;
+import com.banksystem.api.infrastructure.language.RequestLanguage;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -42,7 +43,11 @@ class OnlineEnquirySqlTest {
     /** Fixed by bank.archival-db.banking-date in a real run; stubbed here so the
      *  BankingDate predicate every query carries has a value to bind. */
     private final BankingDateProvider bankingDate = mock(BankingDateProvider.class);
-    private final JdbcOnlineEnquiryRepository repo = new JdbcOnlineEnquiryRepository(jdbc, bankingDate);
+    /** No locale is bound off a request, so this answers ENGLISH — which is
+     *  the branch-name column the assertions below expect. */
+    private final RequestLanguage requestLanguage = new RequestLanguage();
+    private final JdbcOnlineEnquiryRepository repo =
+            new JdbcOnlineEnquiryRepository(jdbc, bankingDate, requestLanguage);
 
     /** Every statement the repository issued, in order. */
     private final List<String> issued = new ArrayList<>();

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useT } from '../i18n/index.ts'
 
 // Shared primitives for the customer profile screens rebuilt from the legacy
 // VB6 forms (frmIndividualSaudi, frmIndividualOthers, frmJuristicMain).
@@ -24,8 +25,28 @@ export const isFirst = (code: unknown) => {
 export const labelCls = 'mb-1.5 block text-sm font-medium text-ink-soft'
 
 const boxBase =
-  'block w-full rounded-lg border border-edge-strong bg-surface px-3 py-2 text-sm text-ink ' +
+  'block rounded-lg border border-edge-strong bg-surface px-3 py-2 text-sm text-ink ' +
   'shadow-xs whitespace-pre-wrap break-words min-h-[2.375rem]'
+
+/**
+ * The box's own width, unless the caller set one.
+ *
+ * <p>`w-full` used to live in boxBase, which quietly beat every width a caller
+ * passed: Tailwind emits `.w-full` AFTER `.w-16` in the stylesheet, and for two
+ * utilities in the same layer the LATER rule wins no matter which order they
+ * appear in the class attribute. So `<RoText className="w-16" />` rendered
+ * full-width, and every phone/fax/mobile row came out as equal-width boxes
+ * instead of the legacy's narrow area code beside a wide number
+ * (frmIndividualOthers2.frm: area 375 twips vs number 1215).
+ *
+ * <p>Handing the caller's width priority by dropping the default is the fix
+ * that needs no `!important` and leaves all the boxes that pass no width
+ * exactly as they were. A pinned width also pins the flex basis — these boxes
+ * sit in `flex` rows, where the default `shrink` would let a long number squeeze
+ * the area code back down to nothing.
+ */
+const widthCls = (className: string) =>
+  /(^|\s)w-(?!full(\s|$))\S+/.test(className) ? 'shrink-0' : 'w-full'
 
 /**
  * A read-only value box styled like the form's text input.
@@ -51,7 +72,9 @@ export function RoText({
     <div
       dir={dir ?? 'auto'}
       title={text || undefined}
-      className={`${boxBase} ${muted ? 'border-edge bg-surface-muted text-muted' : ''} ${className}`}
+      className={`${boxBase} ${widthCls(className)} ${
+        muted ? 'border-edge bg-surface-muted text-muted' : ''
+      } ${className}`}
     >
       {text || ' '}
     </div>
@@ -71,14 +94,14 @@ export function RoCombo({
   const text = value == null ? '' : String(value)
   return (
     <div className={`relative ${className}`}>
-      <div dir={dir ?? 'auto'} title={text || undefined} className={`${boxBase} pr-9`}>
+      <div dir={dir ?? 'auto'} title={text || undefined} className={`${boxBase} w-full pe-9`}>
         {text || ' '}
       </div>
       <svg
         viewBox="0 0 20 20"
         fill="currentColor"
         aria-hidden
-        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft"
+        className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft"
       >
         <path
           fillRule="evenodd"
@@ -99,9 +122,10 @@ export function Field({
   children: ReactNode
   className?: string
 }) {
+  const { t } = useT()
   return (
     <div className={className}>
-      <span className={labelCls}>{label}</span>
+      <span className={labelCls}>{t(label)}</span>
       {children}
     </div>
   )
@@ -109,6 +133,7 @@ export function Field({
 
 /** Segmented choice, showing the stored option. Read-only: the legacy greys these. */
 export function Segmented({ options, selected }: { options: readonly string[]; selected: number }) {
+  const { t } = useT()
   return (
     <div className="inline-flex rounded-lg border border-edge-strong bg-surface p-0.5 shadow-xs">
       {options.map((opt, i) => (
@@ -118,7 +143,7 @@ export function Segmented({ options, selected }: { options: readonly string[]; s
             i === selected ? 'bg-primary text-white shadow-sm' : 'text-muted'
           }`}
         >
-          {opt}
+          {t(opt)}
         </span>
       ))}
     </div>
@@ -148,30 +173,45 @@ export function DateTriple({ value }: { value: unknown }) {
   )
 }
 
-/** Pill chips for the six special-status flags. */
-export function StatusChips({ flags }: { flags: { label: string; on: boolean }[] }) {
+/**
+ * A row of read-only CHECK-BOXES — the legacy's packed flag groups (special
+ * status on frmIndividualSaudi, ownership on the page-2 forms).
+ *
+ * Square boxes with a tick, not pills with a round check: the source control is
+ * a VB6 check-box group, and a round mark in a pill reads as a RADIO — i.e. as
+ * "pick one" where the form means "tick any". Unticked boxes stay visible, so
+ * the group shows what was NOT selected, which is half of what a flag row says.
+ */
+export function CheckBoxGroup({ flags }: { flags: { label: string; on: boolean }[] }) {
+  const { t } = useT()
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-x-6 gap-y-2.5">
       {flags.map(({ label, on }) => (
         <span
           key={label}
-          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium ${
-            on ? 'border-primary bg-primary-soft text-primary-ink' : 'border-edge-strong bg-surface text-muted'
+          className={`inline-flex items-center gap-2 text-sm ${
+            on ? 'font-medium text-ink' : 'text-muted'
           }`}
         >
           <span
             aria-hidden
-            className={`flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
+            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border ${
               on ? 'border-primary bg-primary' : 'border-edge-strong bg-surface'
             }`}
           >
             {on && (
-              <svg viewBox="0 0 12 12" fill="none" stroke="white" strokeWidth="2.5" className="h-2.5 w-2.5">
+              <svg
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="white"
+                strokeWidth="2.5"
+                className="h-2.5 w-2.5"
+              >
                 <path d="M2.5 6.5 5 9l4.5-5.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             )}
           </span>
-          {label}
+          {t(label)}
         </span>
       ))}
     </div>
@@ -213,6 +253,7 @@ export function DocTable({
   showIssuedAt?: boolean
   extraHeader?: string
 }) {
+  const { t } = useT()
   const heads = [
     'Document',
     'Number',
@@ -226,13 +267,13 @@ export function DocTable({
     <div className="overflow-x-auto">
       <table className="w-full min-w-[860px] border-collapse text-sm">
         <thead>
-          <tr className="border-b border-edge text-left">
+          <tr className="border-b border-edge text-start">
             {heads.map((h) => (
               <th
                 key={h}
                 className="whitespace-nowrap px-2 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted"
               >
-                {h}
+                {t(h)}
               </th>
             ))}
           </tr>
@@ -242,7 +283,7 @@ export function DocTable({
             const hijri = isFirst(row.idDateType)
             return (
               <tr key={label} className="border-b border-edge-soft last:border-b-0">
-                <td className="whitespace-nowrap px-2 py-2.5 font-medium text-ink-soft">{label}</td>
+                <td className="whitespace-nowrap px-2 py-2.5 font-medium text-ink-soft">{t(label)}</td>
                 <td className="px-2 py-2.5">
                   <RoText value={row.idNo} className="w-40" />
                 </td>
@@ -288,13 +329,14 @@ const fmt = (v: unknown) => {
 
 /** The two read-only audit cards at the foot of every customer form. */
 export function AuditCards({ audit, openDateFallback }: { audit: AuditInfo; openDateFallback?: unknown }) {
+  const { t } = useT()
   const card = (title: string, cells: { label: string; value: unknown }[]) => (
     <div className="rounded-xl border border-edge bg-surface-muted p-4">
-      <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-soft">{title}</p>
+      <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-soft">{t(title)}</p>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
         {cells.map(({ label, value }) => (
           <div key={label}>
-            <p className="text-xs text-muted-soft">{label}</p>
+            <p className="text-xs text-muted-soft">{t(label)}</p>
             <p className="mt-0.5 text-sm font-medium text-ink-soft">{String(value ?? '') || '—'}</p>
           </div>
         ))}
@@ -328,16 +370,155 @@ export const btnKinds = {
     'rounded-lg border border-edge bg-surface-muted px-4 py-2.5 text-sm font-medium text-muted-soft shadow-xs cursor-not-allowed',
 }
 
-/** The primary forward action, with the design's trailing arrow. */
-export function NextPageButton({ onClick }: { onClick: () => void }) {
+/** One row of a legacy history grid: Date | Time | Action | User Id. */
+export interface HistoryEvent {
+  date: unknown
+  time: unknown
+  action: string
+  user: unknown
+}
+
+/** HHMMSS as the legacy's formatTime renders it. */
+export const formatHhmmss = (v: unknown) => {
+  const s = String(v ?? '').trim()
+  return /^\d{6}$/.test(s) ? `${s.slice(0, 2)}:${s.slice(2, 4)}:${s.slice(4, 6)}` : s
+}
+
+/**
+ * The event grid both history forms are built from — frmCardHistory's two and
+ * frmChequeBookHistory's one. Four columns, one row per lifecycle event, in the
+ * order the record produced them.
+ *
+ * Shared because the two forms fill their grids the same way and with an
+ * overlapping vocabulary (Produced, Received By Branch, Issued to customer),
+ * and because the port had drifted into showing each as labelled sections
+ * instead — which reads fine for one record and hides every other.
+ */
+export function EventGrid({
+  rows,
+  dateFormat,
+}: {
+  rows: HistoryEvent[]
+  /** how a raw archival date is rendered — the caller's schema helper */
+  dateFormat: (v: unknown) => string
+}) {
+  const { t } = useT()
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[26rem] border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-edge bg-surface-muted text-start">
+            {['Date', 'Time', 'Action', 'User Id'].map((h) => (
+              <th
+                key={h}
+                className="whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted"
+              >
+                {t(h)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={4} className="px-3 py-8 text-center text-muted-soft">
+                {t('No records.')}
+              </td>
+            </tr>
+          )}
+          {rows.map((r, i) => (
+            <tr
+              key={i}
+              className="border-b border-edge-soft last:border-b-0 odd:bg-surface even:bg-surface-muted/40"
+            >
+              <td className="whitespace-nowrap px-3 py-2 tabular-nums text-ink-soft">
+                {dateFormat(r.date)}
+              </td>
+              <td className="whitespace-nowrap px-3 py-2 tabular-nums text-ink-soft">
+                {formatHhmmss(r.time)}
+              </td>
+              {/* The action is a lifecycle caption the caller picked from a
+                  fixed vocabulary (Produced, Received By Branch, …), so it goes
+                  through the dictionary like any other label. */}
+              <td className="px-3 py-2 font-medium text-ink">{t(r.action)}</td>
+              <td className="whitespace-nowrap px-3 py-2 text-ink-soft">{String(r.user ?? '')}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/**
+ * The leading arrow on every backward action — Previous Page on the profile
+ * forms, Return on the detail and history screens.
+ *
+ * One definition, and it is the FORWARD chevron rotated, so the back and next
+ * arrows can never drift out of step with each other.
+ */
+export function BackArrow() {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden className="h-4 w-4 rotate-180 rtl:rotate-0">
+      <path
+        fillRule="evenodd"
+        d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z"
+        clipRule="evenodd"
+      />
+    </svg>
+  )
+}
+
+/**
+ * The magnifier on every "Enquiry" action — the button that opens the selected
+ * row's detail. Same path the search screen's own Enquiry button carried
+ * inline; promoted here so the grids and that button cannot drift apart.
+ */
+export function SearchIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden className="h-4 w-4">
+      <path
+        fillRule="evenodd"
+        d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z"
+        clipRule="evenodd"
+      />
+    </svg>
+  )
+}
+
+/**
+ * The primary BACKWARD action, paired with {@link NextPageButton}.
+ *
+ * Same weight as Next Page rather than a quiet secondary: on the legacy forms
+ * the two page buttons sit side by side as equals — a multi-page profile is
+ * walked in both directions, and on the last page Previous is the only way on.
+ * The arrow is the Next chevron rotated, so the pair can never drift apart.
+ */
+export function PrevPageButton({ onClick }: { onClick: () => void }) {
+  const { t } = useT()
   return (
     <button
       type="button"
       onClick={onClick}
-      className="ml-auto inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
     >
-      Next Page
-      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden className="h-4 w-4">
+      <BackArrow />
+      {t('Previous Page')}
+    </button>
+  )
+}
+
+/** The primary forward action, with the design's trailing arrow. */
+export function NextPageButton({ onClick }: { onClick: () => void }) {
+  const { t } = useT()
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="ms-auto inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+    >
+      {t('Next Page')}
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden className="h-4 w-4 rtl:-scale-x-100">
         <path
           fillRule="evenodd"
           d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z"

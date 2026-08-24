@@ -9,6 +9,7 @@ import TransactionDetail from './TransactionDetail.tsx'
 import { api } from '../api.ts'
 import { amountValue, formatAmount, formatDate, todayYyyymmdd } from '../schema/helpers.ts'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmTransEnq.frm ("Transaction Enquiry using specific type",
 // the frmAccount cmdTransEnq button) over thd0data — QUERY-SPECS §18, server
 // service 85 (cbswift.c processBmTransEnq). Self-fetching: the date range and
@@ -129,7 +130,7 @@ export default function TransactionEnquiry({
             disabled={fetching}
             className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong disabled:cursor-not-allowed disabled:bg-faint"
           >
-            {fetching ? 'Fetching…' : 'Fetch Transactions'}
+            {fetching ? t('Fetching…') : t('Fetch Transactions')}
           </button>
         </div>
         {rows !== null && rows.length > 0 && (
@@ -138,7 +139,7 @@ export default function TransactionEnquiry({
               {rows.length} transaction{rows.length === 1 ? '' : 's'}
             </span>
             <span className="text-ink-soft">
-              Total <span className="ml-2 font-semibold tabular-nums text-ink">{formatAmount(total)}</span>
+              {t('Total')} <span className="ms-2 font-semibold tabular-nums text-ink">{formatAmount(total)}</span>
             </span>
           </div>
         )}
@@ -199,7 +200,7 @@ export default function TransactionEnquiry({
               <tr>
                 {COLUMNS.map((c) => (
                   <th key={c.key} className={c.align === 'right' ? 'right' : undefined}>
-                    {c.label}
+                    {t(c.label)}
                   </th>
                 ))}
               </tr>
@@ -217,7 +218,7 @@ export default function TransactionEnquiry({
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={COLUMNS.findIndex((c) => c.key === 'transAmt')}>Total</td>
+                <td colSpan={COLUMNS.findIndex((c) => c.key === 'transAmt')}>{t('Total')}</td>
                 <td className="right">{formatAmount(total)}</td>
                 <td colSpan={COLUMNS.length - COLUMNS.findIndex((c) => c.key === 'transAmt') - 1} />
               </tr>

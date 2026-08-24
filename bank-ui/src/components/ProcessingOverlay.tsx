@@ -4,6 +4,7 @@
 // (the sticky header's backdrop-blur would otherwise clip a nested overlay).
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useT } from '../i18n/index.ts'
 
 export default function ProcessingOverlay({
   show,
@@ -12,6 +13,7 @@ export default function ProcessingOverlay({
   show: boolean
   label?: string
 }) {
+  const { t } = useT()
   // Fade + scale the card in on mount for a softer, less jarring appearance.
   const [mounted, setMounted] = useState(false)
   useEffect(() => {
@@ -56,8 +58,8 @@ export default function ProcessingOverlay({
         </span>
 
         <div className="text-center">
-          <p className="text-sm font-semibold text-ink">{label}</p>
-          <p className="mt-1 text-xs text-muted">Please wait a moment…</p>
+          <p className="text-sm font-semibold text-ink">{t(label)}</p>
+          <p className="mt-1 text-xs text-muted">{t('Please wait a moment…')}</p>
         </div>
       </div>
     </div>,

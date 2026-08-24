@@ -1,4 +1,12 @@
 import type { ComponentProps, ReactNode } from 'react'
+import { useT } from '../i18n/index.ts'
+
+// Labels, placeholders and section headings are translated HERE rather than by
+// the screens that use these primitives — the same rule GridScreen follows, so
+// a screen's config stays in English and English stays the dictionary key.
+// Nothing else is: option lists are reference-data descriptions that arrive
+// from /api/codes already in the operator's language, and running them through
+// t() would look up a customer's own data in a UI dictionary.
 
 export function Field({
   label,
@@ -11,10 +19,11 @@ export function Field({
   children: ReactNode
   className?: string
 }) {
+  const { t } = useT()
   return (
     <div className={className}>
       <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-medium text-ink-soft">
-        {label}
+        {t(label)}
       </label>
       {children}
     </div>
@@ -47,13 +56,14 @@ export function Select({
   options = [],
   ...props
 }: ComponentProps<'select'> & { placeholder?: string; options?: string[] }) {
+  const { t } = useT()
   return (
     <div className="relative">
       {/* All callers control the select via `value`; the empty-string option
           renders the placeholder while nothing is chosen. */}
-      <select className={`${inputBase} appearance-none pr-9 ${className}`} {...props}>
+      <select className={`${inputBase} appearance-none pe-9 ${className}`} {...props}>
         <option value="" disabled>
-          {placeholder ?? 'Select…'}
+          {placeholder ? t(placeholder) : t('Select…')}
         </option>
         {options.map((opt) => (
           <option key={opt} value={opt}>
@@ -64,7 +74,7 @@ export function Select({
       <svg
         viewBox="0 0 20 20"
         fill="currentColor"
-        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft"
+        className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft"
       >
         <path
           fillRule="evenodd"
@@ -85,13 +95,14 @@ export function SectionCard({
   description?: string
   children: ReactNode
 }) {
+  const { t } = useT()
   return (
     <section className="rounded-2xl border border-edge bg-surface p-5 shadow-sm sm:p-6">
       <div className="mb-5 flex gap-2.5">
         <span aria-hidden className="mt-0.5 h-4 w-1 shrink-0 rounded-full bg-primary" />
         <div>
-          <h2 className="text-sm font-semibold text-ink">{title}</h2>
-          {description && <p className="mt-0.5 text-xs text-muted">{description}</p>}
+          <h2 className="text-sm font-semibold text-ink">{t(title)}</h2>
+          {description && <p className="mt-0.5 text-xs text-muted">{t(description)}</p>}
         </div>
       </div>
       {children}

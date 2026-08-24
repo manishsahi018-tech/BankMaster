@@ -16,6 +16,7 @@ import {
   type IdRowData,
 } from '../components/legacyForm.tsx'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmIndividualOthers.frm — page 1 of the customer profile for
 // non-Saudi individuals, field for field.
 //
@@ -39,7 +40,6 @@ export default function IndividualOthers({
   onNextPage,
   onHeirs,
   onReferences,
-  onJointHolders,
   onBack,
 }: {
   profile: GridRow
@@ -47,9 +47,10 @@ export default function IndividualOthers({
   onAccounts: () => void
   onCards?: () => void
   onNextPage?: () => void
-  onHeirs: () => void
-  onReferences: () => void
-  onJointHolders: () => void
+  /** Never present on this family — see partyPanelsFor in screenSet.ts. */
+  onHeirs?: () => void
+  /** Present only for sub category 63 — see partyPanelsFor in screenSet.ts. */
+  onReferences?: () => void
   onBack: () => void
 }) {
   // cbothers.c:2992-3060 buckets stidtab idCategory='C' by idType:
@@ -89,7 +90,6 @@ export default function IndividualOthers({
 
   // Saudi Post packs its parts into address1/zipCode; char 6 is a separator the
   // legacy discards (fillFrmIndividualOthers in globalFunctions.bas).
-  const addr1 = String(profile.address1 ?? '')
   const zip = String(profile.zipCode ?? '')
 
   return (
@@ -97,15 +97,15 @@ export default function IndividualOthers({
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">
-            Individual — Other Nationality
+            {t('Individual — Other Nationality')}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">Customer Profile</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{t('Customer Profile')}</h1>
           <p className="mt-1 text-sm text-muted">
-            Page 1 of 2 — identity, personal and contact information.
+            {t('Page 1 of 3 — identity, personal and contact information.')}
           </p>
         </div>
         <span className="rounded-full bg-primary-soft px-3 py-1.5 text-sm font-semibold text-primary-ink">
-          Customer {profile.custNo}
+          {t('Customer {custNo}', { custNo: profile.custNo })}
         </span>
       </div>
 
@@ -161,18 +161,18 @@ export default function IndividualOthers({
               <span />
               {['First Name', '2nd Name', '3rd Name', 'Last Name', 'Short Name'].map((h) => (
                 <span key={h} className="text-xs font-semibold uppercase tracking-wide text-muted-soft">
-                  {h}
+                  {t(h)}
                 </span>
               ))}
 
-              <span className="self-center text-sm font-medium text-ink-soft">Arabic</span>
-              <RoText value={profile.aFirstName} dir="rtl" className="text-right" />
-              <RoText value={profile.a2ndName} dir="rtl" className="text-right" />
-              <RoText value={profile.a3rdName} dir="rtl" className="text-right" />
-              <RoText value={profile.aLastName} dir="rtl" className="text-right" />
-              <RoText value={profile.aShortName} dir="rtl" className="text-right" />
+              <span className="self-center text-sm font-medium text-ink-soft">{t('Arabic')}</span>
+              <RoText value={profile.aFirstName} dir="rtl" className="text-start" />
+              <RoText value={profile.a2ndName} dir="rtl" className="text-start" />
+              <RoText value={profile.a3rdName} dir="rtl" className="text-start" />
+              <RoText value={profile.aLastName} dir="rtl" className="text-start" />
+              <RoText value={profile.aShortName} dir="rtl" className="text-start" />
 
-              <span className="self-center text-sm font-medium text-ink-soft">English</span>
+              <span className="self-center text-sm font-medium text-ink-soft">{t('English')}</span>
               <RoText value={profile.eFirstName} />
               <RoText value={profile.e2ndName} />
               <RoText value={profile.e3rdName} />
@@ -209,10 +209,10 @@ export default function IndividualOthers({
           </div>
         </SectionCard>
 
-        <SectionCard title="Address &amp; Contact">
+        <SectionCard title="Address & Contact">
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Address Type">
-              <Segmented options={['PO Box', 'Saudi Post']} selected={poBoxMode ? 0 : 1} />
+              <Segmented options={['P.O. Box', 'Saudi Post']} selected={poBoxMode ? 0 : 1} />
             </Field>
             {poBoxMode ? (
               <>
@@ -225,11 +225,18 @@ export default function IndividualOthers({
               </>
             ) : (
               <>
+                {/* stcusttab carries gprsNo (8) and unitNo (5) as their own
+                    columns, both "Added for Saudi postal address". These used
+                    to be sliced out of address1 — a packing the schema never
+                    describes, which showed the first five characters of the
+                    street as a GPS number and never showed gprsNo at all.
+                    JointHolderDetail reads the columns directly; so does this
+                    now. */}
                 <Field label="GPS Number">
-                  <RoText value={addr1.slice(0, 5)} />
+                  <RoText value={profile.gprsNo} className="tabular-nums" />
                 </Field>
                 <Field label="Street Name">
-                  <RoText value={addr1.slice(6)} />
+                  <RoText value={profile.address1} />
                 </Field>
               </>
             )}
@@ -237,7 +244,7 @@ export default function IndividualOthers({
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label={poBoxMode ? 'P.O. Box' : 'Unit'}>
-              <RoText value={profile.poBox} />
+              <RoText value={poBoxMode ? profile.poBox : profile.unitNo} />
             </Field>
             <Field label="City">
               <RoCombo value={profile.cityName} />
@@ -310,35 +317,45 @@ export default function IndividualOthers({
 
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
           <button type="button" onClick={onAccounts} className={btnKinds.secondary}>
-            Account
+            {t('Account')}
           </button>
           <button type="button" onClick={() => onCards?.()} className={btnKinds.secondary}>
-            ATM Card
+            {t('ATM Card')}
           </button>
-          <button type="button" onClick={onHeirs} className={btnKinds.secondary}>
-            Heirs / Proxy
-          </button>
-          <button type="button" onClick={onReferences} className={btnKinds.secondary}>
-            References
-          </button>
-          <button type="button" onClick={onJointHolders} className={btnKinds.secondary}>
-            Joint Holders
-          </button>
+          {/* Not buttons in the legacy: cmdNext sends sub category 63 to the
+              SAUDI page 2 with its reference grid and everything else straight
+              to frmIndividualOthers2 (frmIndividualOthers.frm:3828-3866). No
+              sub category on this family reaches the heirs form, so onHeirs is
+              never passed — it stays in the signature because the two profile
+              screens are called from the same place. */}
+          {onHeirs && (
+            <button type="button" onClick={onHeirs} className={btnKinds.secondary}>
+              {t('Heirs / Proxy')}
+            </button>
+          )}
+          {onReferences && (
+            <button type="button" onClick={onReferences} className={btnKinds.secondary}>
+              {t('References')}
+            </button>
+          )}
           {!ENQUIRY_ONLY && (
             <button
               type="button"
               disabled
-              title="Available during supervisor approval only"
+              title={t('Available during supervisor approval only')}
               className={btnKinds.disabled}
             >
-              Supervisor Comments
+              {t('Supervisor Comments')}
             </button>
           )}
           {/* cmdNext — frmIndividualOthers has one and so does the Saudi form;
               it was the only profile here without its page 2. */}
           <NextPageButton onClick={() => onNextPage?.()} />
-          <button type="button" onClick={onBack} className={`${btnKinds.danger} ml-auto`}>
-            Cancel
+          {/* No ms-auto here: NextPageButton already carries one, and TWO auto
+              margins in a flex row split the free space between them — which
+              left Next Page stranded mid-row instead of beside Cancel. */}
+          <button type="button" onClick={onBack} className={btnKinds.danger}>
+            {t('Cancel')}
           </button>
         </div>
       </div>

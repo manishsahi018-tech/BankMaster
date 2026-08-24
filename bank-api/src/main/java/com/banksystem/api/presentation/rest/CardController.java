@@ -39,6 +39,21 @@ public class CardController {
         return cards.detail(cardNo);
     }
 
+    /**
+     * View Detail on Card Update History — the card as one stcardlog row wrote
+     * it. The three key parts are the grid's own first columns, so they travel
+     * as query parameters beside the row's timestamp in the path, mirroring
+     * /accounts/{accNo}/snapshot/{dateTime}.
+     */
+    @GetMapping("/{cardNo}/snapshot/{dateTime}")
+    public CardDetail snapshot(
+            @PathVariable String cardNo,
+            @PathVariable String dateTime,
+            @RequestParam(defaultValue = "") String branchCode,
+            @RequestParam(defaultValue = "") String userId) {
+        return cards.snapshot(cardNo, branchCode, userId, dateTime);
+    }
+
     @GetMapping("/{cardNo}/update-history")
     public PagedResult<CardUpdateHistoryEntry> updateHistory(
             @PathVariable String cardNo,

@@ -3,17 +3,30 @@ import type { GridRow } from '../components/GridScreen.tsx'
 import type { Account, Customer } from '../types.ts'
 import { sod0data } from '../schema/index.ts'
 import { column } from '../schema/helpers.ts'
+import { codeLabel } from '../codes.ts'
 
 // Mirrors legacy frmStdOrdGrid.frm ("Standing Order Information").
 // Rows are sod0data records from the archival dictionary.
 
+// The three coded columns resolve through the same stctltab sets the detail
+// screen uses (ST / PT / PF); the grid was left showing bare codes when those
+// sets were added.
 const COLUMNS = [
   column(sod0data, 'sodNo', { label: 'S/O Number' }),
-  column(sod0data, 'paymentType'),
+  column(sod0data, 'paymentType', {
+    label: 'Pay Type',
+    render: (v) => codeLabel('paymentType', v as string) || (v as string),
+  }),
   column(sod0data, 'paymentAmt', { label: 'Payment Amount' }),
-  column(sod0data, 'payAccNo', { label: 'Pay Acc No' }),
-  column(sod0data, 'orderType'),
-  column(sod0data, 'paymentFrequency', { label: 'Payment Freq' }),
+  column(sod0data, 'payAccNo', { label: 'Payee Account' }),
+  column(sod0data, 'orderType', {
+    label: 'S/O Type',
+    render: (v) => codeLabel('orderType', v as string) || (v as string),
+  }),
+  column(sod0data, 'paymentFrequency', {
+    label: 'Pay Freq',
+    render: (v) => codeLabel('paymentFrequency', v as string) || (v as string),
+  }),
 ]
 
 // Enquiry-only build: write/teller actions are hidden. Flip to false to restore.

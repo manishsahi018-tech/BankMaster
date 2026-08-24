@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import { SectionCard, Field, ReadOnlyInput } from './fields.tsx'
+import { BackArrow, SearchIcon } from './legacyForm.tsx'
+import { useT } from '../i18n/index.ts'
 
 // Shared layout for read-only detail screens (stop cheque, standing order,
 // card, transaction, transfer, signatory details). Each legacy detail form
@@ -7,8 +9,19 @@ import { SectionCard, Field, ReadOnlyInput } from './fields.tsx'
 
 export interface DetailField {
   label: string
-  /** Plain scalars only — rendered into a read-only <input>, which cannot hold JSX. */
-  value: string | number | null | undefined
+  /** Plain scalars — rendered into a read-only <input>. */
+  value?: string | number | null
+  /**
+   * A control instead of a value box, for the fields the legacy forms draw as
+   * something other than a text box — an OptionButton pair above all.
+   *
+   * <p>Without this a radio pair had to be flattened to the word it selects,
+   * which is how frmJuristicSignatory's هـ/م and نعم/لا arrived here as plain
+   * text while the party, owner and joint-holder drill-downs — built on the
+   * legacyForm primitives — drew them as Segmented. Same layout either way;
+   * only the control changes.
+   */
+  node?: ReactNode
   /** span two grid columns (long values like names/narratives) */
   wide?: boolean
 }
@@ -28,9 +41,28 @@ export interface DetailButton {
   onClick: () => void
 }
 
+
+/**
+ * Buttons the shared renderers decorate, by label.
+ *
+ * "Return" and "Previous Page" always mean one step back, and "Enquiry" always
+ * means open the selected row — fixed vocabulary across every grid and detail
+ * screen. Attaching the icons here rather than at ~17 call sites is what keeps
+ * the eighteenth from being the one that forgets.
+ */
+const isBack = (label: string) => label === 'Return' || label === 'Previous Page'
+const isEnquiry = (label: string) => label === 'Enquiry'
+
+/**
+ * As in GridScreen, the strings a detail screen configures are translated here
+ * so `label` can stay English and keep doubling as the icon dispatch key. The
+ * section titles and field labels below go through SectionCard and Field,
+ * which translate their own props.
+ */
+
 const btnKinds = {
   primary:
-    'rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong',
+    'inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong',
   secondary:
     'rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft shadow-xs transition-colors hover:bg-surface-muted',
   danger:
@@ -54,12 +86,13 @@ export default function DetailScreen({
   sections: DetailSection[]
   buttons: DetailButton[]
 }) {
+  const { t } = useT()
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <div className="mb-6">
-        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{kicker}</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
+        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{t(kicker)}</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">{t(title)}</h1>
+        {subtitle && <p className="mt-1 text-sm text-muted">{t(subtitle)}</p>}
       </div>
 
       {banner}
@@ -68,7 +101,7 @@ export default function DetailScreen({
         <div className="mb-5 flex flex-wrap items-center gap-x-8 gap-y-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
           {chips.map(({ label, value }) => (
             <div key={label}>
-              <p className="text-xs text-muted-soft">{label}</p>
+              <p className="text-xs text-muted-soft">{t(label)}</p>
               <p dir="auto" className="mt-0.5 text-sm font-semibold text-ink">
                 {value || '—'}
               </p>
@@ -92,7 +125,9 @@ export default function DetailScreen({
                   >
                     {/* Blank columns render as an empty box rather than a dash —
                         same convention as frmAccct.frm / AccountMaintenance. */}
-                    <ReadOnlyInput id={id} dir="auto" value={f.value == null ? '' : String(f.value)} />
+                    {f.node ?? (
+                      <ReadOnlyInput id={id} dir="auto" value={f.value == null ? '' : String(f.value)} />
+                    )}
                   </Field>
                 )
               })}
@@ -106,9 +141,13 @@ export default function DetailScreen({
               key={btn.label}
               type="button"
               onClick={btn.onClick}
-              className={`${btnKinds[btn.kind ?? 'secondary']} ${btn.kind === 'danger' ? 'ml-auto' : ''}`}
+              className={`${btnKinds[btn.kind ?? 'secondary']} ${
+                btn.kind === 'danger' ? 'ms-auto' : ''
+              } ${isBack(btn.label) || isEnquiry(btn.label) ? 'inline-flex items-center gap-2' : ''}`}
             >
-              {btn.label}
+              {isBack(btn.label) && <BackArrow />}
+              {isEnquiry(btn.label) && <SearchIcon />}
+              {t(btn.label)}
             </button>
           ))}
         </div>

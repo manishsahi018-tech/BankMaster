@@ -128,12 +128,24 @@ public class MockTransferRepository implements TransferRepository {
     // SARIE transfers (rid0data)
     // ---------------------------------------------------------------------
 
-    /** ISO currency code and its rate against the riyal. */
+    /**
+     * ISO currency code and its rate against the riyal.
+     *
+     * <p>ALPHA, not the ISO numerics these fixtures used to carry. rid0data's
+     * currency columns are matched against stctltabXC.isoCurrCode, and that
+     * column holds the three-character alpha code: six legacy call sites read
+     * it and substitute the literal "SAR" when the row is missing
+     * (frmCustomer2.frm:2465-2471 and five beside it), which a numeric column
+     * could not do. Seeding numerics here made mock and reference data agree
+     * with each other while disagreeing with Denodo, so the screen read
+     * "608-Saudi Riyal" under mock and "SAR-Saudi Riyal" in production —
+     * a difference no amount of mock testing could surface.
+     */
     private static final List<String[]> CURRENCIES = List.of(
-            new String[] {"608", "1.0000000"},   // same-currency local transfer
-            new String[] {"840", "3.7500000"},   // USD
-            new String[] {"978", "4.0800000"},   // EUR
-            new String[] {"826", "4.7600000"});  // GBP
+            new String[] {"SAR", "1.0000000"},   // same-currency local transfer
+            new String[] {"USD", "3.7500000"},
+            new String[] {"EUR", "4.0800000"},
+            new String[] {"GBP", "4.7600000"});
 
     private static final List<String[]> BENEFICIARIES = List.of(
             new String[] {"AL NOOR TRADING EST", "PO BOX 9921", "JEDDAH 21423", "ARAB NATIONAL BANK"},
@@ -165,7 +177,7 @@ public class MockTransferRepository implements TransferRepository {
                     DemoData.dateBack(daysAgo),
                     DemoData.dateBack(Math.max(0, daysAgo - 1)),
                     accNo,
-                    "608", DemoData.amount((int) riyals, 0),
+                    "SAR", DemoData.amount((int) riyals, 0),
                     currency[0], milli(payThousandths),
                     // P = pending, C = completed, R = rejected
                     List.of("C", "C", "C", "P", "R").get(DemoData.pick(key, 24, 5))));
@@ -207,10 +219,18 @@ public class MockTransferRepository implements TransferRepository {
         String issue = transDate == null || transDate.isBlank() ? DemoData.dateBack(30) : transDate;
         return Optional.of(new TransferDetail(refNo, issue, issue,
                 beneficiary.accNo(0), applicant.accNo(0),
-                "608", currency[0],
+                "SAR", currency[0],
                 DemoData.amount((int) riyals, 0), milli(payThousandths),
                 applicant.shortName(), benef[0], benef[1], benef[2], benef[3],
-                "1", "0", applicant.branchCode(), applicant.shortName(),
+                // transType is rid0data.paymentStatus (0-4) and paymentType is
+                // its statusFlag (S/I/V/C/D/P/O/R/T). This passed a hardcoded
+                // "0" for the status, which is not a member of that domain, so
+                // the Status chip showed the fixture value raw instead of a
+                // description. Both are seeded off the reference now, like
+                // every other field on this record.
+                String.valueOf(1 + DemoData.pick(key, 37, 4)),
+                List.of("C", "C", "C", "P", "R").get(DemoData.pick(key, 38, 5)),
+                applicant.branchCode(), applicant.shortName(),
                 DemoData.pick(key, 35, PURPOSES), currency[1],
                 DemoData.pick(key, 36, 3) == 0 ? "PLEASE ADVISE BENEFICIARY ON CREDIT" : ""));
     }

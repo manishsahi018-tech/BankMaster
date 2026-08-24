@@ -3,6 +3,7 @@ import type { GridColumn } from '../components/GridScreen.tsx'
 import type { BlockedAmountBreakup as Breakup } from '../api.ts'
 import { amountValue, formatAmount } from '../schema/helpers.ts'
 
+import { t } from '../i18n/index.ts'
 // Mirrors legacy frmBlockedAmtBreakup.frm — five-source union of blocked
 // amounts (QUERY-SPECS §16).
 
@@ -69,17 +70,25 @@ export default function BlockedAmountBreakup({ breakup, onReturn }: { breakup: B
         <div className="mx-auto max-w-7xl px-4 pt-8 sm:px-6">
           <div className="rounded-2xl border border-warn/40 bg-warn-soft px-4 py-3 text-sm text-warn sm:px-5">
             <p className="font-semibold">
-              {gap > 0 ? 'Not every block is itemised below' : 'Listed blocks exceed the account total'}
+              {gap > 0 ? t('Not every block is itemised below') : t('Listed blocks exceed the account total')}
             </p>
             <p className="mt-0.5">
-              The total comes from the account record, the rows from the blocking tables, and they
-              disagree by{' '}
-              <span className="font-semibold tabular-nums">{formatAmount(Math.abs(gap))}</span>
-              {gap > 0 ? ' that is blocked but not listed. ' : ' more than the account total. '}
+              {/* One sentence per case, with the amount as a placeholder: the
+                  clause that differs does not fall at the end in Arabic, so a
+                  sentence spliced around the number cannot be translated. */}
+              {gap > 0
+                ? t(
+                    'The total comes from the account record, the rows from the blocking tables, and they disagree by {amount} that is blocked but not listed.',
+                    { amount: formatAmount(Math.abs(gap)) },
+                  )
+                : t(
+                    'The total comes from the account record, the rows from the blocking tables, and they disagree by {amount} more than the account total.',
+                    { amount: formatAmount(Math.abs(gap)) },
+                  )}{' '}
               {reason}
             </p>
             {breakup.truncated && missing.length > 0 && (
-              <p className="mt-0.5">The list also stops at the legacy cap of 31 rows.</p>
+              <p className="mt-0.5">{t('The list also stops at the legacy cap of 31 rows.')}</p>
             )}
           </div>
         </div>

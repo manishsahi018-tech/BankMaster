@@ -23,12 +23,14 @@ export default function HeirsProxy({
   rows,
   hasMore = false,
   onMore,
+  onEnquiry,
   onExit,
 }: {
   customer: Customer
   rows: GridRow[]
   hasMore?: boolean
   onMore?: () => void
+  onEnquiry: (row: GridRow) => void
   onExit: () => void
 }) {
   return (
@@ -46,6 +48,19 @@ export default function HeirsProxy({
       onMore={onMore}
       buttonGroups={[
         [
+          {
+            // The legacy opens this panel on a grid DOUBLE-CLICK; ported as the
+            // button this app uses for "open the selected row".
+            label: 'Enquiry',
+            kind: 'primary',
+            onClick: ({ row, notify }) => {
+              if (!row) {
+                notify('warn', 'Empty row selected — please select a heir.')
+                return
+              }
+              onEnquiry(row)
+            },
+          },
           { label: 'Exit', kind: 'danger', alignEnd: true, onClick: () => onExit() },
         ],
       ]}

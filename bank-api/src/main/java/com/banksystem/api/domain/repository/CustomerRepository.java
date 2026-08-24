@@ -2,10 +2,14 @@ package com.banksystem.api.domain.repository;
 
 import com.banksystem.api.domain.model.CustUpdateHistoryEntry;
 import com.banksystem.api.domain.model.CustomerProfile;
+import com.banksystem.api.domain.model.EssentialDocuments;
 import com.banksystem.api.domain.model.HeirEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
+import com.banksystem.api.domain.model.JointHolderDetail;
 import com.banksystem.api.domain.model.JointHolderEntry;
+import com.banksystem.api.domain.model.OwnerDetail;
 import com.banksystem.api.domain.model.OwnerEntry;
+import com.banksystem.api.domain.model.PartyDetail;
 import com.banksystem.api.domain.model.ReferenceEntry;
 import com.banksystem.api.domain.model.CustomerSearchCriteria;
 import com.banksystem.api.domain.model.CustomerSummary;
@@ -55,12 +59,33 @@ public interface CustomerRepository {
     /** stowntab rows (legacy processOwnerTabSearch, cbsama.c). */
     List<OwnerEntry> owners(String custNo);
 
+    /**
+     * One owner in full — the record frmJuristicOwner opens on a grid
+     * double-click (service 77, cbsama.c readOwnerTabInfo). Assembled from
+     * stowntab, the owner's stidtab row and its staddrtab '03'/'04' addresses.
+     */
+    Optional<OwnerDetail> ownerDetail(String custNo, String ownerNo);
+
+    /** One reference / legal representative in full — frmIndividualSaudi2's double-click. */
+    Optional<PartyDetail> referenceDetail(String custNo, String referenceNo);
+
+    /** One heir / proxy in full — frmIndividualHeirs' double-click. */
+    Optional<PartyDetail> heirDetail(String custNo, String heirNo);
+
+    /** One joint holder in full — frmIndividualJoint's double-click. */
+    Optional<JointHolderDetail> jointHolderDetail(String custNo, String jointCustNo);
+
     /** Individual page 2 (frmIndividualSaudiAcctInfo) — the customer's
      *  employment/income/segmentation/employer/memo attributes from stcusttab.
      *  Keys match the screen fields; empty map when not found. */
     java.util.Map<String, String> acctInfo(String custNo);
 
-    /** Essential documents required for the customer's SAMA sub-category
-     *  (frmDocuments) — the document codes from stctltabDC, resolved to names. */
-    List<String> requiredDocuments(String custNo);
+    /** The frmDocuments payload — the codes required for the customer's SAMA
+     *  sub-category (stctltabDC) together with the ones the customer supplied
+     *  (stcusttab.documentsSupplied / documentOther).
+     *
+     *  <p>{@code asOfDateTime} null reads the live customer record; a 14-char
+     *  BM timestamp reads the stcustlog snapshot for that event, which is what
+     *  the legacy's custHistoryAction path shows. */
+    EssentialDocuments documents(String custNo, String asOfDateTime);
 }

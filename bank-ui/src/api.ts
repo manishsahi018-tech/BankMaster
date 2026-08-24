@@ -6,11 +6,24 @@ import type { GridRow } from './components/GridScreen.tsx'
 import { getToken, setToken, signOut } from './session.ts'
 import { encryptPassword } from './pocCrypto.ts'
 import { beginRequest, endRequest } from './pending.ts'
+import { getLocale } from './i18n/locale.ts'
 
-/** Bearer header from the stored JWT (empty before login / for public calls). */
-function authHeaders(): Record<string, string> {
+import { t } from './i18n/index.ts'
+/**
+ * The headers every call carries.
+ *
+ * <p>Accept-Language is not decoration: the archival reference tables are
+ * bilingual (stctltab and its overlays each hold an arabicName and an
+ * englishName), so the API has to be told which column to read. Spring turns
+ * the header into the request's locale and RequestLanguage reads it back —
+ * see UiLanguage on the Java side.
+ */
+function commonHeaders(): Record<string, string> {
   const token = getToken()
-  return token ? { Authorization: `Bearer ${token}` } : {}
+  return {
+    'Accept-Language': getLocale(),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
 }
 
 /**
@@ -132,7 +145,14 @@ function clientReference(): string {
  * getting one flat "something went wrong".
  */
 function technicalMessage(action: string, reference: string): string {
-  return `Could not ${action}. Please try again — if it keeps happening, quote reference ${reference} to the help desk.`
+  // The frame and the action phrase are translated separately: every call site
+  // passes its own phrase ("load the cards", "open this signatory"), so a
+  // single template with the phrase as a placeholder covers all of them. The
+  // reference is a generated code and stays as it is.
+  return t('Could not {action}. Please try again — if it keeps happening, quote reference {reference} to the help desk.', {
+    action: t(action),
+    reference,
+  })
 }
 
 /** Reads a Spring ProblemDetail body, tolerating a non-JSON error page. */
@@ -233,7 +253,7 @@ async function send<T>(
 function get<T>(path: string, action: string, params?: Record<string, string>): Promise<T> {
   const entries = Object.entries(params ?? {}).filter(([, v]) => v !== '')
   const qs = entries.length ? `?${new URLSearchParams(entries)}` : ''
-  return request<T>(`${path}${qs}`, action, { headers: authHeaders() })
+  return request<T>(`${path}${qs}`, action, { headers: commonHeaders() })
 }
 
 function post<T>(path: string, action: string, body: unknown): Promise<T> {
@@ -242,7 +262,7 @@ function post<T>(path: string, action: string, body: unknown): Promise<T> {
     action,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      headers: { 'Content-Type': 'application/json', ...commonHeaders() },
       body: JSON.stringify(body),
     },
     // A failed login must not bounce through onUnauthorized — it IS the login.
@@ -325,11 +345,25 @@ export const api = {
 
   cardDetail: (cardNo: string) => get<GridRow>(`/api/cards/${cardNo}`, 'open this card'),
 
+  /** stcardlog snapshot — Card Update History's View Detail (service 25 rt '01'). */
+  cardSnapshot: (cardNo: string, dateTime: string, branchCode: string, userId: string) =>
+    get<GridRow>(`/api/cards/${cardNo}/snapshot/${dateTime}`, 'open the card as that update left it', {
+      branchCode,
+      userId,
+    }),
+
   cardUpdateHistory: (cardNo: string, page = 0) =>
     get<Paged<GridRow>>(`/api/cards/${cardNo}/update-history`, 'load the card update history', { page: String(page) }),
 
   /** Card/PIN lifecycle — completed records only, max 50. */
   cardTrackingHistory: (cardNo: string) => get<GridRow[]>(`/api/cards/${cardNo}/history`, 'load the card and PIN history'),
+
+  /** stsadadlog history — legacy frmSadadTransEnq (QUERY-SPECS §19). */
+  sadadTransactions: (params: Record<string, string>, page = 0) =>
+    get<Paged<GridRow>>('/api/sadad/transactions', 'fetch the SADAD transactions', {
+      ...params,
+      page: String(page),
+    }),
 
   sarieTransfers: (accNo: string, params: Record<string, string>, page = 0) =>
     get<Paged<GridRow>>(`/api/accounts/${accNo}/transfers`, 'fetch the transfers', { ...params, page: String(page) }),
@@ -467,13 +501,46 @@ export const api = {
   owners: (custNo: string, page = 0) =>
     get<Paged<GridRow>>(`/api/customers/${custNo}/owners`, 'load the owners and management', { page: String(page) }),
 
+  /** One owner in full — the legacy's grid double-click (service 77). */
+  ownerDetail: (custNo: string, ownerNo: string) =>
+    get<GridRow>(`/api/customers/${custNo}/owners/${ownerNo}`, 'open this owner'),
+
+  /** One reference / legal representative in full (frmIndividualSaudi2). */
+  referenceDetail: (custNo: string, referenceNo: string) =>
+    get<GridRow>(`/api/customers/${custNo}/references/${referenceNo}`, 'open this reference'),
+
+  /** One heir / proxy in full (frmIndividualHeirs). */
+  heirDetail: (custNo: string, heirNo: string) =>
+    get<GridRow>(`/api/customers/${custNo}/heirs/${heirNo}`, 'open this heir'),
+
+  /** One joint holder in full (frmIndividualJoint). */
+  jointHolderDetail: (custNo: string, jointCustNo: string) =>
+    get<GridRow>(`/api/customers/${custNo}/joint-holders/${jointCustNo}`, 'open this joint holder'),
+
   /** Individual page-2 attributes (stcusttab) for the Account Details screen. */
   customerAcctInfo: (custNo: string) =>
     get<Record<string, string>>(`/api/customers/${custNo}/acct-info`, 'load the account information page'),
 
-  /** Required document codes for the customer's SAMA sub-category (stctltabDC). */
-  requiredDocuments: (custNo: string) =>
-    get<string[]>(`/api/customers/${custNo}/documents`, 'load the required documents'),
+  /** frmDocuments — required (stctltabDC) + supplied (stcusttab) document codes. */
+  documents: (custNo: string) =>
+    get<EssentialDocumentsPayload>(`/api/customers/${custNo}/documents`, 'load the essential documents'),
+
+  /** The same, as it stood at one stcustlog event (legacy history mode). */
+  documentsAsOf: (custNo: string, dateTime: string) =>
+    get<EssentialDocumentsPayload>(
+      `/api/customers/${custNo}/documents-asof/${dateTime}`,
+      'load the essential documents as they were on that date',
+    ),
+}
+
+/** frmDocuments payload — see EssentialDocuments.java. */
+export interface EssentialDocumentsPayload {
+  /** Codes the customer's SAMA sub-category requires (stctltabDC). */
+  required: string[]
+  /** Codes the customer supplied (stcusttab/stcustlog documentsSupplied). */
+  supplied: string[]
+  /** Free-text extra documents (documentOther). */
+  other: string
 }
 
 /** Blocked amount breakup — QUERY-SPECS.md §16. */

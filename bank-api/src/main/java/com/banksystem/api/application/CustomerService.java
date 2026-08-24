@@ -4,10 +4,14 @@ import com.banksystem.api.domain.model.CustUpdateHistoryEntry;
 import com.banksystem.api.domain.model.CustomerProfile;
 import com.banksystem.api.domain.model.CustomerSearchCriteria;
 import com.banksystem.api.domain.model.CustomerSummary;
+import com.banksystem.api.domain.model.EssentialDocuments;
 import com.banksystem.api.domain.model.HeirEntry;
+import com.banksystem.api.domain.model.JointHolderDetail;
 import com.banksystem.api.domain.model.JointHolderEntry;
 import com.banksystem.api.domain.model.JuristicAccountInfo;
+import com.banksystem.api.domain.model.OwnerDetail;
 import com.banksystem.api.domain.model.OwnerEntry;
+import com.banksystem.api.domain.model.PartyDetail;
 import com.banksystem.api.domain.model.PagedResult;
 import com.banksystem.api.domain.model.SearchScan;
 import java.util.List;
@@ -70,12 +74,38 @@ public class CustomerService {
         return PagedResult.page(customers.owners(custNo), page);
     }
 
+    /** One owner in full — the legacy's grid double-click (service 77). */
+    public OwnerDetail ownerDetail(String custNo, String ownerNo) {
+        return customers.ownerDetail(custNo, ownerNo).orElseThrow(() ->
+                new NotFoundException("No details found for this owner."));
+    }
+
+    /** One reference / legal representative in full. */
+    public PartyDetail referenceDetail(String custNo, String referenceNo) {
+        return customers.referenceDetail(custNo, referenceNo).orElseThrow(() ->
+                new NotFoundException("No details found for this reference."));
+    }
+
+    /** One heir / proxy in full. */
+    public PartyDetail heirDetail(String custNo, String heirNo) {
+        return customers.heirDetail(custNo, heirNo).orElseThrow(() ->
+                new NotFoundException("No details found for this heir."));
+    }
+
+    /** One joint holder in full. */
+    public JointHolderDetail jointHolderDetail(String custNo, String jointCustNo) {
+        return customers.jointHolderDetail(custNo, jointCustNo).orElseThrow(() ->
+                new NotFoundException("No details found for this joint holder."));
+    }
+
     public java.util.Map<String, String> acctInfo(String custNo) {
         return customers.acctInfo(custNo);
     }
 
-    public java.util.List<String> requiredDocuments(String custNo) {
-        return customers.requiredDocuments(custNo);
+    /** frmDocuments — required + supplied documents. {@code asOfDateTime} null
+     *  reads the live customer record, otherwise the stcustlog snapshot. */
+    public EssentialDocuments documents(String custNo, String asOfDateTime) {
+        return customers.documents(custNo, asOfDateTime);
     }
 
     public PagedResult<CustUpdateHistoryEntry> updateHistory(String custNo, int page) {

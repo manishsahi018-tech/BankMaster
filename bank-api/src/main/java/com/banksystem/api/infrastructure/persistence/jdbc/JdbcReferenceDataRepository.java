@@ -1,8 +1,11 @@
 package com.banksystem.api.infrastructure.persistence.jdbc;
 
 import com.banksystem.api.domain.model.CodeEntry;
+import com.banksystem.api.domain.model.UiLanguage;
 import com.banksystem.api.domain.repository.ReferenceDataRepository;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,9 +63,11 @@ import org.springframework.stereotype.Repository;
  * </ul>
  *
  * <p>Any set whose view is missing at runtime is logged and returned as an
- * empty list — codes() never fails as a whole. Loaded lazily once and cached
- * (reference data is static per BankingDate, and BankingDateProvider fixes
- * the date for the process lifetime).
+ * empty list — codes() never fails as a whole. Loaded lazily once and cached,
+ * KEYED ON THE BANKING DATE it was loaded for: reference data is static per
+ * BankingDate, but the date itself is editable while the application runs
+ * (RuntimeSettings), so a cache pinned for the process lifetime would keep
+ * serving the previous snapshot's codes after the date moved.
  */
 @Repository
 @Profile("denodo")
@@ -71,20 +76,34 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
     private static final Logger log = LoggerFactory.getLogger(JdbcReferenceDataRepository.class);
 
 
-    /** Generic stctltab layout: ctlCode + names, filtered by RecordType. */
-    private static final String CTLTAB_SET = """
+    /**
+     * Generic stctltab layout: ctlCode + names, filtered by RecordType.
+     *
+     * <p>{@code {name:}} is resolved by {@link UiLanguage#localise} into the
+     * COALESCE that prefers this language's name column — once per language at
+     * class-init, so both renderings stay constants.
+     */
+    private static final Map<UiLanguage, String> CTLTAB_SET = UiLanguage.localise("""
             SELECT ctlCode AS code,
-                   COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
+                   {name:} AS description
             FROM   stctltab
             WHERE  BankingDate = :bankingDate
               AND  RecordType = :recordType
             ORDER  BY ctlCode
-            """;
+            """);
 
     private final NamedParameterJdbcTemplate jdbc;
     private final BankingDateProvider bankingDate;
 
-    private volatile Map<String, List<CodeEntry>> cached;
+    /** The loaded sets together with the BankingDate they were read at. */
+    private record Cached(String bankingDate, Map<String, List<CodeEntry>> codes) {}
+
+    /**
+     * One cache entry PER LANGUAGE. The sets differ by language only in their
+     * descriptions, but they differ in every row, so a single slot would be
+     * thrashed by two operators reading different languages.
+     */
+    private final Map<UiLanguage, Cached> cached = new EnumMap<>(UiLanguage.class);
 
     public JdbcReferenceDataRepository(
             @Qualifier("archivalJdbc") NamedParameterJdbcTemplate jdbc,
@@ -103,29 +122,44 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
     private static final List<String> DB_BACKED = List.of(
             "idType", "country", "businessType",
             "samaMainCategory", "samaSubCategory", "branch",
-            "currency", "ledger", "accStatus", "stmtFreq", "intApplication");
+            "currency", "isoCurrency", "ledger", "accStatus", "statusChangeReason",
+            "orderType", "paymentType", "paymentMode", "paymentFrequency",
+            "stmtFreq", "intApplication",
+            // The seven stctltab record types the profile combos resolve
+            // against. They belong on this list by its own definition — every
+            // one is a view read — and their absence from it hid them from the
+            // pre-load report, which is where an operator looks first when a
+            // combo shows a bare code.
+            "title", "education", "profession", "position",
+            "monthlyIncome", "segmentation", "documentType");
 
     @Override
-    public Map<String, List<CodeEntry>> codes() {
-        Map<String, List<CodeEntry>> result = cached;
-        if (result == null) {
-            synchronized (this) {
-                if (cached == null) {
-                    Map<String, List<CodeEntry>> loaded = load();
-                    if (anyDbSetPopulated(loaded)) {
-                        cached = loaded;
-                    } else {
-                        // Serve what we have; the next call retries the DB.
-                        log.warn("Reference data: every archival-backed code set came back "
-                                + "empty — serving constants only and NOT caching, so the "
-                                + "next call retries.");
-                        return loaded;
-                    }
-                }
-                result = cached;
-            }
+    public Map<String, List<CodeEntry>> codes(UiLanguage language) {
+        String date = bankingDate.bankingDate();
+        Cached result = cached.get(language);
+        if (result != null && result.bankingDate().equals(date)) {
+            return result.codes();
         }
-        return result;
+        synchronized (this) {
+            result = cached.get(language);
+            if (result != null && result.bankingDate().equals(date)) {
+                return result.codes();
+            }
+            Map<String, List<CodeEntry>> loaded = load(language);
+            if (!anyDbSetPopulated(loaded)) {
+                // Serve what we have; the next call retries the DB.
+                log.warn("Reference data: every archival-backed code set came back "
+                        + "empty — serving constants only and NOT caching, so the "
+                        + "next call retries.");
+                return loaded;
+            }
+            if (result != null) {
+                log.info("Reference data ({}) reloaded for banking-date {} (was {}).",
+                        language.code(), date, result.bankingDate());
+            }
+            cached.put(language, new Cached(date, loaded));
+            return loaded;
+        }
     }
 
     private static boolean anyDbSetPopulated(Map<String, List<CodeEntry>> sets) {
@@ -142,56 +176,95 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
     @EventListener(ApplicationReadyEvent.class)
     public void preload() {
         Thread.ofVirtual().name("reference-data-preload").start(() -> {
-            try {
-                int populated = (int) DB_BACKED.stream()
-                        .filter(name -> !codes().getOrDefault(name, List.of()).isEmpty())
-                        .count();
-                log.info("Reference data pre-loaded ({}/{} archival code sets populated).",
-                        populated, DB_BACKED.size());
-            } catch (RuntimeException e) {
-                log.warn("Reference data pre-load failed ({}); /api/codes will load on demand.",
-                        e.toString());
+            // Both languages: an operator who logs in and immediately switches
+            // to Arabic would otherwise pay for a whole second load.
+            for (UiLanguage language : UiLanguage.values()) {
+                try {
+                    Map<String, List<CodeEntry>> sets = codes(language);
+                    int populated = (int) DB_BACKED.stream()
+                            .filter(name -> !sets.getOrDefault(name, List.of()).isEmpty())
+                            .count();
+                    log.info("Reference data ({}) pre-loaded ({}/{} archival code sets populated).",
+                            language.code(), populated, DB_BACKED.size());
+                } catch (RuntimeException e) {
+                    log.warn("Reference data ({}) pre-load failed ({}); /api/codes will load on demand.",
+                            language.code(), e.toString());
+                }
             }
         });
     }
 
-    private Map<String, List<CodeEntry>> load() {
+    private Map<String, List<CodeEntry>> load(UiLanguage language) {
         Map<String, List<CodeEntry>> sets = new LinkedHashMap<>();
-        sets.put("idType", ctltabSet("idType", "ID"));
+        sets.put("idType", ctltabSet(language, "idType", "ID"));
+        // The combos the legacy filled from titleinfo / educationinfo and
+        // friends in the branch PC's LOCAL Access database. stctltab carries
+        // them all under its own record types — the workbook documents
+        // TT/ED/PR/PO/MI/SG/DT on stctltab.RecordType — so the lists are
+        // archival after all and only the lookup was local. Rendered as
+        // "<code>-<description>", which is the form the legacy combos show
+        // (cmbTitle.AddItem rs("titlecode") & "-" & rs("englishname"),
+        // frmIndividualSaudi.frm:6346).
+        sets.put("title", ctltabSet(language, "title", "TT"));
+        sets.put("education", ctltabSet(language, "education", "ED"));
+        sets.put("profession", ctltabSet(language, "profession", "PR"));
+        sets.put("position", ctltabSet(language, "position", "PO"));
+        sets.put("monthlyIncome", ctltabSet(language, "monthlyIncome", "MI"));
+        sets.put("segmentation", ctltabSet(language, "segmentation", "SG"));
+        sets.put("documentType", ctltabSet(language, "documentType", "DT"));
         // Legacy stcusttab domains (stlayout.h struct customerInfo):
         // sexCode '0'-Male/'1'-Female (:1435) and marritalStatus
         // '0'-Married/'1'-Single/'2'-Others (:1437). The archival view keeps
         // the raw codes (stcusttab.ts documents no decode), so M/F-style
         // entries would never match a data row.
-        sets.put("sex", List.of(
-                new CodeEntry("0", "Male"),
-                new CodeEntry("1", "Female")));
-        sets.put("maritalStatus", List.of(
-                new CodeEntry("0", "Married"),
-                new CodeEntry("1", "Single"),
-                new CodeEntry("2", "Others")));
-        sets.put("language", List.of(
-                new CodeEntry("0", "Arabic"),
-                new CodeEntry("1", "English")));
-        sets.put("country", querySet("country", """
+        sets.put("sex", fixed(language,
+                new Fixed("0", "Male", "ذكر"),
+                new Fixed("1", "Female", "أنثى")));
+        sets.put("maritalStatus", fixed(language,
+                new Fixed("0", "Married", "متزوج"),
+                // "أعزب", as frmIndividualSaudi's own radio group reads — not
+                // the legacy table's "مفرد", which is its single/JOINT account
+                // caption and has nothing to do with marital status.
+                new Fixed("1", "Single", "أعزب"),
+                new Fixed("2", "Others", "أخرى")));
+        sets.put("language", fixed(language,
+                new Fixed("0", "Arabic", "عربي"),
+                new Fixed("1", "English", "انجليزي")));
+        // packageaccinfo was a table in the branch PC's LOCAL Access database
+        // (frmIndividualOthers2.frm:2688-2699), not an stctltab record type —
+        // the workbook's RecordType list has no package entry — so there is no
+        // archival view to read it from. The workbook does document the domain
+        // on the column itself (stcusttab.packageAcc "Valid Values are: 0-None
+        // ... 5-Private Banking"), which is the same authority the sexCode and
+        // marritalStatus sets above rest on.
+        // 1-5 are ANB product names, so the Arabic is the product's own name
+        // rather than a translation of the English transliteration.
+        sets.put("packageAcc", fixed(language,
+                new Fixed("0", "None", "لا يوجد"),
+                new Fixed("1", "Munafa", "منافع"),
+                new Fixed("2", "Wahat", "واحات"),
+                new Fixed("3", "Al Safwa", "الصفوة"),
+                new Fixed("4", "Mubarak", "مبارك"),
+                new Fixed("5", "Private Banking", "الخدمات المصرفية الخاصة")));
+        sets.put("country", querySet(language, "country", """
                 SELECT countryCode AS code,
-                       COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
+                       {name:} AS description
                 FROM   stctltabNA
                 WHERE  BankingDate = :bankingDate
                 ORDER  BY countryCode
                 """, Map.of()));
-        sets.put("businessType", ctltabSet("businessType", "BS"));
-        sets.put("samaMainCategory", ctltabSet("samaMainCategory", "SM"));
-        sets.put("samaSubCategory", querySet("samaSubCategory", """
+        sets.put("businessType", ctltabSet(language, "businessType", "BS"));
+        sets.put("samaMainCategory", ctltabSet(language, "samaMainCategory", "SM"));
+        sets.put("samaSubCategory", querySet(language, "samaSubCategory", """
                 SELECT samaSubCategoryCode AS code,
-                       COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
+                       {name:} AS description
                 FROM   stctltabSS
                 WHERE  BankingDate = :bankingDate
                 ORDER  BY samaSubCategoryCode
                 """, Map.of()));
-        sets.put("branch", querySet("branch", """
+        sets.put("branch", querySet(language, "branch", """
                 SELECT branchCode AS code,
-                       COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
+                       {name:} AS description
                 FROM   stctltabBD
                 WHERE  BankingDate = :bankingDate
                 ORDER  BY branchCode
@@ -200,12 +273,32 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
         // referenced by the UI long before anything served them, so every
         // lookup fell back to the bare code — "01 / 00 / 108" where the operator
         // expects "Saudi Riyal / Open / Call Deposit".
-        sets.put("currency", querySet("currency", """
+        sets.put("currency", querySet(language, "currency", """
                 SELECT currCode AS code,
-                       COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
+                       {name:} AS description
                 FROM   stctltabXC
                 WHERE  BankingDate = :bankingDate
                 ORDER  BY currCode
+                """, Map.of()));
+        // The SAME view read through its OTHER key. Every one of the 70
+        // currencyinfo lookups in the legacy client keys on currencycode — the
+        // 2-char BankMaster code above — EXCEPT the transfer forms, which key
+        // on isocurrcode (frmSarieTransferEnq.frm:1291, 1330 and the SWIFT
+        // forms beside them). rid0data.transCurrCode / payCurrCode are 3 chars
+        // wide and hold that ISO code, so resolving them against `currency`
+        // never matched and the screen showed the bare number.
+        //
+        // isoCurrCode is not a key column, so blanks are dropped and the order
+        // is made total — codeLabel takes the first match, and two internal
+        // codes sharing one ISO code must not resolve differently between
+        // loads.
+        sets.put("isoCurrency", querySet(language, "isoCurrency", """
+                SELECT isoCurrCode AS code,
+                       {name:} AS description
+                FROM   stctltabXC
+                WHERE  BankingDate = :bankingDate
+                AND    TRIM(isoCurrCode) <> ''
+                ORDER  BY isoCurrCode, currCode
                 """, Map.of()));
         // stctltabMM is the LEDGER master despite its table-level description
         // calling it "Memo Code": its columns are ledgerCode + LEDGER NAME IN
@@ -213,9 +306,9 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
         // cheque book allowed, minimum deposit). Column detail wins over the
         // sheet's heading, as it does elsewhere in this workbook. This is the
         // archival counterpart of the legacy client's local Access bmledgerinfo.
-        sets.put("ledger", querySet("ledger", """
+        sets.put("ledger", querySet(language, "ledger", """
                 SELECT ledgerCode AS code,
-                       COALESCE(NULLIF(TRIM(englishName), ''), arabicName) AS description
+                       {name:} AS description
                 FROM   stctltabMM
                 WHERE  BankingDate = :bankingDate
                 ORDER  BY ledgerCode
@@ -223,33 +316,164 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
         // Generic stctltab record types, both named in stctltab.ts's own
         // RecordType list: 'AS' Account status type info, 'SF' Statement
         // Frequency Code info.
-        sets.put("accStatus", ctltabSet("accStatus", "AS"));
-        sets.put("stmtFreq", ctltabSet("stmtFreq", "SF"));
-        sets.put("intApplication", ctltabSet("intApplication", "IA"));
+        sets.put("accStatus", ctltabSet(language, "accStatus", "AS"));
+        // 'RC' Account status change reason. Unlike samaStatus this IS an
+        // stctltab record type, so it is read rather than hardcoded.
+        //
+        // The column it decodes (stacclog.accStatusChangeReason) is 30 chars
+        // of free text, and the legacy treats it as EITHER a code or a
+        // sentence: globalFunctions.bas:9046 puts it in the reason combo when
+        // it starts with "0" and in the free-text "other reason" box when it
+        // does not. The screen applies that same test; this set only has to
+        // answer for the coded half.
+        sets.put("statusChangeReason", ctltabSet(language, "statusChangeReason", "RC"));
+        // The four standing-order combos. All are stctltab record types —
+        // 'ST' SOD type, 'PT' payment type, 'PM' payment mode, 'PF' payment
+        // frequency — so like RC they are read, not hardcoded. The legacy read
+        // the same four lists from sodtypeinfo / paymenttypeinfo /
+        // paymodeinfo / payfreqinfo in the branch PC's LOCAL Access database
+        // (frmStandingOrderDetail.frm:1600-1655).
+        //
+        // sod0data stores each of them in ONE character and the legacy matched
+        // on one character (Mid$(list, 1, 1) throughout that form), so if
+        // stctltab pads its ctlCode to four, codes.ts tail-matches — see the
+        // note beside TAIL_MATCHED there.
+        sets.put("orderType", ctltabSet(language, "orderType", "ST"));
+        sets.put("paymentType", ctltabSet(language, "paymentType", "PT"));
+        sets.put("paymentMode", ctltabSet(language, "paymentMode", "PM"));
+        sets.put("paymentFrequency", ctltabSet(language, "paymentFrequency", "PF"));
+        sets.put("stmtFreq", ctltabSet(language, "stmtFreq", "SF"));
+        sets.put("intApplication", ctltabSet(language, "intApplication", "IA"));
         // Fixed value domains documented on stcardtab.ts (cardStatus /
         // requestStatus) — no stctltab recType carries them.
-        sets.put("cardStatus", List.of(
-                new CodeEntry("0", "Requested"),
-                new CodeEntry("1", "Open"),
-                new CodeEntry("2", "Lost"),
-                new CodeEntry("3", "Stolen"),
-                new CodeEntry("4", "Restricted"),
-                new CodeEntry("9", "Closed/Damaged")));
-        sets.put("cardRequestStatus", List.of(
-                new CodeEntry("0", "Requested"),
-                new CodeEntry("1", "Approved"),
-                new CodeEntry("2", "Processed"),
-                new CodeEntry("3", "Generated At DC9000"),
-                new CodeEntry("4", "Received By Branch"),
-                new CodeEntry("5", "Received By Customer"),
-                new CodeEntry("8", "Canceled By Branch"),
-                new CodeEntry("9", "Rejected")));
+        // stchqtab's own column descriptions enumerate both domains — the
+        // same source the cardStatus / currency sets were transcribed from,
+        // and there is no stctltab record type for either.
+        // SAMA account status. No stctltab record type carries it — the
+        // RecordType list has 'AS' for the bank's own account status and 'RC'
+        // for the change reason, but nothing for SAMA — so like cardStatus and
+        // packageAcc the domain comes from the column's own description.
+        //
+        // The legacy read it from samaacctstatusinfo, a table in the branch
+        // PC's LOCAL Access database (frmAccct.frm:2482, and the same table in
+        // frmAcctStatusHistory.frm:210), matching on the leading TWO
+        // characters. Codes are the 2-char form stacclog documents
+        // ("00-Open;01-Inactive;02-Dormant;03-Unclaimed"); gld0data holds the
+        // same domain one character wide, which codes.ts tail-matches.
+        //
+        // "Not defined" is deliberately absent: it is the legacy's fallback for
+        // a code missing from the local table (globalFunctions.bas:9042
+        // appends tCode & "-Not defined"), not a value the domain carries —
+        // which is why the Arabic capture shows "0 -Not define" beside a real
+        // "00-Open". codeLabel degrades the same way, to the bare code.
+        sets.put("samaStatus", fixed(language,
+                new Fixed("00", "Open", "مفتوح"),
+                new Fixed("01", "Inactive", "غير نشط"),
+                new Fixed("02", "Dormant", "غير متحرك"),
+                new Fixed("03", "Unclaimed", "غير مطالب به")));
+        // Three more fixed domains — stctltab has no record type for any of
+        // them, so like cardStatus they come from the column's own description.
+        //
+        // cardType is stcardtab/stcardlog; transferStatus is rid0data's
+        // statusFlag, which the transfer repository hands over as
+        // "paymentType" (JdbcTransferRepository:254) — a name it shares with
+        // sod0data.paymentType and emphatically NOT the same domain.
+        sets.put("cardType", fixed(language,
+                new Fixed("R", "Regular", "عادية"),
+                new Fixed("I", "International", "دولية"),
+                new Fixed("V", "VIP", "كبار العملاء"),
+                new Fixed("A", "Administrative", "إدارية"),
+                new Fixed("D", "Deposit only", "إيداع فقط"),
+                new Fixed("C", "CPS", "CPS"),
+                new Fixed("S", "International chip card", "بطاقة دولية بشريحة"),
+                new Fixed("L", "Local chip card", "بطاقة محلية بشريحة")));
+        sets.put("transferStatus", fixed(language,
+                new Fixed("S", "Create Skeleton", "إنشاء مبدئي"),
+                new Fixed("I", "Issued", "صادرة"),
+                new Fixed("V", "Verified", "تم التحقق"),
+                new Fixed("C", "Confirmed", "مؤكدة"),
+                new Fixed("D", "Cancelled", "ملغاة"),
+                new Fixed("P", "Stopped", "موقوفة"),
+                new Fixed("O", "Dormant", "غير متحركة"),
+                new Fixed("R", "Repurchased", "معاد شراؤها"),
+                new Fixed("T", "Settled/Cleared", "تمت التسوية")));
+        // rid0data.paymentStatus, which the transfer repository hands over
+        // as "transType" (JdbcTransferRepository:257). The legacy resolved it
+        // out of the local transfertypeinfo table and printed it
+        // code-with-text (frmSarieTransferEnq.frm:1373-1383); the workbook
+        // carries the same domain on the column.
+        sets.put("transferType", fixed(language,
+                new Fixed("0", "Initialised", "مبدئية"),
+                new Fixed("1", "Direct Transfer", "حوالة مباشرة"),
+                new Fixed("2", "SWIFT/Telex", "سويفت/تلكس"),
+                new Fixed("3", "Postal/Fax", "بريد/فاكس"),
+                new Fixed("4", "Telephone", "هاتف")));
+        sets.put("chequeType", fixed(language,
+                new Fixed("1", "Personal", "شخصي"),
+                new Fixed("2", "Corporate", "تجاري")));
+        sets.put("chequeBookStatus", fixed(language,
+                new Fixed("1", "Requested", "مطلوب"),
+                new Fixed("2", "Produced", "تم الإصدار"),
+                new Fixed("3", "Received by Branch", "مستلمة من الفرع"),
+                new Fixed("4", "Issued to customer", "صادرة للعميل"),
+                new Fixed("9", "Rejected by branch", "مرفوضة من الفرع")));
+        sets.put("cardStatus", fixed(language,
+                new Fixed("0", "Requested", "مطلوبة"),
+                new Fixed("1", "Open", "مفتوحة"),
+                new Fixed("2", "Lost", "مفقودة"),
+                new Fixed("3", "Stolen", "مسروقة"),
+                new Fixed("4", "Restricted", "مقيدة"),
+                new Fixed("9", "Closed/Damaged", "مغلقة/تالفة")));
+        sets.put("cardRequestStatus", fixed(language,
+                new Fixed("0", "Requested", "مطلوبة"),
+                new Fixed("1", "Approved", "موافق عليها"),
+                new Fixed("2", "Processed", "تمت المعالجة"),
+                new Fixed("3", "Generated At DC9000", "صدرت في DC9000"),
+                new Fixed("4", "Received By Branch", "مستلمة من الفرع"),
+                new Fixed("5", "Received By Customer", "مستلمة من العميل"),
+                new Fixed("8", "Canceled By Branch", "ملغاة من الفرع"),
+                new Fixed("9", "Rejected", "مرفوضة")));
+        logRowCounts(sets);
         return Collections.unmodifiableMap(sets);
     }
 
+    /**
+     * One line per load naming every archival-backed set and the number of rows
+     * it returned. A combo that shows a bare code has exactly two causes — the
+     * set came back EMPTY, or the code did not match a row in it — and only the
+     * log can tell them apart on a bank PC, where the archival tables cannot be
+     * queried by hand. querySet already warns when a view is broken; this
+     * covers the quieter case of a view that answers with no rows.
+     */
+    private void logRowCounts(Map<String, List<CodeEntry>> sets) {
+        StringBuilder line = new StringBuilder();
+        for (String name : DB_BACKED) {
+            if (!line.isEmpty()) {
+                line.append(", ");
+            }
+            line.append(name).append('=').append(sets.getOrDefault(name, List.of()).size());
+        }
+        log.info("Reference data rows at banking-date {}: {}", bankingDate.bankingDate(), line);
+    }
+
+    /**
+     * One entry of a fixed value domain — a set the archival schema documents
+     * on the column itself (stcusttab.sexCode, stcardtab.requestStatus …) but
+     * that no stctltab record type enumerates, so there is no bilingual table
+     * to read and both names are carried here.
+     */
+    private record Fixed(String code, String english, String arabic) {}
+
+    private static List<CodeEntry> fixed(UiLanguage language, Fixed... entries) {
+        return Arrays.stream(entries)
+                .map(e -> new CodeEntry(e.code(),
+                        language == UiLanguage.ARABIC ? e.arabic() : e.english()))
+                .toList();
+    }
+
     /** One generic-layout stctltab code list, selected by RecordType. */
-    private List<CodeEntry> ctltabSet(String setName, String recordType) {
-        return querySet(setName, CTLTAB_SET,
+    private List<CodeEntry> ctltabSet(UiLanguage language, String setName, String recordType) {
+        return querySet(language, setName, CTLTAB_SET.get(language),
                 Map.of("recordType", recordType));
     }
 
@@ -257,7 +481,12 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
      * Runs one code-set query; a missing/broken view yields an empty list
      * with a warning so a single absent Denodo view never fails codes().
      */
-    private List<CodeEntry> querySet(String setName, String sql, Map<String, ?> params) {
+    private List<CodeEntry> querySet(UiLanguage language, String setName, String sql,
+                                     Map<String, ?> params) {
+        // The overlay-view queries arrive with their {name:alias} placeholders
+        // still in place — unlike CTLTAB_SET they are written inline, so this
+        // is where they are resolved.
+        sql = language.resolve(sql);
         // Every one of these SQL strings carries the BankingDate predicate, so
         // the binding is added here once rather than at each call site.
         Map<String, Object> bound = new LinkedHashMap<>(params);
@@ -267,8 +496,8 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
                     trimmed(rs.getString("code")),
                     trimmed(rs.getString("description"))));
         } catch (DataAccessException e) {
-            log.warn("Reference data set '{}' unavailable from archival DB ({}); returning empty list",
-                    setName, e.getMostSpecificCause().getMessage());
+            log.warn("Reference data set '{}' ({}) unavailable from archival DB ({}); returning empty list",
+                    setName, language.code(), e.getMostSpecificCause().getMessage());
             return List.of();
         }
     }
