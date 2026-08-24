@@ -149,6 +149,19 @@ body {
   transition: background-color 0.25s ease;
 }
 
+/* The UA stylesheet sets `th { text-align: center }`, and a UA rule on the
+   element itself beats the `text-align: start` our grids put on the <tr> — so
+   every table drew centered headers over start-aligned cells. Put the header
+   back on its column's own axis.
+
+   Layered as base, so a `text-end` / `text-center` utility on an individual
+   <th> (the amount columns) still wins from Tailwind's utilities layer. */
+@layer base {
+  th {
+    text-align: start;
+  }
+}
+
 /* ---------------------------------------------------------------------------
    Print sheets. A screen renders an ordinary .print-sheet section that is
    hidden on screen; printing hides the whole app shell and reveals just that
