@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Field, TextInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
 import { StatementCard, statementKey } from '../components/StatementCard.tsx'
+import { paginateStatements } from '../components/statementPages.ts'
 import type { HistoricalStatement as Statement } from '../api.ts'
 import { api } from '../api.ts'
 
@@ -325,7 +326,7 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
           {/* One form for any count rather than an English singular/plural
               pair: three independent counts would need eight keys, and Arabic
               does not split two ways in the first place. */}
-          <p className="mt-6 text-sm text-muted">
+          <p className="print-hidden mt-6 text-sm text-muted">
             {t('{stmts} statements · {accts} accounts · {txns} transactions', {
               stmts: rows.length,
               accts: accountCount,
@@ -333,8 +334,15 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
             })}
           </p>
           <div className="mt-3 space-y-5 print-per-page">
-            {rows.map((s) => (
-              <StatementCard key={statementKey(s)} statement={s} />
+            {paginateStatements(rows).map((sheet, i, all) => (
+              <StatementCard
+                key={`${statementKey(sheet.statement)}-${i}`}
+                statement={sheet.statement}
+                lines={sheet.lines}
+                continued={sheet.continued}
+                page={i + 1}
+                pages={all.length}
+              />
             ))}
           </div>
         </div>

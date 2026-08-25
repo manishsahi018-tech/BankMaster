@@ -175,7 +175,7 @@ export default function TopNav({
   const activeBtn = 'bg-primary-soft text-primary-ink'
 
   return (
-    <header className="sticky top-0 z-20 border-b border-edge bg-surface/90 backdrop-blur">
+    <header className="print-hidden sticky top-0 z-20 border-b border-edge bg-surface/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
         {/* brand + nav travel together on the left; session controls stay right */}
         <div className="flex items-center gap-6">

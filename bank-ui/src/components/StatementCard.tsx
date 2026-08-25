@@ -1,5 +1,9 @@
-import type { HistoricalStatement as Statement } from '../api.ts'
-import { formatDate, formatPlainAmount } from '../schema/helpers.ts'
+import type {
+  HistoricalStatement as Statement,
+  HistoricalStatementLine as Line,
+} from '../api.ts'
+import { formatDate, formatPlainAmount, todayYyyymmdd } from '../schema/helpers.ts'
+import { codeDescription } from '../codes.ts'
 import { t } from '../i18n/index.ts'
 import { getLocale } from '../i18n/locale.ts'
 
@@ -37,6 +41,26 @@ function monthLabel(yyyymmdd: string): string {
   return date.toLocaleDateString(tag, { month: 'long', year: 'numeric' })
 }
 
+/**
+ * How the currency prints: the stored ISO code under English, its name under
+ * Arabic.
+ *
+ * English keeps "SAR" — the code IS the English reading of it, and a statement
+ * that has always said SAR should go on saying SAR. Arabic has no such
+ * convention, which is what made this the one field on the card still in
+ * English there, so it resolves to the name the reference sets carry.
+ *
+ * The two keyings of stctltabXC are both tried because the archives store a
+ * currency the way their own source did: `isoCurrency` is keyed on the 3-char
+ * ISO alpha ("SAR"), `currency` on BankMaster's own 2-char code ("01"). An
+ * unresolvable code returns itself, so nothing is ever lost.
+ */
+function currencyLabel(crncy: string): string {
+  if (getLocale() !== 'ar') return crncy
+  const iso = codeDescription('isoCurrency', crncy)
+  return iso !== crncy ? iso : codeDescription('currency', crncy)
+}
+
 /** Stable React key — a PDP customer enquiry can span several accounts. */
 export function statementKey(s: Statement): string {
   return `${s.source}-${s.acctNum}-${s.stmtDate}-${s.stmtNum}-${s.pageNum}`
@@ -53,12 +77,36 @@ function narrativeOf(line: Statement['lines'][number]): string[] {
   )
 }
 
-/** One statement's header block and transaction table. */
-export function StatementCard({ statement }: { statement: Statement }) {
+/**
+ * One statement's header block and transaction table.
+ *
+ * `page`/`pages` are the statement's position in the pack the screen is
+ * showing, not anything the archive carries: print CSS starts every card on a
+ * fresh sheet (.print-per-page in index.css), so numbering the statements IS
+ * numbering the sheets. The archive's own PAGE_NUM cannot serve here — the
+ * repository folds a PDP statement's per-page header rows into one statement
+ * and keeps the lowest, so it reads 1 on every card; its page COUNT is the
+ * separate "N printed pages" note in the header.
+ */
+export function StatementCard({
+  statement,
+  lines,
+  continued = false,
+  page,
+  pages,
+}: {
+  statement: Statement
+  /** The transactions on THIS sheet; the whole statement when not paginated. */
+  lines?: Line[]
+  continued?: boolean
+  page?: number
+  pages?: number
+}) {
   const s = statement
+  const rows = lines ?? s.lines
   const address = addressLines(s)
   return (
-    <section className="overflow-hidden rounded-2xl border border-edge bg-surface shadow-sm">
+    <section className="print-expand overflow-hidden rounded-2xl border border-edge bg-surface shadow-sm">
       <header className="border-b border-edge-soft bg-surface-muted px-4 py-4 sm:px-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -69,25 +117,56 @@ export function StatementCard({ statement }: { statement: Statement }) {
                   {t('No. {stmtNum}', { stmtNum: s.stmtNum })}
                 </span>
               )}
+              {/* A statement whose transactions did not fit one sheet repeats
+                  its whole header on the next, so each sheet identifies itself
+                  — and says which of the two it is. */}
+              {continued && (
+                <span className="ms-2 text-sm font-normal text-muted">{t('(continued)')}</span>
+              )}
             </h2>
+            {/* ACCT_TYPE and CRNCY are the archive's own words, and under
+                Arabic they were the one line on the card still reading English.
+                ACCT_TYPE is free text ("CURRENT ACCOUNT"), so it goes through
+                the caption dictionary — an entry it has no Arabic for falls
+                through to its English, which is t()'s normal behaviour. CRNCY
+                is a code, so it goes through the reference sets instead. */}
             <p className="mt-0.5 text-sm text-muted">
               {s.acctNum}
-              {s.acctType && ` · ${s.acctType}`}
-              {s.crncy && ` · ${s.crncy}`}
+              {s.acctType && ` · ${t(s.acctType)}`}
+              {s.crncy && ` · ${currencyLabel(s.crncy)}`}
             </p>
           </div>
-          {/* pageCount, and deliberately NOT pageNum. The PDP header holds one
-              row per printed page and the repository folds them into one
-              statement, keeping the FIRST row's fields — ordered by PAGE_NUM,
-              so the pageNum that survives is always the group's lowest, i.e.
-              1 for every statement. Shown, it claimed "Page 1" on every card
-              and on every printed sheet. The count is the real information:
-              how many pages the archived statement ran to. */}
-          {s.pageCount > 1 && (
-            <div className="text-end text-xs text-muted-soft">
-              <p>{t('{pages} printed pages', { pages: s.pageCount })}</p>
-            </div>
-          )}
+          <div className="text-end">
+            {/* Top right of the header, where a statement carries its date.
+                TODAY — the day the document is being produced — not the
+                archived period, which the heading on the left already names.
+                Read at render time, so a session left open overnight dates the
+                sheet it actually prints on.
+
+                One line — label, dash, date — with the value in full-strength
+                ink: the first pass set the whole thing in the quiet grey the
+                asides use, and a date nobody can read is the same as no
+                date. */}
+            <p className="text-end text-sm text-ink">
+              <span className="text-xs uppercase tracking-wider text-muted-soft">
+                {t('Statement Date')}
+              </span>
+              {' - '}
+              <span className="font-medium">{formatDate(todayYyyymmdd())}</span>
+            </p>
+            {/* pageCount, and deliberately NOT pageNum. The PDP header holds one
+                row per printed page and the repository folds them into one
+                statement, keeping the FIRST row's fields — ordered by PAGE_NUM,
+                so the pageNum that survives is always the group's lowest, i.e.
+                1 for every statement. Shown, it claimed "Page 1" on every card
+                and on every printed sheet. The count is the real information:
+                how many pages the archived statement ran to. */}
+            {s.pageCount > 1 && (
+              <p className="mt-1 text-xs text-muted-soft">
+                {t('{pages} printed pages', { pages: s.pageCount })}
+              </p>
+            )}
+          </div>
         </div>
 
         <dl className="mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
@@ -126,7 +205,7 @@ export function StatementCard({ statement }: { statement: Statement }) {
         </dl>
       </header>
 
-      {s.lines.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="px-4 py-6 text-sm text-muted sm:px-5">
           {t('This statement has a header but no transaction lines in the archive.')}
         </p>
@@ -145,7 +224,7 @@ export function StatementCard({ statement }: { statement: Statement }) {
               </tr>
             </thead>
             <tbody>
-              {s.lines.map((line) => {
+              {rows.map((line) => {
                 // NARRATIVE1-4 are the four printed narrative lines; blanks are
                 // common, so only the filled ones are stacked.
                 const narrative = narrativeOf(line)
@@ -196,13 +275,11 @@ export function StatementCard({ statement }: { statement: Statement }) {
         </div>
       )}
 
-      {/* FILE_NAME is the descendant of stmtSpec.stmtFile — the zipped page file
-          the Btrieve index used to point at. Kept visible because support still
-          reconciles against those archive filenames. */}
-      {s.fileName && (
-        <footer className="border-t border-edge-soft px-4 py-2 text-xs text-muted-soft sm:px-5">
-          {t('Archive file')} <span className="font-mono">{s.fileName}</span>
-          {s.branchData && <> · {t('branch data {branchData}', { branchData: s.branchData })}</>}
+      {/* Foot of every card, on screen and on paper alike — a printed pack is
+          read as a document, and a document says which sheet you are holding. */}
+      {page !== undefined && pages !== undefined && (
+        <footer className="border-t border-edge-soft px-4 py-2 text-end text-xs text-muted-soft sm:px-5">
+          {t('Page {page} of {pages}', { page, pages })}
         </footer>
       )}
     </section>

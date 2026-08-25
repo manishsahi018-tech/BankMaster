@@ -233,15 +233,40 @@ body {
   .print-only {
     display: block;
   }
-  /* Anything that is only a control belongs to the screen, not the report. */
-  .print-page .print-hidden {
-    display: none;
+  /* Anything that is only a control belongs to the screen, not the report —
+     wherever it sits. The app shell carries it too: the top bar is 65mm-worth
+     of nothing on paper, and because the report is positioned against the
+     container BELOW that bar, those 65 pixels pushed every sheet down and the
+     printout ran one sheet longer than the pages it holds. Hidden is not
+     enough for anything above the report — it has to be GONE, so the report
+     starts at the top of the first sheet. */
+  .print-hidden {
+    display: none !important;
   }
   /* The screen scrolls a wide table sideways inside its card; paper cannot
      scroll, so let it size to the sheet instead of being clipped. */
   .print-page.print-expand,
   .print-page .print-expand {
     overflow: visible !important;
+  }
+
+  /* A printed table has to fit the SHEET — it cannot scroll sideways the way
+     its card does on screen. Seven columns set at the screen's 14px with 16px
+     of padding either side need more width than a portrait A4 leaves, so the
+     statement table overflowed the page and the card's own overflow-hidden cut
+     the right-hand column — the balance — clean off. Type down and padding in
+     is what a printed statement looks like anyway, and it leaves the narrative
+     column, the only one that may wrap, room to do so. */
+  .print-page table {
+    width: 100%;
+    /* !important, like the colour rules above: these override Tailwind's
+       text-sm / px-4 / py-2.5 on the cells themselves. */
+    font-size: 8.5pt !important;
+    line-height: 1.35 !important;
+  }
+  .print-page th,
+  .print-page td {
+    padding: 3px 5px !important;
   }
 
   /* Keep a row and its stacked narrative lines together, and repeat the column
@@ -283,6 +308,43 @@ body {
      The FIRST card keeps the sheet the heading is on. */
   .print-page .print-per-page > * + * {
     break-before: page;
+  }
+
+  /* And that sheet is a fixed BOX, so the page footer sits on the bottom edge
+     of the paper instead of trailing the last transaction, and so the sheet a
+     card lands on is decided here rather than by the browser. This is the half
+     of the page numbering that lives in CSS: statementPages.ts cuts the
+     transactions to fit these heights, the card's footer prints the sheet's
+     number, and the two are ONE measurement — change a height here and the
+     budget there has to move with it.
+
+     A4 portrait less the 12mm padding is 273mm; 270 is used so that rounding
+     cannot tip a card onto a second sheet and insert a blank one. The first
+     sheet gives 16mm of its height to the document heading. Margins between
+     cards go: against a forced break they are truncated anyway, and a margin
+     that survived would push the box past the sheet. */
+  .print-page > header.print-only {
+    height: 16mm;
+    margin-bottom: 0;
+    box-sizing: border-box;
+  }
+  .print-page .print-per-page {
+    margin-top: 0;
+  }
+  .print-page .print-per-page > * {
+    display: flex;
+    flex-direction: column;
+    height: 270mm;
+    margin-top: 0;
+  }
+  /* ...unless the report opens with a document heading, which eats 16mm of
+     the first sheet. The on-demand statement has none — its own card header
+     names the document — so its first sheet is a full one. */
+  .print-page > header.print-only ~ .print-per-page > *:first-child {
+    height: 254mm;
+  }
+  .print-page .print-per-page > * > footer {
+    margin-top: auto;
   }
 
   /* Chrome, Edge and Firefox draw their print header/footer — the document

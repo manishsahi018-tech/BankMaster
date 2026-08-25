@@ -43,7 +43,7 @@ const COLUMNS: GridColumn[] = [
 // Anything below half a halala is rounding, not a real gap.
 const EPSILON = 0.005
 
-export default function BlockedAmountBreakup({ breakup, onReturn }: { breakup: Breakup; onReturn: () => void }) {
+export default function BlockedAmountBreakup({ breakup, onExit }: { breakup: Breakup; onExit: () => void }) {
   const total = amountValue(breakup.blockedBal) ?? 0
   const listed = breakup.details.reduce<number>(
     (sum, row) => sum + (amountValue(row.blockedAmt) ?? 0),
@@ -110,7 +110,7 @@ export default function BlockedAmountBreakup({ breakup, onReturn }: { breakup: B
             ? 'None of this account’s blocks could be listed — see the note above.'
             : 'No blocked amounts for this account.'
         }
-        buttonGroups={[[{ label: 'Return', kind: 'primary', onClick: () => onReturn() }]]}
+        buttonGroups={[[{ label: 'Exit', kind: 'danger', alignEnd: true, onClick: () => onExit() }]]}
       />
     </div>
   )

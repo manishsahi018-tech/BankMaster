@@ -298,7 +298,7 @@ export default function App() {
         }}
       />
       {/* Subtle accent glow under the header; follows the selected theme. */}
-      <div className="pointer-events-none absolute inset-x-0 top-16 h-64 bg-gradient-to-b from-primary-soft/70 to-transparent" />
+      <div className="print-hidden pointer-events-none absolute inset-x-0 top-16 h-64 bg-gradient-to-b from-primary-soft/70 to-transparent" />
       <div className="relative">
 
       {/* Blocking processing modal while a server call is in flight; errors are
@@ -913,7 +913,7 @@ export default function App() {
       )}
 
       {screen.name === 'blockedBreakup' && screen.breakup && (
-        <BlockedAmountBreakup breakup={screen.breakup} onReturn={() => go('accounts')} />
+        <BlockedAmountBreakup breakup={screen.breakup} onExit={() => go('accounts')} />
       )}
 
       {screen.name === 'transactions' && (

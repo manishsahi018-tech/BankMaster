@@ -139,13 +139,30 @@ const TAIL_MATCHED = new Set([
 export function codeLabel(set: string, code: unknown): string {
   const c = String(code ?? '').trim()
   if (!c) return ''
-  const entries = CODES[set]
-  const found =
-    entries?.find((e) => e.code === c) ??
-    (TAIL_MATCHED.has(set)
-      ? entries?.find((e) => e.code.length > c.length && e.code.endsWith(c))
-      : undefined)
+  const found = findEntry(set, c)
   return found ? `${found.code}-${found.description}` : c
+}
+
+/** The reference entry itself, exact match first, then the tail rule. */
+function findEntry(set: string, code: string): CodeEntry | undefined {
+  const entries = CODES[set]
+  return (
+    entries?.find((e) => e.code === code) ??
+    (TAIL_MATCHED.has(set)
+      ? entries?.find((e) => e.code.length > code.length && e.code.endsWith(code))
+      : undefined)
+  )
+}
+
+/**
+ * The entry's DESCRIPTION alone — "01" → "Saudi Riyal" — for the few places
+ * that show a name rather than the legacy's "<code>-<description>" combo form.
+ * An unknown code still returns itself, as codeLabel does.
+ */
+export function codeDescription(set: string, code: unknown): string {
+  const c = String(code ?? '').trim()
+  if (!c) return ''
+  return findEntry(set, c)?.description ?? c
 }
 
 /** Combo options as "<code>-<description>"; falls back when the API is down. */

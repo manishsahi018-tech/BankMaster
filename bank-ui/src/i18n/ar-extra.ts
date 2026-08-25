@@ -358,8 +358,12 @@ const AR_EXTRA: Record<string, string> = {
   // "statement for the month of ...".
   'statement for {month}': 'كشف حساب لشهر {month}',
   'no. {stmtnum}': 'رقم {stmtNum}',
+  // The date the document is produced — the legacy's own caption for it is
+  // br.stmt.day, 'تاريخ الكشف'.
+  'statement date': 'تاريخ الكشف',
+  // A statement whose transactions run past one sheet.
+  '(continued)': '(تابع)',
   '{pages} printed pages': '{pages} صفحات مطبوعة',
-  'branch data {branchdata}': 'بيانات الفرع {branchData}',
 
   // The heading each statement screen prints at the top of the SHEET. It names
   // the document, not the screen, so it is not the screen's own <h1>.
@@ -640,6 +644,8 @@ const AR_EXTRA: Record<string, string> = {
   'resident juristic customer': 'العميل المقيم الاعتباري',
   'saudi shareholding %': 'نسبة مساهمة السعوديون',
   'saving account': 'حساب توفير',
+  // The statement archives spell the same account type in the plural.
+  'savings account': 'حساب توفير',
   "secondary int'l card": 'البطاقة الدولية الإضافية',
   'share %': 'نسبة المساهمة',
   'share holding %': 'نسبة المساهمة',

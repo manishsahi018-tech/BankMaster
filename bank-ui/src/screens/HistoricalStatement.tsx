@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Field, TextInput, ReadOnlyInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
 import { StatementCard, statementKey } from '../components/StatementCard.tsx'
+import { paginateStatements } from '../components/statementPages.ts'
 import type { Account } from '../types.ts'
 import type { HistoricalStatement as Statement } from '../api.ts'
 import { api } from '../api.ts'
@@ -339,15 +340,22 @@ export default function HistoricalStatement({
 
           {/* Translated through a placeholder form, like the PDP screen's — the
               English plural pair had no Arabic and showed through untranslated. */}
-          <p className="mt-6 text-sm text-muted">
+          <p className="print-hidden mt-6 text-sm text-muted">
             {t('{stmts} statements · {txns} transactions', {
               stmts: statements!.length,
               txns: lineCount,
             })}
           </p>
           <div className="mt-3 space-y-5 print-per-page">
-            {statements!.map((s) => (
-              <StatementCard key={statementKey(s)} statement={s} />
+            {paginateStatements(statements!).map((sheet, i, all) => (
+              <StatementCard
+                key={`${statementKey(sheet.statement)}-${i}`}
+                statement={sheet.statement}
+                lines={sheet.lines}
+                continued={sheet.continued}
+                page={i + 1}
+                pages={all.length}
+              />
             ))}
           </div>
         </div>
