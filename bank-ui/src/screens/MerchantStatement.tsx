@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Field, TextInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
 import { api } from '../api.ts'
+import { formatDate, todayYyyymmdd } from '../schema/helpers.ts'
 
 import { t } from '../i18n/index.ts'
 // Mirrors legacy frmMerchantStmt.frm ("Merchant Statement Printing", the
@@ -157,26 +158,19 @@ export default function MerchantStatement({ onExit }: { onExit: () => void }) {
   const [form, setForm] = useState(initialForm)
   const [stmtType, setStmtType] = useState<StmtKey>('item')
   const [lines, setLines] = useState<string[] | null>(null)
-  const [showReport, setShowReport] = useState(false)
   const [generating, setGenerating] = useState(false)
-  // Print Statement prints the report as it appears on screen, so it has to
-  // REVEAL it first when it is hidden — and the dialog can only open once React
-  // has committed that. The flag survives exactly one commit.
-  const [printPending, setPrintPending] = useState(false)
   const toast = useToast()
 
-  // Legacy disableButton (:970): ANY edit re-enables Generate and kills View +
-  // Print, so a report can never be viewed or printed against a changed form.
+  // Legacy disableButton (:970): ANY edit re-enables Generate and kills Print,
+  // so a report can never be printed against a changed form.
   const set = (key: keyof typeof initialForm, value: string) => {
     setForm((f) => ({ ...f, [key]: value }))
     setLines(null)
-    setShowReport(false)
   }
 
   const setType = (key: StmtKey) => {
     setStmtType(key)
     setLines(null)
-    setShowReport(false)
   }
 
   /**
@@ -267,13 +261,12 @@ const digitsOnly = (value: string) => value.replace(/\D/g, '')
       }
 
       // reportFoundFlag (:486-488): no rows across every page is not an error,
-      // it is "no report found", and View/Print stay disabled.
+      // it is "no report found", and Print stays disabled.
       if (all.length === 0) {
         toast.warn(MSG.noStatement)
         return
       }
       setLines(all)
-      setShowReport(true)
       if (!complete) {
         toast.warn(
           `Stopped after ${all.length} lines — the server did not signal completion. ` +
@@ -303,12 +296,6 @@ const digitsOnly = (value: string) => value.replace(/\D/g, '')
         )
       : null
 
-  useEffect(() => {
-    if (!printPending || !showReport) return
-    setPrintPending(false)
-    window.print()
-  }, [printPending, showReport])
-
   const secondaryBtn =
     'rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft ' +
     'shadow-xs transition-colors hover:bg-surface-muted ' +
@@ -321,11 +308,6 @@ const digitsOnly = (value: string) => value.replace(/\D/g, '')
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
           {t('Merchant Statement Printing')}
         </h1>
-        <p className="mt-1 text-sm text-muted">
-          {t(
-            'Legacy frmMerchantStmt — authority ~81. Served by the acquiring/POS system, not by the customer-static-data host.',
-          )}
-        </p>
       </div>
 
       {/* Persistent status banner, not a toast: this is a standing condition of
@@ -450,28 +432,18 @@ const digitsOnly = (value: string) => value.replace(/\D/g, '')
             disabled={generating}
             className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong disabled:cursor-not-allowed disabled:bg-faint"
           >
-            {generating ? t('Generating…') : t('Generate Statement')}
+            {generating ? t('Generating…') : t('Generate Stmt')}
           </button>
 
-          {/* Legacy View shells WordPad on c:\merchStmt\mrchstmt.prt; in the
-              browser the equivalent is revealing the spooled text inline. */}
+          {/* The legacy's View shells WordPad on c:\merchStmt\mrchstmt.prt,
+              because there the report was a FILE. Here it is the screen: a
+              generated statement is on it, so there is nothing to reveal and
+              no View button to reveal it with. Print prints what is already
+              there, as on the other statement screens. */}
           <button
             type="button"
             disabled={!hasReport}
-            onClick={() => setShowReport((v) => !v)}
-            title={hasReport ? undefined : 'Generate a statement first'}
-            className={secondaryBtn}
-          >
-            {showReport ? t('Hide Statement') : t('View Statement')}
-          </button>
-
-          <button
-            type="button"
-            disabled={!hasReport}
-            onClick={() => {
-              setShowReport(true)
-              setPrintPending(true)
-            }}
+            onClick={() => window.print()}
             title={hasReport ? undefined : 'Generate a statement first'}
             className={secondaryBtn}
           >
@@ -491,30 +463,58 @@ const digitsOnly = (value: string) => value.replace(/\D/g, '')
       {/* The spooled report — server-rendered fixed-width lines, shown as-is in
           a monospace block because there are no columns to parse out — and the
           ONLY thing that prints. It needs no heading of its own: the spool file
-          carries its own, "MERCHANT STATEMENT - <TYPE>" with the merchant,
-          period and page number, repeated at the top of every page.
+          carries its own, "MERCHANT STATEMENT - <TYPE>" with the merchant and
+          the period, repeated at the top of every page. Not the page number —
+          that is the one field the header does NOT carry, and the footer below
+          supplies it.
 
           Landscape, as cmdPrintStmt_Click printed it (Courier New 10pt,
           vbPRORLandscape), and each line the server prefixed with Chr(12) — a
           form feed — starts a new sheet. That is why the lines are rendered one
           span each rather than joined: the marker has to survive as a break, and
           the control character itself must not reach the screen. */}
-      {hasReport && showReport && (
+      {hasReport && (
         <section className="print-page print-landscape mt-5 overflow-x-auto print-expand rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
-          {spoolPages(lines!).map((page, i) => (
-            <pre
-              key={i}
-              className={`whitespace-pre font-mono text-xs leading-5 text-ink ${
+          {/* The spool arrives already paginated — the acquiring system decides
+              where a page ends and marks it with a form feed — so unlike the
+              statement screens nothing has to be cut here. What was missing is
+              the number: the header the spool repeats at the top of every page
+              deliberately carries none (MockMerchantRepository.headerLine), and
+              once the pages are separate sheets a reader has no way to tell one
+              from the next. print-per-page makes each page its own sheet and
+              pins its number to the foot of it. */}
+          <div className="print-per-page">
+            {spoolPages(lines!).map((page, i, all) => (
+              <div
+                key={i}
                 // Every page after the first is set off from the one above it:
                 // a rule and a gap on screen, its own sheet in print (see
                 // .page-break in index.css, which also drops the rule — the
-                // sheet edge is the separator there).
-                i > 0 ? 'page-break mt-7 border-t border-edge-soft pt-7' : ''
-              }`}
-            >
-              {page.join('\n')}
-            </pre>
-          ))}
+                // sheet edge is the separator there — and supplies the top
+                // margin the page box no longer has).
+                className={i > 0 ? 'page-break mt-7 border-t border-edge-soft pt-7' : ''}
+              >
+                <pre className="whitespace-pre font-mono text-xs leading-5 text-ink">
+                  {page.join('\n')}
+                </pre>
+                {/* The sheet's own line: the day the statement was produced on
+                    the left, which sheet you are holding on the right. The
+                    spool text carries neither — the acquiring system formats
+                    the page, and its header deliberately repeats the same
+                    fields on every one of them. */}
+                <footer className="mt-2 flex items-baseline justify-between gap-4 text-xs text-muted-soft">
+                  <span>
+                    <span className="uppercase tracking-wider">{t('Statement Date')}</span>
+                    {' - '}
+                    <span className="font-medium text-ink">{formatDate(todayYyyymmdd())}</span>
+                  </span>
+                  <span className="shrink-0">
+                    {t('Page {page} of {pages}', { page: i + 1, pages: all.length })}
+                  </span>
+                </footer>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 
