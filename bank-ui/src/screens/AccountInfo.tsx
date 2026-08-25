@@ -4,6 +4,7 @@ import StatusBadge, { statusTone } from '../components/StatusBadge.tsx'
 import type { Account, Customer } from '../types.ts'
 import { hasAuthority } from '../session.ts'
 import { codeLabel } from '../codes.ts'
+import { formatAmount } from '../schema/helpers.ts'
 
 // Mirrors legacy frmAccount.frm ("Account" MDI child) — the account grid a
 // customer's Account button opens, with the two rows of facility buttons.
@@ -14,9 +15,9 @@ import { codeLabel } from '../codes.ts'
 
 const COLUMNS: GridColumn[] = [
   { key: 'accountNumber', label: 'Account Number' },
-  { key: 'bookBalance', label: 'Book Balance', align: 'right' },
-  { key: 'clearedBalance', label: 'Cleared Balance', align: 'right' },
-  { key: 'blockedBalance', label: 'Blocked Balance', align: 'right' },
+  { key: 'bookBalance', label: 'Book Balance', align: 'right', render: formatAmount },
+  { key: 'clearedBalance', label: 'Cleared Balance', align: 'right', render: formatAmount },
+  { key: 'blockedBalance', label: 'Blocked Balance', align: 'right', render: formatAmount },
   {
     key: 'accountStatus',
     // codeLabel yields "<code>-<description>", so statusTone still matches on
@@ -24,7 +25,7 @@ const COLUMNS: GridColumn[] = [
     label: 'Account Status',
     render: (v) => <StatusBadge value={codeLabel('accStatus', v)} tone={statusTone(v)} />,
   },
-  { key: 'creditLimit', label: 'Credit Limit', align: 'right' },
+  { key: 'creditLimit', label: 'Credit Limit', align: 'right', render: formatAmount },
   { key: 'dormantFlag', label: 'Dormant Flag' },
 ]
 
