@@ -7,6 +7,7 @@ import type { Account } from '../types.ts'
 import type { HistoricalStatement as Statement } from '../api.ts'
 import { api } from '../api.ts'
 import { hasAuthority } from '../session.ts'
+import { printDocument } from '../print.ts'
 
 import { t } from '../i18n/index.ts'
 // Mirrors legacy frmHistStmt.frm ("Historical Statement Printing", the
@@ -103,6 +104,12 @@ export default function HistoricalStatement({
   // form; the account number is display-only there (txtAccNo.Enabled = 0). On
   // the deleted-account route there is nothing to copy, so both are typed.
   const canKeyAccount = deletedAccountRoute && hasAuthority('~87')
+  // What the sheet is called — the heading printed at the top of it AND the
+  // name the browser saves it under, from the one string so the two cannot
+  // disagree. The tag = "D" route prints a different document, so it says so.
+  const documentName = deletedAccountRoute
+    ? 'BankMaster Deleted Account Statement'
+    : 'BankMaster Account Statement'
   const [accNo, setAccNo] = useState(account?.accountNumber ?? '')
   // Carried from the grid row, never keyed. There is no box for it on either
   // route — see the branch-code note in the header comment — so on the
@@ -303,7 +310,7 @@ export default function HistoricalStatement({
           <button
             type="button"
             disabled={!hasReport}
-            onClick={() => window.print()}
+            onClick={() => printDocument(t(documentName))}
             title={hasReport ? undefined : 'Generate a statement first'}
             className={secondaryBtn}
           >
@@ -331,11 +338,7 @@ export default function HistoricalStatement({
               tag = "D" route prints a statement for a CLOSED account, so the
               paper says which of the two documents it is. */}
           <header className="print-only mb-4 border-b border-edge pb-3">
-            <h1 className="text-lg font-bold text-ink">
-              {deletedAccountRoute
-                ? t('BankMaster Deleted Account Statement')
-                : t('BankMaster Account Statement')}
-            </h1>
+            <h1 className="text-lg font-bold text-ink">{t(documentName)}</h1>
           </header>
 
           {/* Translated through a placeholder form, like the PDP screen's — the

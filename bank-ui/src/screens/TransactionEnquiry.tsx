@@ -8,6 +8,7 @@ import type { Account } from '../types.ts'
 import TransactionDetail from './TransactionDetail.tsx'
 import { api } from '../api.ts'
 import { amountValue, formatAmount, formatDate, todayYyyymmdd } from '../schema/helpers.ts'
+import { printDocument } from '../print.ts'
 
 import { t } from '../i18n/index.ts'
 // Mirrors legacy frmTransEnq.frm ("Transaction Enquiry using specific type",
@@ -192,7 +193,9 @@ export default function TransactionEnquiry({
               label: 'Print',
               disabled: !rows || rows.length === 0,
               title: !rows || rows.length === 0 ? 'Fetch transactions first' : undefined,
-              onClick: () => window.print(),
+              // Named for the screen's own report — this one prints the
+              // enquiry, not a statement.
+              onClick: () => printDocument(t('Transaction Type Enquiry')),
             },
             { label: 'Exit', kind: 'danger', alignEnd: true, onClick: () => onExit() },
           ],

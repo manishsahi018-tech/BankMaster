@@ -2,7 +2,12 @@ import type {
   HistoricalStatement as Statement,
   HistoricalStatementLine as Line,
 } from '../api.ts'
-import { formatDate, formatPlainAmount, todayYyyymmdd } from '../schema/helpers.ts'
+import {
+  formatDate,
+  formatPdpAccount,
+  formatPlainAmount,
+  todayYyyymmdd,
+} from '../schema/helpers.ts'
 import { codeDescription } from '../codes.ts'
 import { t } from '../i18n/index.ts'
 import { getLocale } from '../i18n/locale.ts'
@@ -131,7 +136,15 @@ export function StatementCard({
                 through to its English, which is t()'s normal behaviour. CRNCY
                 is a code, so it goes through the reference sets instead. */}
             <p className="mt-0.5 text-sm text-muted">
-              {s.acctNum}
+              {/* PDP's account is 19 digits, and 19 unbroken digits is a number
+                  nobody can read back or check against a paying-in slip, so it
+                  is grouped the way the bank writes it. BM's 14-digit accounts
+                  keep their stored form — the grouping is PDP's, not the
+                  card's. Held on one line: the hyphens are group separators,
+                  and a wrap at one of them would read as two accounts. */}
+              <span className="whitespace-nowrap tabular-nums">
+                {s.source === 'PDP' ? formatPdpAccount(s.acctNum) : s.acctNum}
+              </span>
               {s.acctType && ` · ${t(s.acctType)}`}
               {s.crncy && ` · ${currencyLabel(s.crncy)}`}
             </p>

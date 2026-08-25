@@ -3,6 +3,7 @@ import { Field, TextInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
 import { api } from '../api.ts'
 import { formatDate, todayYyyymmdd } from '../schema/helpers.ts'
+import { printDocument } from '../print.ts'
 
 import { t } from '../i18n/index.ts'
 // Mirrors legacy frmMerchantStmt.frm ("Merchant Statement Printing", the
@@ -443,7 +444,10 @@ const digitsOnly = (value: string) => value.replace(/\D/g, '')
           <button
             type="button"
             disabled={!hasReport}
-            onClick={() => window.print()}
+            // The spool's own header reads "MERCHANT STATEMENT - <TYPE>";
+            // the type is a code the operator picked, so the document is named
+            // for what it is, not for the variant.
+            onClick={() => printDocument(t('Merchant Statement'))}
             title={hasReport ? undefined : 'Generate a statement first'}
             className={secondaryBtn}
           >

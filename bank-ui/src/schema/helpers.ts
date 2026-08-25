@@ -152,6 +152,27 @@ const RENDERERS: Partial<Record<string, (value: unknown) => string>> = {
   numeric: formatAmount,
 }
 
+/**
+ * The PDP archive's 19-digit ACCT_NUM, punctuated the way the account is read
+ * aloud and written on paper: 1234567890123456789 -> 123-45-678-901-2345678-9.
+ *
+ * PDP's ACCT_NUM alone is this wide — the BM archive and the online gateway
+ * both key 14 — so this grouping belongs to the PDP statement and must not be
+ * applied to any other account box in the app.
+ *
+ * The column is NVARCHAR2(20) holding the account AS KEYED, so a value that is
+ * not exactly 19 digits is returned untouched rather than sliced into groups
+ * that would not line up.
+ */
+const PDP_ACCOUNT_GROUPS = [3, 2, 3, 3, 7, 1]
+
+export function formatPdpAccount(value: unknown): string {
+  const acct = String(value ?? '').trim()
+  if (!/^\d{19}$/.test(acct)) return acct
+  let at = 0
+  return PDP_ACCOUNT_GROUPS.map((width) => acct.slice(at, (at += width))).join('-')
+}
+
 // Card numbers are never displayed in full (PCI) — mask all but last 4.
 export function maskCardNo(value: unknown): string {
   const card = String(value ?? '')
