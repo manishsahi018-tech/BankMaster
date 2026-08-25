@@ -118,6 +118,9 @@ const AR_EXTRA: Record<string, string> = {
   'opens the card grid': 'يفتح قائمة البطاقات',
   'enter a customer no, account no or card number first':
     'أدخل رقم العميل أو رقم الحساب أو رقم البطاقة أولاً',
+  // The home screen's button for the merchant statement screen, whose own
+  // title is the legacy's 'merchant statement printing'.
+  'merchant statement': 'كشف حساب البائع',
   'merchant statement facilities': 'خدمات كشف حساب البائع',
   'requires merchant statement authority (~81)': 'يتطلب صلاحية كشف حساب البائع (‎~81‎)',
 

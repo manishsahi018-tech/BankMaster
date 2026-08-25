@@ -600,23 +600,6 @@ export default function CustomerStaticData({
                 {t('ATM Cards')}
               </button>
 
-              {/* cmdMerchant — gated on ~81 alone (search.bas:89/257/432,
-                  globalFunctions.bas:4511). Needs no customer context: the
-                  merchant number is keyed on the statement form itself. */}
-              <button
-                type="button"
-                disabled={!hasAuthority('~81')}
-                onClick={() => onMerchant?.()}
-                title={
-                  hasAuthority('~81')
-                    ? 'Merchant statement facilities'
-                    : 'Requires merchant statement authority (~81)'
-                }
-                className={secondaryBtn}
-              >
-                {t('Merchant')}
-              </button>
-
               <button
                 type="button"
                 onClick={() => {
@@ -714,7 +697,7 @@ export default function CustomerStaticData({
                     legacy had no PDP screen — so this one sits last, after
                     everything that does. It needs no customer context: branch,
                     customer and account are keyed on the form itself, like the
-                    Merchant button above.
+                    Merchant Statement button beside it.
 
                     Named to match its neighbour rather than after the table
                     pair, because to the operator it is the same errand: an
@@ -726,6 +709,27 @@ export default function CustomerStaticData({
                   className={secondaryBtn}
                 >
                   {t('Historical Statement — PDP')}
+                </button>
+
+                {/* cmdMerchant — gated on ~81 alone (search.bas:89/257/432,
+                    globalFunctions.bas:4511). It sat among the search actions,
+                    which is where the legacy put it, but it searches nothing:
+                    like the two statement buttons beside it, it needs no
+                    customer context — the merchant number is keyed on the
+                    statement form itself — so it belongs with the errands, not
+                    with Customer / Account / ATM Cards. */}
+                <button
+                  type="button"
+                  disabled={!hasAuthority('~81')}
+                  onClick={() => onMerchant?.()}
+                  title={
+                    hasAuthority('~81')
+                      ? 'Merchant statement facilities'
+                      : 'Requires merchant statement authority (~81)'
+                  }
+                  className={secondaryBtn}
+                >
+                  {t('Merchant Statement')}
                 </button>
               </div>
             </div>
