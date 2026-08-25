@@ -129,10 +129,9 @@ public class MockMerchantRepository implements MerchantRepository {
         long grossTotal = 0;
         long commTotal = 0;
         int count = 0;
-        int page = 1;
         int rowsOnPage = 0;
 
-        header(out, merchantNo, name, period, "ITEMWISE", page, true);
+        header(out, merchantNo, name, period, "ITEMWISE", true);
         LocalDate start = parse(fromDate);
 
         for (int day = 0; day < days; day++) {
@@ -163,11 +162,10 @@ public class MockMerchantRepository implements MerchantRepository {
                 count++;
 
                 if (rowsOnPage >= ROWS_PER_PRINT_PAGE) {
-                    page++;
                     rowsOnPage = 0;
                     // Leading form feed = new printed page, as the legacy's
                     // cmdPrintStmt_Click looks for (Chr(12)).
-                    out.add("\f" + headerLine(merchantNo, name, period, "ITEMWISE", page));
+                    out.add("\f" + headerLine(period, "ITEMWISE"));
                     out.add(merchantLine(merchantNo, name));
                     columnTitles(out);
                 }
@@ -196,7 +194,7 @@ public class MockMerchantRepository implements MerchantRepository {
     private static List<String> summary(String merchantNo, String name, String period,
                                         String title, String unit, int days) {
         List<String> out = new ArrayList<>();
-        header(out, merchantNo, name, period, title, 1, false);
+        header(out, merchantNo, name, period, title, false);
         out.add(String.format("%-14s%-28s%10s%12s%14s%11s%15s",
                 unit, "LOCATION", "TXNS", "REFUNDS", "GROSS AMT", "COMM", "NET AMT"));
         rule(out);
@@ -242,8 +240,8 @@ public class MockMerchantRepository implements MerchantRepository {
     }
 
     private static void header(List<String> out, String merchantNo, String name,
-                               String period, String title, int page, boolean withColumns) {
-        out.add(headerLine(merchantNo, name, period, title, page));
+                               String period, String title, boolean withColumns) {
+        out.add(headerLine(period, title));
         out.add(merchantLine(merchantNo, name));
         if (withColumns) {
             columnTitles(out);
@@ -251,16 +249,20 @@ public class MockMerchantRepository implements MerchantRepository {
     }
 
     /**
-     * Bank / report title / period / page. The period column must fit
-     * "PERIOD: dd/MM/yyyy - dd/MM/yyyy" (31 chars) or PAGE collides with it.
+     * Bank / report title / period.
+     *
+     * <p>No page number. This line is repeated at the top of every page of the
+     * spool, and the number was the only thing that differed between them —
+     * which is the one field a reader gains nothing from once the pages are
+     * separate sheets, and the one that made three identical headers look like
+     * three different ones. The period column is the widest field and must fit
+     * "PERIOD: dd/MM/yyyy - dd/MM/yyyy" (31 chars).
      */
-    private static String headerLine(String merchantNo, String name, String period,
-                                     String title, int page) {
-        return String.format("%-28s%-34s%-34s%s",
+    private static String headerLine(String period, String title) {
+        return String.format("%-28s%-34s%s",
                 "ARAB NATIONAL BANK",
                 "MERCHANT STATEMENT - " + title,
-                "PERIOD: " + period,
-                "PAGE " + String.format("%4d", page));
+                "PERIOD: " + period);
     }
 
     /** Second header line: which merchant the statement is for. Wide enough

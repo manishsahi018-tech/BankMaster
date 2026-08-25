@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { useToast } from './Toast.tsx'
 import { BackArrow, SearchIcon } from './legacyForm.tsx'
 import { useT } from '../i18n/index.ts'
@@ -8,6 +9,33 @@ import { useT } from '../i18n/index.ts'
 // a thin config over this component.
 
 export const PAGE_SIZE = 10 // revamp page size (legacy server fetched 20 at a time)
+
+/**
+ * True while the browser is producing a printed copy of the page.
+ *
+ * <p>Paper does not page: a grid printed one screenful at a time would report
+ * ten of a hundred transactions, under a Total covering all hundred. So a grid
+ * inside a print region renders its WHOLE row set while the sheet is being laid
+ * out, and goes back to its page afterwards.
+ *
+ * <p>flushSync, not a plain setState: beforeprint is not a React event, so the
+ * update would be batched into a microtask the browser does not wait for, and
+ * the sheet would be laid out from the tree as it was BEFORE the expansion.
+ */
+function useIsPrinting(): boolean {
+  const [printing, setPrinting] = useState(false)
+  useEffect(() => {
+    const before = () => flushSync(() => setPrinting(true))
+    const after = () => flushSync(() => setPrinting(false))
+    window.addEventListener('beforeprint', before)
+    window.addEventListener('afterprint', after)
+    return () => {
+      window.removeEventListener('beforeprint', before)
+      window.removeEventListener('afterprint', after)
+    }
+  }, [])
+  return printing
+}
 
 export type GridRow = Record<string, any>
 export type Notify = (kind: 'info' | 'warn', text: string) => void
@@ -192,7 +220,10 @@ export default function GridScreen({
   // Clamp rather than effect-reset so a shrinking row set never strands the
   // pager past the last page; "More" fetches only ever grow the set.
   const currentPage = Math.min(page, Math.max(0, Math.ceil(rows.length / PAGE_SIZE) - 1))
-  const visibleRows = rows.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE)
+  const printing = useIsPrinting()
+  const visibleRows = printing
+    ? rows
+    : rows.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE)
   const turnPage = (p: number) => {
     setPage(p)
     setSelected(p * PAGE_SIZE) // legacy grids auto-select the first data row
@@ -221,7 +252,7 @@ export default function GridScreen({
 
 
       <div className="overflow-hidden rounded-2xl border border-edge bg-surface shadow-sm">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto print-expand">
           <table className={`w-full ${minWidth} border-collapse text-sm`}>
             <thead>
               <tr className="border-b border-edge bg-surface-muted text-start">
@@ -246,7 +277,7 @@ export default function GridScreen({
                 </tr>
               )}
               {visibleRows.map((row, vi) => {
-                const i = currentPage * PAGE_SIZE + vi
+                const i = printing ? vi : currentPage * PAGE_SIZE + vi
                 return (
                 <tr
                   key={i}
@@ -284,16 +315,18 @@ export default function GridScreen({
             </tbody>
           </table>
         </div>
-        <Pager
-          total={rows.length}
-          page={currentPage}
-          onPage={turnPage}
-          hasMore={hasMore}
-          onMore={onMore}
-        />
+        <div className="print-hidden">
+          <Pager
+            total={rows.length}
+            page={currentPage}
+            onPage={turnPage}
+            hasMore={hasMore}
+            onMore={onMore}
+          />
+        </div>
       </div>
 
-      <div className="mt-5 grid gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
+      <div className="print-hidden mt-5 grid gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
         {buttonGroups.map((group, gi) => (
           <div key={gi} className="flex flex-wrap items-center gap-3">
             {group.map((btn) => (

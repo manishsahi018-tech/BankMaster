@@ -35,9 +35,12 @@ const MAX_LEN = {
 const SHOW_DORMANT_FACILITIES = false
 
 // The "Enquiries & Services" section. Historical Statement — Deleted A/c is
-// wired (legacy cmdHistoricalStmt, frmCustomerSearch.frm:1177); the dormant
-// facilities beside it are still behind SHOW_DORMANT_FACILITIES, so the section
-// shows only when the operator has ~87 or that flag is on.
+// wired (legacy cmdHistoricalStmt, frmCustomerSearch.frm:1177) and still shows
+// only for ~87; PDP Statements sits beside it with no authority gate of its own
+// (the endpoint still enforces ~60/~61/~62 on Generate), which is why the
+// SECTION is no longer gated — a ~87 gate there would hide PDP from everyone
+// who cannot do deleted-account statements. The dormant facilities beside them
+// remain behind SHOW_DORMANT_FACILITIES.
 const SHOW_ENQUIRIES_SERVICES = true
 
 const secondaryBtn =
@@ -106,6 +109,7 @@ export default function CustomerStaticData({
   onMerchant,
   onSadadTransactions,
   onDeletedAcctStatement,
+  onPdpStatement,
 }: {
   onSearch?: (criteria: SearchCriteria) => void
   onAccounts?: (custNo: string | null, accNo?: string, cardNo?: string) => void
@@ -113,6 +117,7 @@ export default function CustomerStaticData({
   onMerchant?: () => void
   onSadadTransactions?: () => void
   onDeletedAcctStatement?: () => void
+  onPdpStatement?: () => void
 }) {
   const [form, setForm] = useState(initialForm)
   // Validation messages now surface as the shared top-center toast. The shim
@@ -625,7 +630,7 @@ export default function CustomerStaticData({
             </div>
           </div>
 
-          {SHOW_ENQUIRIES_SERVICES && (hasAuthority('~87') || SHOW_DORMANT_FACILITIES) && (
+          {SHOW_ENQUIRIES_SERVICES && (
             <div className="border-t border-edge-soft pt-4">
               <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-soft">
                 {t('Enquiries & Services')}
@@ -704,6 +709,24 @@ export default function CustomerStaticData({
                     </button>
                   </>
                 )}
+                {/* The second archive DB #3 holds, which the Historical screen
+                    deliberately does not read. No legacy button to mirror — the
+                    legacy had no PDP screen — so this one sits last, after
+                    everything that does. It needs no customer context: branch,
+                    customer and account are keyed on the form itself, like the
+                    Merchant button above.
+
+                    Named to match its neighbour rather than after the table
+                    pair, because to the operator it is the same errand: an
+                    archived statement, from the other archive. */}
+                <button
+                  type="button"
+                  onClick={() => onPdpStatement?.()}
+                  title={t('Archived PDP statements by customer or account number')}
+                  className={secondaryBtn}
+                >
+                  {t('Historical Statement — PDP')}
+                </button>
               </div>
             </div>
           )}

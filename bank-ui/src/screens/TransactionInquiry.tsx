@@ -303,7 +303,7 @@ export default function TransactionInquiry({
             onClick={onExit}
             className="ms-auto rounded-lg border border-danger/30 bg-surface px-4 py-2.5 text-sm font-medium text-danger shadow-xs transition-colors hover:bg-danger-soft"
           >
-            {t('Return to Account Menu')}
+            {t('Exit')}
           </button>
         </div>
       </div>

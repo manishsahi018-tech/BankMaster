@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Field, TextInput, ReadOnlyInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
+import { StatementCard, statementKey } from '../components/StatementCard.tsx'
+import { paginateStatements } from '../components/statementPages.ts'
 import type { Account } from '../types.ts'
-import type { HistoricalStatement as Statement, StatementSystem } from '../api.ts'
+import type { HistoricalStatement as Statement } from '../api.ts'
 import { api } from '../api.ts'
 import { hasAuthority } from '../session.ts'
-import { formatDate, formatPlainAmount } from '../schema/helpers.ts'
 
 import { t } from '../i18n/index.ts'
 // Mirrors legacy frmHistStmt.frm ("Historical Statement Printing", the
@@ -29,16 +30,22 @@ import { t } from '../i18n/index.ts'
 // The month loop and the two BM key encodings (convertAcc2Bm, convertYear2Bm)
 // are deliberately absent — they existed only to build Btrieve keys.
 //
-// THE SYSTEM SELECTOR is new as a control, but not as an idea. The legacy had
-// TWO sources on this screen and made the operator choose with separate buttons:
-// Generate/View/Print read the BRANCH archive it built from Btrieve, while View
-// HO / Print HO read reqPath\prtall.$s! — a pre-merged statement delivered by
-// Head Office and requested over FTP (cmdFtp -> frmSendFile), whose absence the
-// screen reports as "Please call HO". DB #3 holds two header/detail pairs, BM
-// and PDP, and the selector is that same either/or in one control. Whether the
-// pairs line up with branch-vs-HO is a hypothesis, not a fact — see
-// JdbcStatementRepository. Exactly one pair is read, so a result is never a
-// merge of the two archives.
+// BRANCH CODE HAS NO BOX ON EITHER ROUTE. On the normal route it is copied
+// from the grid row (frmAccount.frm:853) and the legacy shows it disabled, so
+// there was never anything to type. On the DELETED-ACCOUNT route the legacy did
+// let the operator key it — but look at what it then did with it: branch chose
+// which Btrieve FILE to open, and DB #3 has no such partition, so for BM it is
+// not a predicate at all (see JdbcStatementRepository). The one rule left that
+// reads it, the staff-branch refusal, is guarded by `tag <> "D"` (:782) and so
+// never fires on this route. It was a required field controlling nothing, and
+// it is gone; the server drops the 4-character requirement for this route to
+// match.
+//
+// THIS SCREEN READS THE BM ARCHIVE ONLY. DB #3 holds two header/detail pairs,
+// BM and PDP; BM is the one that holds the statements this legacy screen itself
+// produced, so it is what the screen asks for, always. PDP is a separate
+// archive and gets its own screen — nothing here selects between them, and a
+// result is never a merge of the two.
 //
 // NOT PORTED, descoped deliberately: Analyse. The legacy shelled out to an
 // `analyse` utility over the merged print file (prtall.$s! -> prtall.$a!, and
@@ -58,9 +65,6 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0
 const LAST_ARCHIVED_YEAR = '2009'
 const LAST_ARCHIVED_MONTH = '07'
 
-/** The two archives DB #3 holds. Sent verbatim — the API takes these strings. */
-const SYSTEMS: StatementSystem[] = ['BM', 'PDP']
-
 // Legacy message text, transcribed from the inline comments beside each MsgBox
 // in frmHistStmt.frm — the errXxx(UserLang) string table is not in the source
 // dump, so those comments are the only record of the wording.
@@ -79,214 +83,6 @@ const MSG = {
 } as const
 
 const digitsOnly = (value: string) => value.replace(/\D/g, '')
-
-/** The legacy names the archive by month; "202403" -> "March 2024". */
-function monthLabel(yyyymmdd: string): string {
-  if (!/^\d{8}$/.test(yyyymmdd)) return yyyymmdd
-  const date = new Date(
-    Number(yyyymmdd.slice(0, 4)),
-    Number(yyyymmdd.slice(4, 6)) - 1,
-    Number(yyyymmdd.slice(6, 8)),
-  )
-  return date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-}
-
-/**
- * LANG_CODE is NVARCHAR2(2) and the legacy's own values were the single chars
- * "a" and "e" (stmtSpec.lang, tested as `If stmtLang = "e"` in processStmt).
- * The archive may equally hold the "0"/"3" pair the print header used
- * (cmdCsv_Click reads Mid$(tLine, 47, 1): "0" = Arabic, "3" = English) or an
- * ISO code, so all three are mapped and anything unrecognised is shown raw
- * rather than guessed at.
- */
-function languageLabel(code: string): string {
-  const c = code.trim().toLowerCase()
-  if (c === 'a' || c === '0' || c === 'ar') return 'Arabic'
-  if (c === 'e' || c === '3' || c === 'en') return 'English'
-  return code
-}
-
-function addressLines(s: Statement): string[] {
-  return [s.custAdr1, s.custAdr2, s.custAdr3, s.custAdr4].filter((l) => l.trim() !== '')
-}
-
-/** One statement's header block and transaction table. */
-function StatementCard({ statement }: { statement: Statement }) {
-  const s = statement
-  const address = addressLines(s)
-  return (
-    <section className="overflow-hidden rounded-2xl border border-edge bg-surface shadow-sm">
-      <header className="border-b border-edge-soft bg-surface-muted px-4 py-4 sm:px-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-ink">
-              Statement for {monthLabel(s.stmtDate)}
-              {s.stmtNum && (
-                <span className="ms-2 text-sm font-normal text-muted">No. {s.stmtNum}</span>
-              )}
-            </h2>
-            <p className="mt-0.5 text-sm text-muted">
-              {s.acctNum}
-              {s.acctType && ` · ${s.acctType}`}
-              {s.crncy && ` · ${s.crncy}`}
-            </p>
-          </div>
-          <div className="text-end text-xs text-muted-soft">
-            {/* Which archive this came from — the System that was selected,
-                echoed back by the server. Redundant on screen while the
-                selector is in view, but it is what makes a saved or printed
-                sheet self-describing, and nothing in the legacy says what
-                separates the two archives. */}
-            <span className="rounded-md border border-edge px-2 py-0.5 font-medium text-ink-soft">
-              {s.source} archive
-            </span>
-            {s.pageCount > 1 && <p className="mt-1">{s.pageCount} printed pages</p>}
-          </div>
-        </div>
-
-        <dl className="mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
-          <div>
-            <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Customer')}</dt>
-            <dd className="text-ink-soft">
-              {s.custName || '—'}
-              {s.custNum && <span className="ms-1 text-muted">({s.custNum})</span>}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Branch')}</dt>
-            <dd className="text-ink-soft">
-              {s.branchCode}
-              {s.branchName && ` — ${s.branchName}`}
-            </dd>
-          </div>
-          {s.iban && (
-            <div>
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('IBAN')}</dt>
-              <dd className="font-mono text-xs text-ink-soft">{s.iban}</dd>
-            </div>
-          )}
-          {s.refNum && (
-            <div>
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Reference')}</dt>
-              <dd className="text-ink-soft">{s.refNum}</dd>
-            </div>
-          )}
-          {address.length > 0 && (
-            <div className="sm:col-span-2 lg:col-span-1">
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Address')}</dt>
-              <dd className="text-ink-soft">{address.join(', ')}</dd>
-            </div>
-          )}
-          {/* LANG_CODE is the descendant of stmtSpec.lang, which drove the
-              legacy's lanfix pass over the rendered page. It no longer changes
-              how anything is displayed — these are fields, not a page image —
-              but it still records which language the statement was PRODUCED in,
-              which is why an archived copy can differ from what the account's
-              current language preference would produce today. */}
-          {s.langCode && (
-            <div>
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">
-                {t('Statement Language')}
-              </dt>
-              <dd className="text-ink-soft">{languageLabel(s.langCode)}</dd>
-            </div>
-          )}
-          {s.pageNum && (
-            <div>
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Page')}</dt>
-              <dd className="text-ink-soft">{s.pageNum}</dd>
-            </div>
-          )}
-        </dl>
-      </header>
-
-      {s.lines.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-muted sm:px-5">
-          {t('This statement has a header but no transaction lines in the archive.')}
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-edge-soft text-start text-xs uppercase tracking-wider text-muted-soft">
-                <th className="px-4 py-2.5 font-semibold">{t('Date')}</th>
-                <th className="px-4 py-2.5 font-semibold">{t('Value Date')}</th>
-                <th className="px-4 py-2.5 font-semibold">{t('Narrative')}</th>
-                <th className="px-4 py-2.5 font-semibold">{t('Branch')}</th>
-                <th className="px-4 py-2.5 text-end font-semibold">{t('Debit')}</th>
-                <th className="px-4 py-2.5 text-end font-semibold">{t('Credit')}</th>
-                <th className="px-4 py-2.5 text-end font-semibold">{t('Balance')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {s.lines.map((line) => {
-                // NARRATIVE1-4 are the four printed narrative lines; blanks are
-                // common, so only the filled ones are stacked.
-                const narrative = [
-                  line.narrative1,
-                  line.narrative2,
-                  line.narrative3,
-                  line.narrative4,
-                ].filter((n) => n.trim() !== '')
-                return (
-                  <tr key={line.txnOrder} className="border-b border-edge-soft last:border-0">
-                    <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-ink-soft">
-                      {formatDate(line.txnDate)}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted">
-                      {formatDate(line.valueDate)}
-                    </td>
-                    <td className="px-4 py-2.5 text-ink-soft">
-                      {narrative.length === 0 ? (
-                        <span className="text-muted-soft">—</span>
-                      ) : (
-                        narrative.map((n, i) => (
-                          <span key={i} className={i === 0 ? 'block' : 'block text-muted'}>
-                            {n}
-                          </span>
-                        ))
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-muted">
-                      {line.txnBranchCode}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums text-ink-soft">
-                      {formatPlainAmount(line.drAmt) || '—'}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums text-ink-soft">
-                      {formatPlainAmount(line.crAmt) || '—'}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-medium text-ink">
-                      {formatPlainAmount(line.runBal)}
-                      {/* RUN_BAL_TYPE is the DR/CR marker the printed statement
-                          carried beside the running balance. Shown verbatim —
-                          the legacy never interpreted it either. */}
-                      {line.runBalType && (
-                        <span className="ms-1 text-xs font-normal text-muted">
-                          {line.runBalType}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* FILE_NAME is the descendant of stmtSpec.stmtFile — the zipped page file
-          the Btrieve index used to point at. Kept visible because support still
-          reconciles against those archive filenames. */}
-      {s.fileName && (
-        <footer className="border-t border-edge-soft px-4 py-2 text-xs text-muted-soft sm:px-5">
-          {t('Archive file')} <span className="font-mono">{s.fileName}</span>
-          {s.branchData && <> · branch data {s.branchData}</>}
-        </footer>
-      )}
-    </section>
-  )
-}
 
 export default function HistoricalStatement({
   account,
@@ -308,11 +104,10 @@ export default function HistoricalStatement({
   // the deleted-account route there is nothing to copy, so both are typed.
   const canKeyAccount = deletedAccountRoute && hasAuthority('~87')
   const [accNo, setAccNo] = useState(account?.accountNumber ?? '')
-  const [branchCode, setBranchCode] = useState(account?.branchCode ?? '')
-  // Defaults to BM: it is the archive that holds the statements the legacy
-  // screen itself produced, so an operator who never touches the selector gets
-  // what the legacy would have given them.
-  const [system, setSystem] = useState<StatementSystem>('BM')
+  // Carried from the grid row, never keyed. There is no box for it on either
+  // route — see the branch-code note in the header comment — so on the
+  // deleted-account route, which has no row, it is simply absent.
+  const branchCode = account?.branchCode ?? ''
   const [form, setForm] = useState({
     fromMonth: '',
     fromYear: '',
@@ -337,7 +132,9 @@ export default function HistoricalStatement({
 
   /** cmdGenerate_Click (:686) validation, in the legacy's own order. */
   const validate = (): string | null => {
-    if (branchCode.trim().length !== 4) return MSG.branchCode
+    // Only where a branch was carried. On the deleted-account route there is
+    // none to carry and none to key, so there is nothing to check.
+    if (!deletedAccountRoute && branchCode.trim().length !== 4) return MSG.branchCode
     if (accNo.trim() === '') return MSG.emptyAccount
     if (form.fromYear === '') return MSG.fromYear
     if (form.fromMonth === '') return MSG.fromMonth
@@ -358,7 +155,8 @@ export default function HistoricalStatement({
         branchCode: branchCode.trim(),
         fromYearMonth: `${form.fromYear}${form.fromMonth}`,
         toYearMonth: `${form.toYear}${form.toMonth}`,
-        system,
+        // Fixed: this screen is the BM archive's. PDP gets its own screen.
+        system: 'BM',
         // The route is a server-side decision, not just a screen mode: it
         // skips the staff-branch rule and adds the still-exists refusal.
         ...(deletedAccountRoute ? { deletedAccount: 'true' } : {}),
@@ -379,7 +177,8 @@ export default function HistoricalStatement({
     }
   }
 
-  const showBranchCode = system === 'PDP' || deletedAccountRoute
+  // Branch Code is carried from the grid row and only typed on the
+  // deleted-account route, where there is no row to carry it.
   const hasReport = statements !== null && statements.length > 0
   const lineCount = (statements ?? []).reduce((n, s) => n + s.lines.length, 0)
 
@@ -398,50 +197,7 @@ export default function HistoricalStatement({
       </div>
 
       <div className="rounded-2xl border border-edge bg-surface p-5 shadow-sm sm:p-6">
-        {/* Above the legacy fields and separated from them, because it does not
-            narrow the enquiry the way they do — it picks WHICH ARCHIVE the
-            enquiry runs against: BM and PDP are separate sets of tables, and a
-            statement in one need not be in the other. Changing it invalidates
-            any report on screen, same as editing a field (legacy
-            disableButtons, :1570). */}
-        <div className="mb-5 border-b border-edge-soft pb-5">
-          <Field label="System" htmlFor="system" className="w-40">
-            <Select
-              id="system"
-              options={SYSTEMS}
-              value={system}
-              onChange={(e) => {
-                setSystem(e.target.value as StatementSystem)
-                setStatements(null)
-              }}
-            />
-          </Field>
-        </div>
-
         <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Branch Code filters the PDP header query and nothing else, so it is
-              only worth showing for PDP. It is still SENT for BM — the value
-              comes off the grid row and the server still validates it and keys
-              the staff-branch rule on it — it just has nothing to control there.
-              The exception is the deleted-account route: no grid row means no
-              branch to carry, so hiding the box would leave the operator unable
-              to satisfy a 4-character rule they cannot see. */}
-          {showBranchCode && (
-            <Field label="Branch Code" htmlFor="branchCode">
-              <TextInput
-                id="branchCode"
-                value={branchCode}
-                maxLength={4}
-                inputMode="numeric"
-                onChange={(e) => {
-                  setBranchCode(digitsOnly(e.target.value))
-                  setStatements(null)
-                }}
-                placeholder="0000"
-              />
-            </Field>
-          )}
-
           {/* txtAccNo.Enabled = 0 by default — carried from the grid. The
               deleted-account route enables it, and only for ~87
               (frmCustomerSearch.frm:1179-1181): without that authority the
@@ -564,67 +320,45 @@ export default function HistoricalStatement({
         </div>
       </div>
 
+      {/* The report region, and the ONLY thing that prints — the printout is
+          this markup rather than a second, print-only rendering that has to be
+          kept in step with it by hand. Same arrangement as the PDP screen. */}
       {hasReport && (
-        <>
-          <p className="mt-6 text-sm text-muted">
-            {statements!.length} statement{statements!.length === 1 ? '' : 's'} · {lineCount}{' '}
-            transaction{lineCount === 1 ? '' : 's'}
+        <div className="print-page">
+          {/* Paper has to name the DOCUMENT; the screen's own <h1> names the
+              screen it lives on. Just the title — the account, branch, month
+              and customer all appear on every statement card below. The legacy's
+              tag = "D" route prints a statement for a CLOSED account, so the
+              paper says which of the two documents it is. */}
+          <header className="print-only mb-4 border-b border-edge pb-3">
+            <h1 className="text-lg font-bold text-ink">
+              {deletedAccountRoute
+                ? t('BankMaster Deleted Account Statement')
+                : t('BankMaster Account Statement')}
+            </h1>
+          </header>
+
+          {/* Translated through a placeholder form, like the PDP screen's — the
+              English plural pair had no Arabic and showed through untranslated. */}
+          <p className="print-hidden mt-6 text-sm text-muted">
+            {t('{stmts} statements · {txns} transactions', {
+              stmts: statements!.length,
+              txns: lineCount,
+            })}
           </p>
-          <div className="mt-3 space-y-5">
-            {statements!.map((s) => (
-              <StatementCard key={`${s.source}-${s.stmtDate}-${s.stmtNum}`} statement={s} />
+          <div className="mt-3 space-y-5 print-per-page">
+            {paginateStatements(statements!).map((sheet, i, all) => (
+              <StatementCard
+                key={`${statementKey(sheet.statement)}-${i}`}
+                statement={sheet.statement}
+                lines={sheet.lines}
+                continued={sheet.continued}
+                page={i + 1}
+                pages={all.length}
+              />
             ))}
           </div>
-        </>
-      )}
-
-      {/* Print-only sheet: one table per statement, landscape, mirroring the
-          legacy's printed layout. */}
-      {hasReport && (
-        <section className="print-sheet print-landscape" aria-hidden="true">
-          <h1>Historical Statement — {accNo}</h1>
-          <p className="print-meta">
-            {system} archive · Branch {branchCode} · {form.fromMonth}/{form.fromYear} to{' '}
-            {form.toMonth}/{form.toYear} · Printed {new Date().toLocaleString('en-GB')}
-          </p>
-          {statements!.map((s) => (
-            <table key={`${s.source}-${s.stmtDate}-${s.stmtNum}`} className="page-break">
-              <caption>
-                {monthLabel(s.stmtDate)}
-                {s.stmtNum && ` — statement ${s.stmtNum}`} · {s.custName} · {s.branchCode}{' '}
-                {s.branchName} · {s.crncy}
-              </caption>
-              <thead>
-                <tr>
-                  <th>{t('Date')}</th>
-                  <th>{t('Value Date')}</th>
-                  <th>{t('Narrative')}</th>
-                  <th className="right">{t('Debit')}</th>
-                  <th className="right">{t('Credit')}</th>
-                  <th className="right">{t('Balance')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {s.lines.map((line) => (
-                  <tr key={line.txnOrder}>
-                    <td>{formatDate(line.txnDate)}</td>
-                    <td>{formatDate(line.valueDate)}</td>
-                    <td>
-                      {[line.narrative1, line.narrative2, line.narrative3, line.narrative4]
-                        .filter((n) => n.trim() !== '')
-                        .join(' / ')}
-                    </td>
-                    <td className="right">{formatPlainAmount(line.drAmt)}</td>
-                    <td className="right">{formatPlainAmount(line.crAmt)}</td>
-                    <td className="right">
-                      {formatPlainAmount(line.runBal)} {line.runBalType}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ))}
-        </section>
+        </div>
       )}
     </main>
   )

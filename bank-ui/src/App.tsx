@@ -56,6 +56,7 @@ import PartyDetail from './screens/PartyDetail.tsx'
 import JointHolderDetail from './screens/JointHolderDetail.tsx'
 import MerchantStatement from './screens/MerchantStatement.tsx'
 import HistoricalStatement from './screens/HistoricalStatement.tsx'
+import PdpStatement from './screens/PdpStatement.tsx'
 import OnDemandStatement from './screens/OnDemandStatement.tsx'
 import TransactionInquiry from './screens/TransactionInquiry.tsx'
 import SadadTransEnquiry from './screens/SadadTransEnquiry.tsx'
@@ -297,7 +298,7 @@ export default function App() {
         }}
       />
       {/* Subtle accent glow under the header; follows the selected theme. */}
-      <div className="pointer-events-none absolute inset-x-0 top-16 h-64 bg-gradient-to-b from-primary-soft/70 to-transparent" />
+      <div className="print-hidden pointer-events-none absolute inset-x-0 top-16 h-64 bg-gradient-to-b from-primary-soft/70 to-transparent" />
       <div className="relative">
 
       {/* Blocking processing modal while a server call is in flight; errors are
@@ -328,6 +329,7 @@ export default function App() {
           onMerchant={() => go('merchant')}
           onSadadTransactions={() => go('sadadTransactions')}
           onDeletedAcctStatement={() => go('deletedAcctStatement')}
+          onPdpStatement={() => go('pdpStatement')}
           onAccounts={(custNo, accNo, cardNo) => {
             if (!custNo && !accNo && !cardNo) {
               setError('Enter a customer no, account no or card number first.')
@@ -911,7 +913,7 @@ export default function App() {
       )}
 
       {screen.name === 'blockedBreakup' && screen.breakup && (
-        <BlockedAmountBreakup breakup={screen.breakup} onReturn={() => go('accounts')} />
+        <BlockedAmountBreakup breakup={screen.breakup} onExit={() => go('accounts')} />
       )}
 
       {screen.name === 'transactions' && (
@@ -932,6 +934,11 @@ export default function App() {
       {screen.name === 'deletedAcctStatement' && (
         <HistoricalStatement deletedAccountRoute onExit={() => go('search')} />
       )}
+
+      {/* The PDP archive's own screen. Like the merchant one it carries no
+          customer context across — branch, customer and account are keyed on
+          the form itself — so Exit returns to search. */}
+      {screen.name === 'pdpStatement' && <PdpStatement onExit={() => go('search')} />}
 
       {/* The two online-gateway screens. Both carry the customer's name from
           the grid context, as the legacy copies it onto the form. */}

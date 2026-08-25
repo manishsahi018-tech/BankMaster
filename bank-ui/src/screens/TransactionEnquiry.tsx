@@ -112,9 +112,12 @@ export default function TransactionEnquiry({
   }
 
   return (
-    <div>
+    // The whole screen is the print region — everything in it except the filter
+    // bar and the grid's own controls IS the report, and printing it is what
+    // keeps the sheet and the screen from drifting apart.
+    <div className="print-page">
       <div className="mx-auto max-w-7xl px-4 pt-8 sm:px-6">
-        <div className="flex flex-wrap items-end gap-4 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
+        <div className="print-hidden flex flex-wrap items-end gap-4 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
           <Field label="From Date" htmlFor="fromDate">
             <DatePicker id="fromDate" value={fromDate} onChange={setFromDate} className="w-40" max={toDate} />
           </Field>
@@ -147,7 +150,19 @@ export default function TransactionEnquiry({
       <GridScreen
         kicker="Account"
         title="Transaction Type Enquiry"
-        header={[{ label: 'Account No', value: account.accountNumber }]}
+        // The filter bar does not print, so the range and type it holds are
+        // repeated as header fields — cmdPrint_Click put exactly these in the
+        // printed report's heading. On screen as well as on paper: a chip the
+        // sheet has and the screen does not is the drift this is avoiding.
+        header={[
+          { label: 'Account No', value: account.accountNumber },
+          { label: 'From Date', value: formatDate(fromDate) },
+          { label: 'To Date', value: formatDate(toDate) },
+          {
+            label: 'Trans Type',
+            value: transType === 'RR' ? 'RR (reversals)' : transType || 'All',
+          },
+        ]}
         columns={COLUMNS}
         rows={rows ?? []}
         emptyText={rows === null ? 'Enter a date range and fetch.' : 'No transactions in this range.'}
@@ -170,8 +185,10 @@ export default function TransactionEnquiry({
             {
               // Legacy cmdPrint_Click (frmTransEnq.frm:620-730): report header,
               // one line per transaction, then the Total. The C-era version
-              // wrote a spool file and drove Printer directly; in the browser
-              // the equivalent is the print sheet below + window.print().
+              // wrote a spool file and drove Printer directly; here it is
+              // window.print() over the screen itself — the header fields, the
+              // Total band and the grid, which GridScreen renders UNPAGED while
+              // the sheet is laid out so the report covers every fetched row.
               label: 'Print',
               disabled: !rows || rows.length === 0,
               title: !rows || rows.length === 0 ? 'Fetch transactions first' : undefined,
@@ -181,51 +198,6 @@ export default function TransactionEnquiry({
           ],
         ]}
       />
-
-      {/* Print-only report. Hidden on screen; @media print in index.css hides
-          everything else and reveals this. Mirrors bmTransHeaderPrint's header
-          (account, period, column titles) and the closing Total rule. */}
-      {rows !== null && rows.length > 0 && (
-        <section className="print-sheet" aria-hidden="true">
-          <h1>
-            Transaction Details for Account number {account.accountNumber} for the period from{' '}
-            {formatDate(fromDate)} to {formatDate(toDate)}
-          </h1>
-          <p className="print-meta">
-            {transType ? `Trans type: ${transType === 'RR' ? 'RR (reversals)' : transType}` : 'All transaction types'}
-            {' · '}Printed {new Date().toLocaleString('en-GB')}
-          </p>
-          <table>
-            <thead>
-              <tr>
-                {COLUMNS.map((c) => (
-                  <th key={c.key} className={c.align === 'right' ? 'right' : undefined}>
-                    {t(c.label)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => (
-                <tr key={`${row.transRef}-${row.transCounter}-${i}`}>
-                  {COLUMNS.map((c) => (
-                    <td key={c.key} className={c.align === 'right' ? 'right' : undefined}>
-                      {c.render ? c.render(row[c.key], row) : String(row[c.key] ?? '')}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={COLUMNS.findIndex((c) => c.key === 'transAmt')}>{t('Total')}</td>
-                <td className="right">{formatAmount(total)}</td>
-                <td colSpan={COLUMNS.length - COLUMNS.findIndex((c) => c.key === 'transAmt') - 1} />
-              </tr>
-            </tfoot>
-          </table>
-        </section>
-      )}
     </div>
   )
 }

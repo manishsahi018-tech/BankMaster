@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Field, TextInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
 import { api } from '../api.ts'
@@ -159,6 +159,10 @@ export default function MerchantStatement({ onExit }: { onExit: () => void }) {
   const [lines, setLines] = useState<string[] | null>(null)
   const [showReport, setShowReport] = useState(false)
   const [generating, setGenerating] = useState(false)
+  // Print Statement prints the report as it appears on screen, so it has to
+  // REVEAL it first when it is hidden — and the dialog can only open once React
+  // has committed that. The flag survives exactly one commit.
+  const [printPending, setPrintPending] = useState(false)
   const toast = useToast()
 
   // Legacy disableButton (:970): ANY edit re-enables Generate and kills View +
@@ -175,7 +179,31 @@ export default function MerchantStatement({ onExit }: { onExit: () => void }) {
     setShowReport(false)
   }
 
-  const digitsOnly = (value: string) => value.replace(/\D/g, '')
+  /**
+ * The spool file cut into its printed PAGES.
+ *
+ * <p>The server plants a form feed (Chr(12)) at the start of every line that
+ * began a new page on the legacy's printer, exactly as cmdPrintStmt_Click read
+ * them back. Splitting there is what lets one page be separated from the next —
+ * by a rule and a gap on screen, by an actual sheet of paper in print. Rendered
+ * as one run instead, page 2's header butts straight onto page 1's last
+ * transaction with nothing between them.
+ *
+ * <p>It also gets the control character itself off the screen, and the break
+ * onto an element that can carry one: `break-before` is a property of BLOCK
+ * boxes, and the spans this used to emit inside one <pre> were inline, so the
+ * page break it asked for was never honoured.
+ */
+function spoolPages(lines: string[]): string[][] {
+  const pages: string[][] = []
+  for (const line of lines) {
+    if (line.startsWith('\f') || pages.length === 0) pages.push([])
+    pages[pages.length - 1].push(line.replace(/^\f/, ''))
+  }
+  return pages
+}
+
+const digitsOnly = (value: string) => value.replace(/\D/g, '')
 
   /**
    * cmdGenerate_Click (:322) validation, in the legacy's own order.
@@ -262,7 +290,6 @@ export default function MerchantStatement({ onExit }: { onExit: () => void }) {
   }
 
   const hasReport = lines !== null && lines.length > 0
-  const typeLabel = STMT_TYPES.find((st) => st.key === stmtType)!.label
   // What actually went on the wire, shown so the month shift is visible rather
   // than silent. Only meaningful once both halves of a date are filled in.
   const wire =
@@ -275,6 +302,12 @@ export default function MerchantStatement({ onExit }: { onExit: () => void }) {
           '00000',
         )
       : null
+
+  useEffect(() => {
+    if (!printPending || !showReport) return
+    setPrintPending(false)
+    window.print()
+  }, [printPending, showReport])
 
   const secondaryBtn =
     'rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft ' +
@@ -435,7 +468,10 @@ export default function MerchantStatement({ onExit }: { onExit: () => void }) {
           <button
             type="button"
             disabled={!hasReport}
-            onClick={() => window.print()}
+            onClick={() => {
+              setShowReport(true)
+              setPrintPending(true)
+            }}
             title={hasReport ? undefined : 'Generate a statement first'}
             className={secondaryBtn}
           >
@@ -452,39 +488,36 @@ export default function MerchantStatement({ onExit }: { onExit: () => void }) {
         </div>
       </div>
 
-      {/* The spooled report. Server-rendered fixed-width lines, so it is shown
-          as-is in a monospace block — there are no columns to parse out. */}
+      {/* The spooled report — server-rendered fixed-width lines, shown as-is in
+          a monospace block because there are no columns to parse out — and the
+          ONLY thing that prints. It needs no heading of its own: the spool file
+          carries its own, "MERCHANT STATEMENT - <TYPE>" with the merchant,
+          period and page number, repeated at the top of every page.
+
+          Landscape, as cmdPrintStmt_Click printed it (Courier New 10pt,
+          vbPRORLandscape), and each line the server prefixed with Chr(12) — a
+          form feed — starts a new sheet. That is why the lines are rendered one
+          span each rather than joined: the marker has to survive as a break, and
+          the control character itself must not reach the screen. */}
       {hasReport && showReport && (
-        <section className="mt-5 overflow-x-auto rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
-          <pre className="whitespace-pre font-mono text-xs leading-5 text-ink">
-            {lines!.join('\n')}
-          </pre>
+        <section className="print-page print-landscape mt-5 overflow-x-auto print-expand rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
+          {spoolPages(lines!).map((page, i) => (
+            <pre
+              key={i}
+              className={`whitespace-pre font-mono text-xs leading-5 text-ink ${
+                // Every page after the first is set off from the one above it:
+                // a rule and a gap on screen, its own sheet in print (see
+                // .page-break in index.css, which also drops the rule — the
+                // sheet edge is the separator there).
+                i > 0 ? 'page-break mt-7 border-t border-edge-soft pt-7' : ''
+              }`}
+            >
+              {page.join('\n')}
+            </pre>
+          ))}
         </section>
       )}
 
-      {/* Print-only sheet. cmdPrintStmt_Click prints the spool file in Courier
-          New 10pt landscape, treating Chr(12) at the start of a line as a page
-          break — reproduced by @page landscape and a break-before on those
-          lines. */}
-      {hasReport && (
-        <section className="print-sheet print-landscape" aria-hidden="true">
-          <h1>
-            Merchant Statement — {form.merchantNo.trim()} ({typeLabel})
-          </h1>
-          <p className="print-meta">
-            Period {wire?.fromDate} to {wire?.toDate} · Printed{' '}
-            {new Date().toLocaleString('en-GB')}
-          </p>
-          <pre>
-            {lines!.map((line, i) => (
-              <span key={i} className={line.startsWith('\f') ? 'page-break' : undefined}>
-                {line.replace(/^\f/, '')}
-                {'\n'}
-              </span>
-            ))}
-          </pre>
-        </section>
-      )}
     </main>
   )
 }

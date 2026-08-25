@@ -35,6 +35,9 @@ const AR_EXTRA: Record<string, string> = {
   reason: 'السبب',
   // Legacy: 'اللغه' — the legacy's own spelling; 'اللغة' is the correct one.
   language: 'اللغة',
+  // Legacy: 'المنزل' — the dwelling, from an address form. This is the nav
+  // button that returns to the module's landing screen.
+  home: 'الرئيسية',
 
   // ---- Application shell ---------------------------------------------------
   'static data management': 'إدارة البيانات الثابتة',
@@ -95,6 +98,12 @@ const AR_EXTRA: Record<string, string> = {
   'enquiries & services': 'الاستفسارات والخدمات',
   'historical statement — deleted a/c': 'كشف حساب قديم — حساب محذوف',
   'historical statement for deleted accounts': 'كشف حساب قديم للحسابات المحذوفة',
+  // PDP stays Latin in the Arabic too: it names the archive's table pair, not
+  // a word — nothing in the legacy Arabic renders it, and an operator asked for
+  // "the PDP statement" would not recognise a transliteration.
+  'historical statement — pdp': 'كشف حساب قديم — PDP',
+  'archived pdp statements by customer or account number':
+    'كشوف حسابات PDP المؤرشفة برقم العميل أو رقم الحساب',
   'name search': 'البحث بالاسم',
   'free-text customer name search': 'بحث حر باسم العميل',
   'sadad transactions': 'حركات سداد',
@@ -332,10 +341,66 @@ const AR_EXTRA: Record<string, string> = {
   'start month': 'شهر البداية',
   'start year': 'سنة البداية',
   '14 digits': '14 رقماً',
+  '7 digits': '7 أرقام',
+  // PDP's ACCT_NUM is wider than BM's — 19, not 14.
+  '19 digits': '19 رقماً',
+  'customer number or account number cannot be spaces...please enter one of them':
+    'رقم العميل أو رقم الحساب لا يمكن أن يكون فارغاً... الرجاء إدخال أحدهما',
+  'enter either a customer number or an account number, not both':
+    'أدخل رقم العميل أو رقم الحساب، وليس كليهما',
+  'clear the account number to search by customer':
+    'امسح رقم الحساب للبحث برقم العميل',
+  'clear the customer number to search by account':
+    'امسح رقم العميل للبحث برقم الحساب',
 
-  // Statements
+  // The archived-statement card (StatementCard.tsx). {month} arrives already
+  // formatted for the locale — "يناير 1990" — so the phrase around it reads
+  // "statement for the month of ...".
+  'statement for {month}': 'كشف حساب لشهر {month}',
+  'no. {stmtnum}': 'رقم {stmtNum}',
+  // The date the document is produced — the legacy's own caption for it is
+  // br.stmt.day, 'تاريخ الكشف'.
+  'statement date': 'تاريخ الكشف',
+  // A statement whose transactions run past one sheet.
+  '(continued)': '(تابع)',
+  '{pages} printed pages': '{pages} صفحات مطبوعة',
+
+  // The heading each statement screen prints at the top of the SHEET. It names
+  // the document, not the screen, so it is not the screen's own <h1>.
+  'pdp account statement': 'كشف حساب PDP',
+  'bankmaster account statement': 'كشف حساب BankMaster',
+  // 'deleted' here is the legacy's sense of a CLOSED account — its own caption
+  // for this route, 'historical statement - deleted a/c', renders it
+  // 'الحسابات الملغيه', not محذوف.
+  'bankmaster deleted account statement': 'كشف حساب ملغى BankMaster',
+
+  // Statements — the frmHistStmt MsgBox texts, raised by BOTH statement screens
+  // (Historical Statement Printing and its PDP counterpart). Toast.tsx
+  // translates on the way out, so an untranslated one shows English inside an
+  // otherwise Arabic screen.
+  'statement extracted successfully': 'تم إصدار كشف الحساب بنجاح',
+  'no report found for this account for a given period':
+    'لا يوجد كشف لهذا الحساب خلال الفترة المحددة',
+  'account number cannot be spaces...please enter it':
+    'رقم الحساب لا يمكن أن يكون فارغاً... الرجاء الإدخال',
+  'from month cannot be blank..please enter it': 'شهر البداية لا يمكن أن يكون فارغاً.. الرجاء الإدخال',
+  'to date cannot be blank...please enter it': 'تاريخ النهاية لا يمكن أن يكون فارغاً... الرجاء الإدخال',
+  'to month cannot be blank..please enter it': 'شهر النهاية لا يمكن أن يكون فارغاً.. الرجاء الإدخال',
+  'from date cannot be later than to date': 'تاريخ البداية لا يمكن أن يكون بعد تاريخ النهاية',
+  'enter a valid date': 'الرجاء إدخال تاريخ صحيح',
+  'not authorized to print the statement for the staff branch':
+    'غير مصرح بطباعة كشف الحساب لفرع الموظفين',
+  'generate a statement first': 'أصدر كشف حساب أولاً',
+  '{stmts} statements · {txns} transactions': '{stmts} كشف · {txns} حركة',
+  '{stmts} statements · {accts} accounts · {txns} transactions':
+    '{stmts} كشف · {accts} حساب · {txns} حركة',
+  'covers whole months': 'يغطي أشهراً كاملة',
+
   'online statement printing': 'طباعة كشف حساب فوري',
-  'send to printer': 'إرسال إلى الطابعة',
+  'historical statement printing — pdp': 'طباعة كشف سابق للحساب — PDP',
+  'generate the pdp statement': 'إصدار كشف حساب PDP',
+  'enter a customer number to cover every account that customer holds, or an account number for one account — one or the other, not both':
+    'أدخل رقم العميل لتغطية جميع حسابات ذلك العميل، أو رقم الحساب لحساب واحد — أحدهما وليس كليهما.',
 
   // Card / cheque header chips. The number is a Latin run, so it is a
   // placeholder rather than text sitting beside the translated word.
@@ -579,6 +644,8 @@ const AR_EXTRA: Record<string, string> = {
   'resident juristic customer': 'العميل المقيم الاعتباري',
   'saudi shareholding %': 'نسبة مساهمة السعوديون',
   'saving account': 'حساب توفير',
+  // The statement archives spell the same account type in the plural.
+  'savings account': 'حساب توفير',
   "secondary int'l card": 'البطاقة الدولية الإضافية',
   'share %': 'نسبة المساهمة',
   'share holding %': 'نسبة المساهمة',

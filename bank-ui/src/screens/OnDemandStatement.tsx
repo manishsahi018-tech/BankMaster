@@ -14,6 +14,7 @@ import {
 } from '../gateway.ts'
 
 import { t } from '../i18n/index.ts'
+import { cutIntoSheets, rowCost, ROW_PADDING } from '../components/statementPages.ts'
 // Mirrors legacy frmInputform (OnlineStmt.frm, "OnLine Statement Printing") —
 // the frmAccount cmdStatement button, authority ~60/~61/~62.
 //
@@ -31,8 +32,16 @@ import { t } from '../i18n/index.ts'
 // different opening balances for the same account and range, correctly.
 //
 // Ported unchanged: the day-granular date pair, the validation order, the
-// pointer paging loop, the running carried balance, the movement totals and the
-// printed sheet.
+// pointer paging loop, the running carried balance and the movement totals.
+//
+// cmdPrintStmt built the statement and spooled it to the printer in ONE action.
+// This screen splits the two, as the archived-statement screens do: Generate
+// Stmt fetches and renders, Print Statement prints what is on the screen and is
+// dead until there is something to print. The operator reads the statement
+// before spending paper on it, and a print that comes out wrong is re-printed
+// without going back to the gateway for the same rows. There is still no
+// second, print-only rendering of the statement: what prints is the report
+// section below, marked .print-page.
 
 const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'))
 const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
@@ -192,6 +201,11 @@ export default function OnDemandStatement({
     }
   }
 
+  const secondaryBtn =
+    'rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft ' +
+    'shadow-xs transition-colors hover:bg-surface-muted ' +
+    'disabled:cursor-not-allowed disabled:border-edge disabled:bg-surface-muted disabled:text-muted-soft'
+
   const decimals = page?.decimalPlace ?? '3'
   const hasReport = rows !== null && rows.length > 0
   // "Value of Movements" and "Number of Movements" (:806-812).
@@ -205,10 +219,23 @@ export default function OnDemandStatement({
     { debit: 0, credit: 0, debitCount: 0, creditCount: 0 },
   )
 
-  const secondaryBtn =
-    'rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft ' +
-    'shadow-xs transition-colors hover:bg-surface-muted ' +
-    'disabled:cursor-not-allowed disabled:border-edge disabled:bg-surface-muted disabled:text-muted-soft'
+  /**
+   * The statement cut into printed sheets.
+   *
+   * Two blocks on the sheet are not transactions and still take space: the
+   * brought forward line opens the first sheet and the movement totals close
+   * the last, so each is reserved against its own sheet's budget — a totals
+   * block that did not fit would print past the bottom edge of the paper,
+   * where the fixed sheet boxes in index.css put nothing.
+   */
+  const sheets = cutIntoSheets(
+    rows ?? [],
+    (r) => rowCost([r.txn.narrative1, r.txn.narrative2, r.txn.narrative3]),
+    {
+      firstSheetReserve: 1 + ROW_PADDING,            // brought forward
+      lastSheetReserve: 2 * (1 + ROW_PADDING) + 1,   // two totals rows + the rule above them
+    },
+  )
 
   const dateFields = (which: 'from' | 'to') => (
     <div className="flex gap-2">
@@ -289,8 +316,9 @@ export default function OnDemandStatement({
             disabled={generating}
             className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong disabled:cursor-not-allowed disabled:bg-faint"
           >
-            {generating ? t('Generating…') : t('Print Statement')}
+            {generating ? t('Generating…') : t('Generate Stmt')}
           </button>
+
           <button
             type="button"
             disabled={!hasReport}
@@ -298,7 +326,7 @@ export default function OnDemandStatement({
             title={hasReport ? undefined : 'Generate a statement first'}
             className={secondaryBtn}
           >
-            {t('Send to Printer')}
+            {t('Print Statement')}
           </button>
           <button
             type="button"
@@ -310,173 +338,178 @@ export default function OnDemandStatement({
         </div>
       </div>
 
+      {/* The report, and the ONLY thing that prints. It needs no print-only
+          heading the way the two archived-statement screens do: the section
+          already names the document ("ON DEMAND STATEMENT") and carries the
+          branch, period and customer, so the sheet is titled by what is on
+          screen. */}
       {hasReport && page && (
-        <section className="mt-5 overflow-hidden rounded-2xl border border-edge bg-surface shadow-sm">
-          <header className="border-b border-edge-soft bg-surface-muted px-4 py-4 sm:px-5">
-            <h2 className="text-base font-semibold text-ink">{t('ON DEMAND STATEMENT')}</h2>
-            <p className="mt-0.5 text-sm text-muted">
-              {page.branchName} · {formatGatewayDate(page.fromDate)} to{' '}
-              {formatGatewayDate(page.toDate)}
-            </p>
-            <p className="mt-1 text-sm text-ink-soft">
-              {page.custName} — {page.address}
-            </p>
-          </header>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-edge-soft text-start text-xs uppercase tracking-wider text-muted-soft">
-                  <th className="px-4 py-2.5 font-semibold">{t('Tlr Id')}</th>
-                  <th className="px-4 py-2.5 font-semibold">{t('Trans. Date')}</th>
-                  <th className="px-4 py-2.5 font-semibold">{t('Particulars')}</th>
-                  <th className="px-4 py-2.5 font-semibold">{t('Value Date')}</th>
-                  <th className="px-4 py-2.5 text-end font-semibold">{t('Debit')}</th>
-                  <th className="px-4 py-2.5 text-end font-semibold">{t('Credit')}</th>
-                  <th className="px-4 py-2.5 text-end font-semibold">{t('Balance')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* "Balance Brought Forward" (:1108-1119) — the opening line. */}
-                <tr className="border-b border-edge-soft bg-surface-muted/50">
-                  <td className="px-4 py-2.5 text-muted">—</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted">
-                    {formatGatewayDate(page.fromDate)}
-                  </td>
-                  <td className="px-4 py-2.5 font-medium text-ink-soft" colSpan={3}>
-                    {t('Balance Brought Forward')}
-                  </td>
-                  <td className="px-4 py-2.5" />
-                  <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-medium text-ink">
-                    {formatMinor(Math.abs(Number(page.bfBalance) || 0), decimals)}{' '}
-                    <span className="text-xs font-normal text-muted">
-                      {balanceMarker(Number(page.bfBalance) || 0)}
-                    </span>
-                  </td>
-                </tr>
-                {rows!.map((r, i) => {
-                  const narrative = [r.txn.narrative1, r.txn.narrative2, r.txn.narrative3].filter(
-                    (n) => n.trim() !== '',
-                  )
-                  return (
-                    <tr key={`${r.txn.transCounter}-${i}`} className="border-b border-edge-soft last:border-0">
-                      <td className="whitespace-nowrap px-4 py-2.5 text-muted">{r.txn.userId}</td>
-                      <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-ink-soft">
-                        {formatGatewayDate(r.txn.postDate)}
-                      </td>
-                      <td className="px-4 py-2.5 text-ink-soft">
-                        {narrative.map((n, k) => (
-                          <span key={k} className={k === 0 ? 'block' : 'block text-muted'}>
-                            {n}
-                          </span>
-                        ))}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted">
-                        {formatGatewayDate(r.txn.valueDate)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums text-ink-soft">
-                        {r.credit ? '—' : formatMinor(r.minor, decimals)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums text-ink-soft">
-                        {r.credit ? formatMinor(r.minor, decimals) : '—'}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-medium text-ink">
-                        {formatMinor(Math.abs(r.balanceMinor), decimals)}{' '}
-                        <span className="text-xs font-normal text-muted">
-                          {balanceMarker(r.balanceMinor)}
+        <div className="print-page">
+          {/* One sheet per card, exactly as the two archived-statement screens
+              print: the rows are cut to fit a sheet HERE (statementPages.ts) so
+              that the number in each footer is the number of the sheet it is
+              printed on. The gateway hands back one long run of transactions —
+              it has no idea where a page ends — and the browser will not say
+              where it broke, so this is the only place that can know. */}
+          <div className="mt-5 space-y-5 print-per-page">
+            {sheets.map((sheetRows, i) => {
+              const first = i === 0
+              const last = i === sheets.length - 1
+              return (
+                <section
+                  key={i}
+                  className="print-expand overflow-hidden rounded-2xl border border-edge bg-surface shadow-sm"
+                >
+                  <header className="border-b border-edge-soft bg-surface-muted px-4 py-4 sm:px-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        {/* Every sheet repeats the whole heading, so a sheet
+                            that leaves the pile still says whose statement it
+                            is — and says which of them it is. */}
+                        <h2 className="text-base font-semibold text-ink">
+                          {t('ON DEMAND STATEMENT')}
+                          {!first && (
+                            <span className="ms-2 text-sm font-normal text-muted">
+                              {t('(continued)')}
+                            </span>
+                          )}
+                        </h2>
+                        <p className="mt-0.5 text-sm text-muted">
+                          {page.branchName} · {formatGatewayDate(page.fromDate)} to{' '}
+                          {formatGatewayDate(page.toDate)}
+                        </p>
+                        <p className="mt-1 text-sm text-ink-soft">
+                          {page.custName} — {page.address}
+                        </p>
+                      </div>
+                      {/* Top right, as on the archived-statement cards: the day
+                          the document is produced, not the period it covers —
+                          that is named on the left. This statement is issued on
+                          demand, so the two are never the same thing. */}
+                      <p className="text-end text-sm text-ink">
+                        <span className="text-xs uppercase tracking-wider text-muted-soft">
+                          {t('Statement Date')}
                         </span>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-              <tfoot className="border-t-2 border-edge">
-                <tr>
-                  <td className="px-4 py-2.5 text-xs uppercase tracking-wider text-muted-soft" colSpan={4}>
-                    {t('Value of Movements')}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-semibold text-ink">
-                    {formatMinor(totals.debit, decimals)}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-semibold text-ink">
-                    {formatMinor(totals.credit, decimals)}
-                  </td>
-                  <td />
-                </tr>
-                <tr>
-                  <td className="px-4 py-2.5 text-xs uppercase tracking-wider text-muted-soft" colSpan={4}>
-                    {t('Number of Movements')}
-                  </td>
-                  <td className="px-4 py-2.5 text-end tabular-nums text-ink-soft">
-                    {totals.debitCount}
-                  </td>
-                  <td className="px-4 py-2.5 text-end tabular-nums text-ink-soft">
-                    {totals.creditCount}
-                  </td>
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
+                        {' - '}
+                        <span className="font-medium">{formatGatewayDate(todayYyyymmdd())}</span>
+                      </p>
+                    </div>
+                  </header>
+
+                  <div className="overflow-x-auto print-expand">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-edge-soft text-start text-xs uppercase tracking-wider text-muted-soft">
+                          <th className="px-4 py-2.5 font-semibold">{t('Tlr Id')}</th>
+                          <th className="px-4 py-2.5 font-semibold">{t('Trans. Date')}</th>
+                          <th className="px-4 py-2.5 font-semibold">{t('Particulars')}</th>
+                          <th className="px-4 py-2.5 font-semibold">{t('Value Date')}</th>
+                          <th className="px-4 py-2.5 text-end font-semibold">{t('Debit')}</th>
+                          <th className="px-4 py-2.5 text-end font-semibold">{t('Credit')}</th>
+                          <th className="px-4 py-2.5 text-end font-semibold">{t('Balance')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {first && (
+                          <tr className="border-b border-edge-soft bg-surface-muted/50">
+                            <td className="px-4 py-2.5 text-muted">—</td>
+                            <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted">
+                              {formatGatewayDate(page.fromDate)}
+                            </td>
+                            <td className="px-4 py-2.5 font-medium text-ink-soft" colSpan={3}>
+                              {t('Balance Brought Forward')}
+                            </td>
+                            <td className="px-4 py-2.5" />
+                            <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-medium text-ink">
+                              {formatMinor(Math.abs(Number(page.bfBalance) || 0), decimals)}{' '}
+                              <span className="text-xs font-normal text-muted">
+                                {balanceMarker(Number(page.bfBalance) || 0)}
+                              </span>
+                            </td>
+                          </tr>
+                        )}
+                          {sheetRows.map((r, i) => {
+                            const narrative = [r.txn.narrative1, r.txn.narrative2, r.txn.narrative3].filter(
+                              (n) => n.trim() !== '',
+                            )
+                            return (
+                              <tr key={`${r.txn.transCounter}-${i}`} className="border-b border-edge-soft last:border-0">
+                                <td className="whitespace-nowrap px-4 py-2.5 text-muted">{r.txn.userId}</td>
+                                <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-ink-soft">
+                                  {formatGatewayDate(r.txn.postDate)}
+                                </td>
+                                <td className="px-4 py-2.5 text-ink-soft">
+                                  {narrative.map((n, k) => (
+                                    <span key={k} className={k === 0 ? 'block' : 'block text-muted'}>
+                                      {n}
+                                    </span>
+                                  ))}
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted">
+                                  {formatGatewayDate(r.txn.valueDate)}
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums text-ink-soft">
+                                  {r.credit ? '—' : formatMinor(r.minor, decimals)}
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums text-ink-soft">
+                                  {r.credit ? formatMinor(r.minor, decimals) : '—'}
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-medium text-ink">
+                                  {formatMinor(Math.abs(r.balanceMinor), decimals)}{' '}
+                                  <span className="text-xs font-normal text-muted">
+                                    {balanceMarker(r.balanceMinor)}
+                                  </span>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                      </tbody>
+                      {/* The movement totals close the statement, so they print
+                          under the LAST sheet only — the budget above keeps a
+                          place for them there. */}
+                      {last && (
+                        <tfoot className="border-t-2 border-edge">
+                          <tr>
+                            <td className="px-4 py-2.5 text-xs uppercase tracking-wider text-muted-soft" colSpan={4}>
+                              {t('Value of Movements')}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-semibold text-ink">
+                              {formatMinor(totals.debit, decimals)}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-2.5 text-end tabular-nums font-semibold text-ink">
+                              {formatMinor(totals.credit, decimals)}
+                            </td>
+                            <td />
+                          </tr>
+                          <tr>
+                            <td className="px-4 py-2.5 text-xs uppercase tracking-wider text-muted-soft" colSpan={4}>
+                              {t('Number of Movements')}
+                            </td>
+                            <td className="px-4 py-2.5 text-end tabular-nums text-ink-soft">
+                              {totals.debitCount}
+                            </td>
+                            <td className="px-4 py-2.5 text-end tabular-nums text-ink-soft">
+                              {totals.creditCount}
+                            </td>
+                            <td />
+                          </tr>
+                        </tfoot>
+                      )}
+                    </table>
+                  </div>
+
+                  {/* The sheet's own number, where the two archived-statement
+                      screens carry theirs. The legacy printed its "Issued upon
+                      your request" disclaimer here too (OnlineStmt.frm:822);
+                      dropped on request. */}
+                  <footer className="border-t border-edge-soft px-4 py-2.5 text-end text-xs text-muted-soft sm:px-5">
+                    {t('Page {page} of {pages}', { page: i + 1, pages: sheets.length })}
+                  </footer>
+                </section>
+              )
+            })}
           </div>
-
-          {/* The legacy's closing line, printed on every statement (:822). */}
-          <footer className="border-t border-edge-soft px-4 py-2.5 text-xs text-muted-soft sm:px-5">
-            {t('Issued Upon your request. NOT A SUBSTITUTE FOR PERIODIC STATEMENT')}
-          </footer>
-        </section>
-      )}
-
-      {hasReport && page && (
-        <section className="print-sheet print-landscape" aria-hidden="true">
-          <h1>On Demand Statement — {account.accountNumber}</h1>
-          <p className="print-meta">
-            {page.custName} · {page.branchName} · {formatGatewayDate(page.fromDate)} to{' '}
-            {formatGatewayDate(page.toDate)} · Printed {new Date().toLocaleString('en-GB')}
-          </p>
-          <table>
-            <thead>
-              <tr>
-                <th>{t('Tlr Id')}</th>
-                <th>{t('Trans. Date')}</th>
-                <th>{t('Particulars')}</th>
-                <th>{t('Value Date')}</th>
-                <th className="right">{t('Debit')}</th>
-                <th className="right">{t('Credit')}</th>
-                <th className="right">{t('Balance')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows!.map((r, i) => (
-                <tr key={i}>
-                  <td>{r.txn.userId}</td>
-                  <td>{formatGatewayDate(r.txn.postDate)}</td>
-                  <td>
-                    {[r.txn.narrative1, r.txn.narrative2, r.txn.narrative3]
-                      .filter((n) => n.trim() !== '')
-                      .join(' / ')}
-                  </td>
-                  <td>{formatGatewayDate(r.txn.valueDate)}</td>
-                  <td className="right">{r.credit ? '' : formatMinor(r.minor, decimals)}</td>
-                  <td className="right">{r.credit ? formatMinor(r.minor, decimals) : ''}</td>
-                  <td className="right">
-                    {formatMinor(Math.abs(r.balanceMinor), decimals)} {balanceMarker(r.balanceMinor)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={4}>{t('Value of Movements')}</td>
-                <td className="right">{formatMinor(totals.debit, decimals)}</td>
-                <td className="right">{formatMinor(totals.credit, decimals)}</td>
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-          <p className="print-meta">
-            {t('Issued Upon your request. NOT A SUBSTITUTE FOR PERIODIC STATEMENT')}
-          </p>
-        </section>
+        </div>
       )}
     </main>
   )

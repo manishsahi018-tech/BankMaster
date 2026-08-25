@@ -45,4 +45,39 @@ public interface StatementRepository {
     List<HistoricalStatement> historicalStatements(
             String acctNum, String branchCode, String fromYearMonth, String toYearMonth,
             String system);
+
+    /**
+     * PDP statements for a branch, by customer number OR account number.
+     *
+     * <p>The PDP archive is the OTHER header/detail pair DB #3 holds, and it has
+     * no legacy screen at all — the Historical Statement form read one Btrieve
+     * index tree keyed on the account and nothing else. What makes a separate
+     * entry point worth having is the PDP header's own shape: it carries
+     * CUST_NUM, which the BM header does not, so a PDP enquiry can start from a
+     * CUSTOMER rather than from one account. That is the only thing this method
+     * does that {@link #historicalStatements} cannot express.
+     *
+     * <p>Consequently the answer may span SEVERAL accounts — every account of
+     * that customer with a statement in the period — where the historical call
+     * always concerns exactly one. Ordered by account, then oldest statement
+     * first.
+     *
+     * <p>{@code branchCode} is a real predicate here, not just the staff-branch
+     * key it is for BM: the PDP header is branch-filtered already (see
+     * {@code JdbcStatementRepository}) and a customer-number enquiry without it
+     * would sweep every branch.
+     *
+     * @param branchCode    4-digit branch, required, filters the header
+     * @param custNum       PDP CUST_NUM, or empty to not filter on it
+     * @param acctNum       account number, or empty to not filter on it. The
+     *                      service passes exactly one of these two; both are
+     *                      still applied if both arrive, so a caller that
+     *                      bypasses that rule gets an intersection rather than
+     *                      a silently ignored argument.
+     * @param fromYearMonth YYYYMM, inclusive
+     * @param toYearMonth   YYYYMM, inclusive
+     */
+    List<HistoricalStatement> pdpStatements(
+            String branchCode, String custNum, String acctNum,
+            String fromYearMonth, String toYearMonth);
 }
