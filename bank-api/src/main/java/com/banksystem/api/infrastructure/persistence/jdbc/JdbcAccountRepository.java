@@ -142,11 +142,11 @@ public class JdbcAccountRepository implements AccountRepository {
     private static final org.springframework.jdbc.core.RowMapper<AccountSummary>
             ACCOUNT_SUMMARY_MAPPER = (rs, i) -> new AccountSummary(
                     actualAccOf(rs.getString("accNo")),
-                    trim(rs.getString("bookBal")),
-                    trim(rs.getString("clearedBal")),
-                    trim(rs.getString("blockedAmt")),
+                    plainAmount(rs.getString("bookBal")),
+                    plainAmount(rs.getString("clearedBal")),
+                    plainAmount(rs.getString("blockedAmt")),
                     trim(rs.getString("accStatusCode")),
-                    trim(rs.getString("accLimit")),
+                    plainAmount(rs.getString("accLimit")),
                     trim(rs.getString("anbDormantFlag")),
                     trim(rs.getString("branchCode")),
                     "0"); // decided per operator in AccountService (cbbranch2.c:5867)
@@ -1253,6 +1253,28 @@ public class JdbcAccountRepository implements AccountRepository {
     }
 
     /**
+     * A money column as a plain decimal.
+     *
+     * <p>The archival money columns are numeric views, so the driver hands them
+     * back as a double and {@code getString}/{@code toString} switches to
+     * scientific notation at 1e7 — a seven-figure balance reached the screen as
+     * "1.2345678E7". Only strings that actually carry an exponent are rewritten,
+     * so a plain decimal and an archival overpunch amount ("12345P", whose sign
+     * character is always P-Y and never an E) are both handed back untouched.
+     */
+    private static String plainAmount(String value) {
+        String raw = trim(value);
+        if (raw.indexOf('E') < 0 && raw.indexOf('e') < 0) {
+            return raw;
+        }
+        try {
+            return new BigDecimal(raw).toPlainString();
+        } catch (NumberFormatException e) {
+            return raw;
+        }
+    }
+
+    /**
      * The C's {@code sprintf("0%c", ...)} — a one-character gld0data status
      * widened to the two characters its code set is keyed on
      * (cbbranch2.c:7397-7400). A value that is already two characters wide (or
@@ -1308,7 +1330,18 @@ public class JdbcAccountRepository implements AccountRepository {
     /** Column value from a queryForList row (case-insensitive keys). */
     private static String str(Map<String, Object> row, String column) {
         Object value = row.get(column);
-        return value == null ? "" : value.toString().trim();
+        if (value == null) {
+            return "";
+        }
+        // Numeric columns arrive as Double/BigDecimal here, and toString would
+        // render anything from 1e7 up in scientific notation (see plainAmount).
+        if (value instanceof Number) {
+            BigDecimal amount = value instanceof BigDecimal bd
+                    ? bd
+                    : new BigDecimal(value.toString());
+            return amount.toPlainString();
+        }
+        return value.toString().trim();
     }
 
     private static void put(Map<String, String> map, String key, String value) {
