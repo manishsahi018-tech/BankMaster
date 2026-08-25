@@ -194,14 +194,14 @@ export default function TopNav({
           </div>
 
           <nav className="hidden items-center gap-1 md:flex">
-            {/* Customer Service = this module's home (the customer search).
+            {/* Home = this module's landing screen (the customer search).
                 About opens the ported frmAbout dialog. */}
             <button
               type="button"
               onClick={() => onHome?.()}
               className={`${navBtn} ${atHome ? activeBtn : idleBtn}`}
             >
-              {t('Customer Service')}
+              {t('Home')}
             </button>
             <button type="button" onClick={() => setAboutOpen(true)} className={`${navBtn} ${idleBtn}`}>
               {t('About')}

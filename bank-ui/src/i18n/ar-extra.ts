@@ -35,6 +35,9 @@ const AR_EXTRA: Record<string, string> = {
   reason: 'السبب',
   // Legacy: 'اللغه' — the legacy's own spelling; 'اللغة' is the correct one.
   language: 'اللغة',
+  // Legacy: 'المنزل' — the dwelling, from an address form. This is the nav
+  // button that returns to the module's landing screen.
+  home: 'الرئيسية',
 
   // ---- Application shell ---------------------------------------------------
   'static data management': 'إدارة البيانات الثابتة',
