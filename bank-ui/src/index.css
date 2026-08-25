@@ -163,100 +163,146 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
-   Print sheets. A screen renders an ordinary .print-sheet section that is
-   hidden on screen; printing hides the whole app shell and reveals just that
-   section at the top of the page. The visibility (not display) trick keeps the
-   sheet's ancestors laid out, so it prints without being clipped by the app's
-   scroll containers. Used by the Transaction Type Enquiry report — the browser
-   equivalent of the legacy's Printer.Print / spool-file output.
+   Printing.
+
+   Every report screen prints the SAME markup it shows: the region that IS the
+   report carries .print-page, and printing hides the app around it and reveals
+   just that. The visibility (not display) trick keeps that region's ancestors
+   laid out, so it prints without being clipped by the app's scroll containers.
+
+   There used to be a second arrangement — a hidden .print-sheet holding a
+   print-only rendering of the same data, laid out the way the legacy's
+   Printer.Print did. It drifted, in the way a second copy always does: the
+   screen grew a column the sheet never got, and printed a closing line the
+   sheet dropped. Every screen that had one now prints its own report region,
+   and the sheet is gone.
+
+   Three classes go with it. .print-only marks something that exists for paper
+   alone — a sheet has to name the DOCUMENT, where the screen's <h1> names the
+   screen. .print-hidden marks the opposite: a control that is not part of the
+   report. .print-expand releases a sideways scroller, which paper cannot use.
    --------------------------------------------------------------------------- */
-.print-sheet {
+.print-only {
   display: none;
 }
 
 @media print {
+  /* Dark mode is a property of a SCREEN, not of paper. `color-scheme: dark` on
+     <html> makes the user agent paint the canvas itself dark — the one surface
+     no rule inside the document covers, and the one `visibility: hidden` does
+     not suppress — so a dark-mode session printed as a black sheet with black
+     text on it. Paper is white here whatever the app is set to. */
+  html,
+  body {
+    color-scheme: light !important;
+    background: #fff !important;
+  }
+
   body * {
     visibility: hidden;
   }
-  .print-sheet,
-  .print-sheet * {
+  .print-page,
+  .print-page * {
     visibility: visible;
   }
-  .print-sheet {
-    display: block;
+  .print-page {
     position: absolute;
     top: 0;
     inset-inline-start: 0;
     width: 100%;
-    padding: 0;
-    color: #000;
-    background: #fff;
-    font-size: 10pt;
+    /* The paper margin — @page has none, so the browser cannot draw its
+       header/footer. */
+    padding: 12mm;
   }
-  .print-sheet h1 {
-    font-size: 12pt;
-    font-weight: 700;
-    margin: 0 0 0.25rem;
+
+  /* Monochrome on paper. The screen's palette — the muted card header band, the
+     grey secondary text, the soft rules — is there to separate things on a lit
+     display; on paper it costs toner and prints as mud, and a bank statement is
+     read as a document, not scanned as a UI. So every background drops out and
+     everything, including the deliberately-quieter labels, prints black. The
+     rules stay, drawn black, because they are what still carries the structure
+     once the fills are gone. */
+  .print-page,
+  .print-page * {
+    background: transparent !important;
+    color: #000 !important;
+    border-color: #000 !important;
+    box-shadow: none !important;
   }
-  .print-sheet .print-meta {
-    margin: 0 0 0.75rem;
-    font-size: 9pt;
+
+  .print-only {
+    display: block;
   }
-  .print-sheet table {
-    width: 100%;
-    border-collapse: collapse;
+  /* Anything that is only a control belongs to the screen, not the report. */
+  .print-page .print-hidden {
+    display: none;
   }
-  .print-sheet th,
-  .print-sheet td {
-    padding: 2pt 4pt;
-    text-align: start;
-    white-space: nowrap;
+  /* The screen scrolls a wide table sideways inside its card; paper cannot
+     scroll, so let it size to the sheet instead of being clipped. */
+  .print-page.print-expand,
+  .print-page .print-expand {
+    overflow: visible !important;
   }
-  .print-sheet th {
-    border-bottom: 1px solid #000;
-    font-weight: 700;
-  }
-  .print-sheet .right {
-    text-align: end;
-  }
-  /* Closing rule + Total line, as in cmdPrint_Click's String(160, "-") block. */
-  .print-sheet tfoot td {
-    border-top: 1px solid #000;
-    font-weight: 700;
-    padding-top: 4pt;
-  }
-  .print-sheet thead {
+
+  /* Keep a row and its stacked narrative lines together, and repeat the column
+     headers when a table runs past one page. */
+  .print-page thead {
     display: table-header-group;
   }
-  .print-sheet tr {
+  .print-page tr {
     break-inside: avoid;
   }
-  /* Server-rendered fixed-width reports (Merchant Statement). The legacy prints
-     the spool file with Printer.FontName = "Courier New (Arabic)", FontSize 10,
-     Orientation = vbPRORLandscape, and starts a new page on a leading Chr(12)
-     (frmMerchantStmt.frm cmdPrintStmt_Click). */
-  .print-sheet pre {
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 9pt;
-    line-height: 1.25;
-    white-space: pre;
-    margin: 0;
+  /* A server-rendered spool file starts a new page where it carried a form
+     feed (Chr(12)); the renderer turns each such run into a block with this.
+     The screen sets those blocks apart with a rule and a gap — on paper the
+     sheet edge already does that, so the rule goes, and the gap becomes the
+     top margin the page box no longer has. Padding, not margin: a margin
+     against a forced break is truncated to nothing. */
+  .print-page .page-break {
+    break-before: page;
+    border-top: 0 !important;
+    margin-top: 0 !important;
+    padding-top: 12mm !important;
   }
-  .print-sheet .page-break {
+  /* The fixed-width spool. Its pages are measured in LINES — 40 transactions
+     under four header lines — so on paper the type has to be set tight enough
+     that one spool page is one sheet. At the screen's 12px/20px a page runs
+     about 233mm, past the 186mm a landscape A4 leaves, and the overflow would
+     land on a sheet carrying no header — the very thing repeating the header
+     on every page exists to prevent. 9pt on 1.2 puts a full page at ~160mm.
+     break-inside is the backstop for a page that still will not fit. */
+  .print-page pre {
+    font-size: 9pt;
+    line-height: 1.2;
+    break-inside: avoid;
+  }
+
+  /* One statement per sheet. Two months running into each other down one page
+     is the single thing that makes an archived statement hard to read on
+     paper, and a filed statement has to be separable from the one after it.
+     The FIRST card keeps the sheet the heading is on. */
+  .print-page .print-per-page > * + * {
     break-before: page;
   }
-  @page {
-    margin: 12mm;
-  }
-}
 
-/* Landscape only for the sheets that need it; the table reports stay portrait. */
-@media print {
-  .print-sheet.print-landscape {
+  /* Chrome, Edge and Firefox draw their print header/footer — the document
+     title and date at the top, the PAGE URL and page number at the bottom —
+     inside the page MARGIN box. A page with no margin leaves them nowhere to
+     go, which is the only lever a stylesheet has over them: they are otherwise
+     a checkbox in the print dialog, not something the document controls. The
+     margin comes back as padding on .print-page above. */
+  @page {
+    margin: 0;
+  }
+
+  /* Landscape only for the reports that need it — a fixed-width spool file
+     needs the width; the card layouts stay portrait. */
+  .print-page.print-landscape {
     page: landscape-sheet;
   }
 }
+
 @page landscape-sheet {
   size: landscape;
-  margin: 12mm;
+  margin: 0;
 }

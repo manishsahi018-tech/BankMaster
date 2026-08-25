@@ -1,11 +1,7 @@
 import { useState } from 'react'
 import { Field, TextInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
-import {
-  StatementCard,
-  StatementPrintTable,
-  statementKey,
-} from '../components/StatementCard.tsx'
+import { StatementCard, statementKey } from '../components/StatementCard.tsx'
 import type { HistoricalStatement as Statement } from '../api.ts'
 import { api } from '../api.ts'
 
@@ -311,8 +307,21 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
         </div>
       </div>
 
+      {/* The report region, and the ONLY thing that prints. The printout is
+          this markup — the same cards, the same columns, the same wording —
+          rather than a second, print-only rendering of the same statements that
+          has to be kept in step with it by hand. */}
       {hasReport && (
-        <>
+        <div className="print-page">
+          {/* Paper has to name the DOCUMENT; the screen's own <h1> names the
+              screen it lives on, which means nothing once it is printed. Just
+              the title: the customer, account, branch and period all appear on
+              every statement card below, and repeating them here only invites
+              the two to disagree. */}
+          <header className="print-only mb-4 border-b border-edge pb-3">
+            <h1 className="text-lg font-bold text-ink">{t('PDP Account Statement')}</h1>
+          </header>
+
           {/* One form for any count rather than an English singular/plural
               pair: three independent counts would need eight keys, and Arabic
               does not split two ways in the first place. */}
@@ -323,27 +332,12 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
               txns: lineCount,
             })}
           </p>
-          <div className="mt-3 space-y-5">
+          <div className="mt-3 space-y-5 print-per-page">
             {rows.map((s) => (
               <StatementCard key={statementKey(s)} statement={s} />
             ))}
           </div>
-        </>
-      )}
-
-      {/* Print-only sheet: one table per statement, landscape, the same layout
-          the Historical screen prints. */}
-      {hasReport && (
-        <section className="print-sheet print-landscape" aria-hidden="true">
-          <h1>PDP Statements — {form.custNo || form.accNo}</h1>
-          <p className="print-meta">
-            Branch {form.branchCode} · {form.fromMonth}/{form.fromYear} to {form.toMonth}/
-            {form.toYear} · Printed {new Date().toLocaleString('en-GB')}
-          </p>
-          {rows.map((s) => (
-            <StatementPrintTable key={statementKey(s)} statement={s} />
-          ))}
-        </section>
+        </div>
       )}
     </main>
   )

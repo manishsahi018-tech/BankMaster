@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Field, TextInput, ReadOnlyInput, Select } from '../components/fields.tsx'
 import SourceBanner from '../components/SourceBanner.tsx'
 import { useToast } from '../components/Toast.tsx'
@@ -31,8 +31,13 @@ import { t } from '../i18n/index.ts'
 // different opening balances for the same account and range, correctly.
 //
 // Ported unchanged: the day-granular date pair, the validation order, the
-// pointer paging loop, the running carried balance, the movement totals and the
-// printed sheet.
+// pointer paging loop, the running carried balance and the movement totals.
+//
+// cmdPrintStmt built the statement and spooled it to the printer in ONE action,
+// so Print Statement here does both too: it fetches, renders, and opens the
+// print dialog on what it just rendered. There is no second button — and no
+// second, print-only rendering of the statement either. What prints is the
+// report section below, marked .print-page.
 
 const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'))
 const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
@@ -109,7 +114,18 @@ export default function OnDemandStatement({
   const [rows, setRows] = useState<StatementRow[] | null>(null)
   const [unavailable, setUnavailable] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
+  // Print Statement fetches AND prints, and the print dialog has to open on the
+  // statement THIS click produced — which does not exist in the DOM until React
+  // has committed it. So the fetch raises this flag and the effect below prints
+  // on the commit that carries the new rows. It survives exactly one commit.
+  const [printPending, setPrintPending] = useState(false)
   const toast = useToast()
+
+  useEffect(() => {
+    if (!printPending) return
+    setPrintPending(false)
+    if (rows && rows.length > 0) window.print()
+  }, [printPending, rows])
 
   // Any edit invalidates a generated report, as disableButtons does.
   const set = (key: keyof typeof form, value: string) => {
@@ -168,6 +184,7 @@ export default function OnDemandStatement({
       }
       setPage(first)
       setRows(buildRows(Number(first.bfBalance) || 0, all))
+      setPrintPending(true)
       if (!complete) {
         toast.warn(
           `Stopped after ${all.length} transactions — the gateway did not signal completion. ` +
@@ -204,11 +221,6 @@ export default function OnDemandStatement({
     }),
     { debit: 0, credit: 0, debitCount: 0, creditCount: 0 },
   )
-
-  const secondaryBtn =
-    'rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft ' +
-    'shadow-xs transition-colors hover:bg-surface-muted ' +
-    'disabled:cursor-not-allowed disabled:border-edge disabled:bg-surface-muted disabled:text-muted-soft'
 
   const dateFields = (which: 'from' | 'to') => (
     <div className="flex gap-2">
@@ -293,15 +305,6 @@ export default function OnDemandStatement({
           </button>
           <button
             type="button"
-            disabled={!hasReport}
-            onClick={() => window.print()}
-            title={hasReport ? undefined : 'Generate a statement first'}
-            className={secondaryBtn}
-          >
-            {t('Send to Printer')}
-          </button>
-          <button
-            type="button"
             onClick={onExit}
             className="ms-auto rounded-lg border border-danger/30 bg-surface px-4 py-2.5 text-sm font-medium text-danger shadow-xs transition-colors hover:bg-danger-soft"
           >
@@ -310,8 +313,13 @@ export default function OnDemandStatement({
         </div>
       </div>
 
+      {/* The report, and the ONLY thing that prints. It needs no print-only
+          heading the way the two archived-statement screens do: the section
+          already names the document ("ON DEMAND STATEMENT") and carries the
+          branch, period and customer, so the sheet is titled by what is on
+          screen. */}
       {hasReport && page && (
-        <section className="mt-5 overflow-hidden rounded-2xl border border-edge bg-surface shadow-sm">
+        <section className="print-page mt-5 overflow-hidden rounded-2xl border border-edge bg-surface shadow-sm">
           <header className="border-b border-edge-soft bg-surface-muted px-4 py-4 sm:px-5">
             <h2 className="text-base font-semibold text-ink">{t('ON DEMAND STATEMENT')}</h2>
             <p className="mt-0.5 text-sm text-muted">
@@ -323,7 +331,7 @@ export default function OnDemandStatement({
             </p>
           </header>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto print-expand">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-edge-soft text-start text-xs uppercase tracking-wider text-muted-soft">
@@ -423,59 +431,6 @@ export default function OnDemandStatement({
           <footer className="border-t border-edge-soft px-4 py-2.5 text-xs text-muted-soft sm:px-5">
             {t('Issued Upon your request. NOT A SUBSTITUTE FOR PERIODIC STATEMENT')}
           </footer>
-        </section>
-      )}
-
-      {hasReport && page && (
-        <section className="print-sheet print-landscape" aria-hidden="true">
-          <h1>On Demand Statement — {account.accountNumber}</h1>
-          <p className="print-meta">
-            {page.custName} · {page.branchName} · {formatGatewayDate(page.fromDate)} to{' '}
-            {formatGatewayDate(page.toDate)} · Printed {new Date().toLocaleString('en-GB')}
-          </p>
-          <table>
-            <thead>
-              <tr>
-                <th>{t('Tlr Id')}</th>
-                <th>{t('Trans. Date')}</th>
-                <th>{t('Particulars')}</th>
-                <th>{t('Value Date')}</th>
-                <th className="right">{t('Debit')}</th>
-                <th className="right">{t('Credit')}</th>
-                <th className="right">{t('Balance')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows!.map((r, i) => (
-                <tr key={i}>
-                  <td>{r.txn.userId}</td>
-                  <td>{formatGatewayDate(r.txn.postDate)}</td>
-                  <td>
-                    {[r.txn.narrative1, r.txn.narrative2, r.txn.narrative3]
-                      .filter((n) => n.trim() !== '')
-                      .join(' / ')}
-                  </td>
-                  <td>{formatGatewayDate(r.txn.valueDate)}</td>
-                  <td className="right">{r.credit ? '' : formatMinor(r.minor, decimals)}</td>
-                  <td className="right">{r.credit ? formatMinor(r.minor, decimals) : ''}</td>
-                  <td className="right">
-                    {formatMinor(Math.abs(r.balanceMinor), decimals)} {balanceMarker(r.balanceMinor)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={4}>{t('Value of Movements')}</td>
-                <td className="right">{formatMinor(totals.debit, decimals)}</td>
-                <td className="right">{formatMinor(totals.credit, decimals)}</td>
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-          <p className="print-meta">
-            {t('Issued Upon your request. NOT A SUBSTITUTE FOR PERIODIC STATEMENT')}
-          </p>
         </section>
       )}
     </main>

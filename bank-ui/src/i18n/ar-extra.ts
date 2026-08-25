@@ -353,6 +353,23 @@ const AR_EXTRA: Record<string, string> = {
   'clear the customer number to search by account':
     'امسح رقم العميل للبحث برقم الحساب',
 
+  // The archived-statement card (StatementCard.tsx). {month} arrives already
+  // formatted for the locale — "يناير 1990" — so the phrase around it reads
+  // "statement for the month of ...".
+  'statement for {month}': 'كشف حساب لشهر {month}',
+  'no. {stmtnum}': 'رقم {stmtNum}',
+  '{pages} printed pages': '{pages} صفحات مطبوعة',
+  'branch data {branchdata}': 'بيانات الفرع {branchData}',
+
+  // The heading each statement screen prints at the top of the SHEET. It names
+  // the document, not the screen, so it is not the screen's own <h1>.
+  'pdp account statement': 'كشف حساب PDP',
+  'bankmaster account statement': 'كشف حساب BankMaster',
+  // 'deleted' here is the legacy's sense of a CLOSED account — its own caption
+  // for this route, 'historical statement - deleted a/c', renders it
+  // 'الحسابات الملغيه', not محذوف.
+  'bankmaster deleted account statement': 'كشف حساب ملغى BankMaster',
+
   // Statements — the frmHistStmt MsgBox texts, raised by BOTH statement screens
   // (Historical Statement Printing and its PDP counterpart). Toast.tsx
   // translates on the way out, so an untranslated one shows English inside an
@@ -380,7 +397,6 @@ const AR_EXTRA: Record<string, string> = {
   'generate the pdp statement': 'إصدار كشف حساب PDP',
   'enter a customer number to cover every account that customer holds, or an account number for one account — one or the other, not both':
     'أدخل رقم العميل لتغطية جميع حسابات ذلك العميل، أو رقم الحساب لحساب واحد — أحدهما وليس كليهما.',
-  'send to printer': 'إرسال إلى الطابعة',
 
   // Card / cheque header chips. The number is a Latin run, so it is a
   // placeholder rather than text sitting beside the translated word.

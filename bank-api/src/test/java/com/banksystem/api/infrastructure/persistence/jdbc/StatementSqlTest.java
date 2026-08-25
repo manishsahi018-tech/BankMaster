@@ -49,6 +49,17 @@ class StatementSqlTest {
         return sql.getAllValues();
     }
 
+    /** The parameters the call bound, from the first query it issued. */
+    private SqlParameterSource paramsOf(Runnable call) {
+        Mockito.clearInvocations(jdbc);
+        call.run();
+        ArgumentCaptor<SqlParameterSource> params =
+                ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(jdbc, Mockito.atLeastOnce())
+                .query(anyString(), params.capture(), any(RowCallbackHandler.class));
+        return params.getAllValues().get(0);
+    }
+
     private List<String> pdp(String custNo, String accNo) {
         return sqlOf(() -> repo.pdpStatements("0127", custNo, accNo, "200501", "200912"));
     }
@@ -135,6 +146,27 @@ class StatementSqlTest {
 
         assertThat(sql.get(0)).doesNotContain("STMT_NUM");
         assertThat(sql.get(1)).doesNotContain("STMT_NUM");
+    }
+
+    /**
+     * The screen keys the branch zero-padded to four, as every other branch box
+     * in the app does, but PDP's BRANCH_CODE holds the significant digits alone.
+     * Bind the padded form and the filter matches nothing — an empty report that
+     * reads as "this customer has no statements" rather than as a mismatch.
+     */
+    @Test
+    void theBranchIsBoundWithoutItsLeadingZeros() {
+        assertThat(paramsOf(() -> repo.pdpStatements("0127", "0001234", "", "200501", "200912"))
+                .getValue("branchCode"))
+                .isEqualTo("127");
+    }
+
+    /** A branch that is all zeros keeps one digit rather than emptying out. */
+    @Test
+    void anAllZeroBranchDoesNotStripToNothing() {
+        assertThat(paramsOf(() -> repo.pdpStatements("0000", "0001234", "", "200501", "200912"))
+                .getValue("branchCode"))
+                .isEqualTo("0");
     }
 
     @Test

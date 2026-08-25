@@ -1,11 +1,7 @@
 import { useState } from 'react'
 import { Field, TextInput, ReadOnlyInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
-import {
-  StatementCard,
-  StatementPrintTable,
-  statementKey,
-} from '../components/StatementCard.tsx'
+import { StatementCard, statementKey } from '../components/StatementCard.tsx'
 import type { Account } from '../types.ts'
 import type { HistoricalStatement as Statement } from '../api.ts'
 import { api } from '../api.ts'
@@ -323,8 +319,24 @@ export default function HistoricalStatement({
         </div>
       </div>
 
+      {/* The report region, and the ONLY thing that prints — the printout is
+          this markup rather than a second, print-only rendering that has to be
+          kept in step with it by hand. Same arrangement as the PDP screen. */}
       {hasReport && (
-        <>
+        <div className="print-page">
+          {/* Paper has to name the DOCUMENT; the screen's own <h1> names the
+              screen it lives on. Just the title — the account, branch, month
+              and customer all appear on every statement card below. The legacy's
+              tag = "D" route prints a statement for a CLOSED account, so the
+              paper says which of the two documents it is. */}
+          <header className="print-only mb-4 border-b border-edge pb-3">
+            <h1 className="text-lg font-bold text-ink">
+              {deletedAccountRoute
+                ? t('BankMaster Deleted Account Statement')
+                : t('BankMaster Account Statement')}
+            </h1>
+          </header>
+
           {/* Translated through a placeholder form, like the PDP screen's — the
               English plural pair had no Arabic and showed through untranslated. */}
           <p className="mt-6 text-sm text-muted">
@@ -333,28 +345,12 @@ export default function HistoricalStatement({
               txns: lineCount,
             })}
           </p>
-          <div className="mt-3 space-y-5">
+          <div className="mt-3 space-y-5 print-per-page">
             {statements!.map((s) => (
               <StatementCard key={statementKey(s)} statement={s} />
             ))}
           </div>
-        </>
-      )}
-
-      {/* Print-only sheet: one table per statement, landscape, mirroring the
-          legacy's printed layout. */}
-      {hasReport && (
-        <section className="print-sheet print-landscape" aria-hidden="true">
-          <h1>Historical Statement — {accNo}</h1>
-          <p className="print-meta">
-            {branchCode && <>Branch {branchCode} · </>}
-            {form.fromMonth}/{form.fromYear} to{' '}
-            {form.toMonth}/{form.toYear} · Printed {new Date().toLocaleString('en-GB')}
-          </p>
-          {statements!.map((s) => (
-            <StatementPrintTable key={statementKey(s)} statement={s} />
-          ))}
-        </section>
+        </div>
       )}
     </main>
   )

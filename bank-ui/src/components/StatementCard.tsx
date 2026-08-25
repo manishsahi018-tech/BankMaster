@@ -1,6 +1,7 @@
 import type { HistoricalStatement as Statement } from '../api.ts'
 import { formatDate, formatPlainAmount } from '../schema/helpers.ts'
 import { t } from '../i18n/index.ts'
+import { getLocale } from '../i18n/locale.ts'
 
 // The rendering of one archived statement, shared by the two screens that
 // produce them: Historical Statement Printing (the BM archive) and PDP
@@ -10,35 +11,35 @@ import { t } from '../i18n/index.ts'
 // each archive's blanks simply do not appear. Keeping one component is what
 // stops the two screens drifting into showing the same statement differently.
 
-/** The legacy names the archive by month; "20240331" -> "March 2024". */
-export function monthLabel(yyyymmdd: string): string {
+/**
+ * The legacy names the archive by month; "20240331" -> "March 2024", and
+ * "مارس 2024" under Arabic.
+ *
+ * <p>The month name is the one piece of text on this card that no dictionary
+ * can carry — it is derived from the data, not written by us — so it is
+ * formatted for the active locale instead of translated.
+ *
+ * <p>Both extensions on the Arabic tag are load-bearing. ca-gregory: `ar`
+ * resolves to the Islamic calendar in some runtimes, which would print a
+ * Gregorian STMT_DATE under a Hijri month name — the wrong month, stated
+ * confidently. nu-latn: the app keeps Western numerals throughout under Arabic
+ * (the legacy screens show "27/01/2001" unchanged), and a year in
+ * Arabic-Indic digits here would be the only place that did not.
+ */
+function monthLabel(yyyymmdd: string): string {
   if (!/^\d{8}$/.test(yyyymmdd)) return yyyymmdd
   const date = new Date(
     Number(yyyymmdd.slice(0, 4)),
     Number(yyyymmdd.slice(4, 6)) - 1,
     Number(yyyymmdd.slice(6, 8)),
   )
-  return date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  const tag = getLocale() === 'ar' ? 'ar-u-ca-gregory-nu-latn' : 'en-GB'
+  return date.toLocaleDateString(tag, { month: 'long', year: 'numeric' })
 }
 
 /** Stable React key — a PDP customer enquiry can span several accounts. */
 export function statementKey(s: Statement): string {
   return `${s.source}-${s.acctNum}-${s.stmtDate}-${s.stmtNum}-${s.pageNum}`
-}
-
-/**
- * LANG_CODE is NVARCHAR2(2) and the legacy's own values were the single chars
- * "a" and "e" (stmtSpec.lang, tested as `If stmtLang = "e"` in processStmt).
- * The archive may equally hold the "0"/"3" pair the print header used
- * (cmdCsv_Click reads Mid$(tLine, 47, 1): "0" = Arabic, "3" = English) or an
- * ISO code, so all three are mapped and anything unrecognised is shown raw
- * rather than guessed at.
- */
-function languageLabel(code: string): string {
-  const c = code.trim().toLowerCase()
-  if (c === 'a' || c === '0' || c === 'ar') return 'Arabic'
-  if (c === 'e' || c === '3' || c === 'en') return 'English'
-  return code
 }
 
 function addressLines(s: Statement): string[] {
@@ -62,9 +63,11 @@ export function StatementCard({ statement }: { statement: Statement }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-ink">
-              Statement for {monthLabel(s.stmtDate)}
+              {t('Statement for {month}', { month: monthLabel(s.stmtDate) })}
               {s.stmtNum && (
-                <span className="ms-2 text-sm font-normal text-muted">No. {s.stmtNum}</span>
+                <span className="ms-2 text-sm font-normal text-muted">
+                  {t('No. {stmtNum}', { stmtNum: s.stmtNum })}
+                </span>
               )}
             </h2>
             <p className="mt-0.5 text-sm text-muted">
@@ -73,9 +76,16 @@ export function StatementCard({ statement }: { statement: Statement }) {
               {s.crncy && ` · ${s.crncy}`}
             </p>
           </div>
+          {/* pageCount, and deliberately NOT pageNum. The PDP header holds one
+              row per printed page and the repository folds them into one
+              statement, keeping the FIRST row's fields — ordered by PAGE_NUM,
+              so the pageNum that survives is always the group's lowest, i.e.
+              1 for every statement. Shown, it claimed "Page 1" on every card
+              and on every printed sheet. The count is the real information:
+              how many pages the archived statement ran to. */}
           {s.pageCount > 1 && (
             <div className="text-end text-xs text-muted-soft">
-              <p>{s.pageCount} printed pages</p>
+              <p>{t('{pages} printed pages', { pages: s.pageCount })}</p>
             </div>
           )}
         </div>
@@ -113,26 +123,6 @@ export function StatementCard({ statement }: { statement: Statement }) {
               <dd className="text-ink-soft">{address.join(', ')}</dd>
             </div>
           )}
-          {/* LANG_CODE is the descendant of stmtSpec.lang, which drove the
-              legacy's lanfix pass over the rendered page. It no longer changes
-              how anything is displayed — these are fields, not a page image —
-              but it still records which language the statement was PRODUCED in,
-              which is why an archived copy can differ from what the account's
-              current language preference would produce today. */}
-          {s.langCode && (
-            <div>
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">
-                {t('Statement Language')}
-              </dt>
-              <dd className="text-ink-soft">{languageLabel(s.langCode)}</dd>
-            </div>
-          )}
-          {s.pageNum && (
-            <div>
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Page')}</dt>
-              <dd className="text-ink-soft">{s.pageNum}</dd>
-            </div>
-          )}
         </dl>
       </header>
 
@@ -141,7 +131,7 @@ export function StatementCard({ statement }: { statement: Statement }) {
           {t('This statement has a header but no transaction lines in the archive.')}
         </p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto print-expand">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-edge-soft text-start text-xs uppercase tracking-wider text-muted-soft">
@@ -212,51 +202,9 @@ export function StatementCard({ statement }: { statement: Statement }) {
       {s.fileName && (
         <footer className="border-t border-edge-soft px-4 py-2 text-xs text-muted-soft sm:px-5">
           {t('Archive file')} <span className="font-mono">{s.fileName}</span>
-          {s.branchData && <> · branch data {s.branchData}</>}
+          {s.branchData && <> · {t('branch data {branchData}', { branchData: s.branchData })}</>}
         </footer>
       )}
     </section>
-  )
-}
-
-/**
- * One statement as a page of the print-only sheet, mirroring the legacy's
- * landscape printed layout. The account number is in the caption because a PDP
- * enquiry can print several accounts onto one sheet.
- */
-export function StatementPrintTable({ statement }: { statement: Statement }) {
-  const s = statement
-  return (
-    <table className="page-break">
-      <caption>
-        {s.acctNum} · {monthLabel(s.stmtDate)}
-        {s.stmtNum && ` — statement ${s.stmtNum}`} · {s.custName} · {s.branchCode} {s.branchName} ·{' '}
-        {s.crncy}
-      </caption>
-      <thead>
-        <tr>
-          <th>{t('Date')}</th>
-          <th>{t('Value Date')}</th>
-          <th>{t('Narrative')}</th>
-          <th className="right">{t('Debit')}</th>
-          <th className="right">{t('Credit')}</th>
-          <th className="right">{t('Balance')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {s.lines.map((line) => (
-          <tr key={line.txnOrder}>
-            <td>{formatDate(line.txnDate)}</td>
-            <td>{formatDate(line.valueDate)}</td>
-            <td>{narrativeOf(line).join(' / ')}</td>
-            <td className="right">{formatPlainAmount(line.drAmt)}</td>
-            <td className="right">{formatPlainAmount(line.crAmt)}</td>
-            <td className="right">
-              {formatPlainAmount(line.runBal)} {line.runBalType}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   )
 }

@@ -100,6 +100,10 @@ import org.springframework.stereotype.Repository;
  * request, pending confirmation against real PDP data that the same ACCT_NUM
  * genuinely appears under more than one branch; if it turns out not to, this
  * is one {@code false} in the Pair below.
+ *
+ * <p>The value BOUND is not the value keyed: PDP's BRANCH_CODE holds the
+ * significant digits alone, so the screen's zero-padded four characters are
+ * stripped on the way into the parameter — see {@link #branchParam}.
  */
 @Repository
 @Profile("denodo")
@@ -181,7 +185,7 @@ public class JdbcStatementRepository implements StatementRepository {
 
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("acctNum", acctNum == null ? "" : acctNum.trim())
-                .addValue("branchCode", branchCode == null ? "" : branchCode.trim())
+                .addValue("branchCode", branchParam(branchCode))
                 .addValue("fromDate", Date.valueOf(from))
                 .addValue("toDate", Date.valueOf(toExclusive));
 
@@ -226,7 +230,7 @@ public class JdbcStatementRepository implements StatementRepository {
         String account = acctNum == null ? "" : acctNum.trim();
 
         MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("branchCode", branchCode == null ? "" : branchCode.trim())
+                .addValue("branchCode", branchParam(branchCode))
                 .addValue("custNum", customer)
                 .addValue("acctNum", account)
                 .addValue("fromDate", Date.valueOf(from))
@@ -492,5 +496,30 @@ public class JdbcStatementRepository implements StatementRepository {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    /**
+     * The branch as the PDP header stores it: leading zeros stripped. The screen
+     * keys the branch the way the rest of the app writes it — four characters,
+     * zero-padded ("0127"), which is also what the length rule and the
+     * staff-branch check in StatementService are written against — but
+     * PDP's BRANCH_CODE holds the significant digits alone ("127"), so binding
+     * the padded form matches nothing at all.
+     *
+     * <p>Stripped here, at the one point the value becomes a query parameter,
+     * rather than upstream: the padded form is the one every other rule reads,
+     * and this is the only place the column's own shape applies.
+     *
+     * <p>An all-zero branch keeps one digit ("0000" -> "0"), because emptying
+     * the parameter would turn a keyed branch into a filter that matches
+     * nothing rather than into the branch it names.
+     */
+    private static String branchParam(String branchCode) {
+        String branch = branchCode == null ? "" : branchCode.trim();
+        int i = 0;
+        while (i < branch.length() - 1 && branch.charAt(i) == '0') {
+            i++;
+        }
+        return branch.substring(i);
     }
 }
