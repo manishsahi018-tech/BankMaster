@@ -5,6 +5,7 @@ import { useToast } from '../components/Toast.tsx'
 import type { Account } from '../types.ts'
 import type { OnlineStatementPage, OnlineTransaction } from '../api.ts'
 import { api, ApiError } from '../api.ts'
+import { printDocument } from '../print.ts'
 import {
   balanceMarker,
   formatGatewayDate,
@@ -322,7 +323,10 @@ export default function OnDemandStatement({
           <button
             type="button"
             disabled={!hasReport}
-            onClick={() => window.print()}
+            // Title Case, though the heading on the sheet shouts it the way
+            // the gateway's own report does: this is a filename. t() normalises
+            // case, so both reach the same dictionary entry.
+            onClick={() => printDocument(t('On Demand Statement'))}
             title={hasReport ? undefined : 'Generate a statement first'}
             className={secondaryBtn}
           >

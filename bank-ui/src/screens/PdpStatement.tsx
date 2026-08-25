@@ -5,6 +5,7 @@ import { StatementCard, statementKey } from '../components/StatementCard.tsx'
 import { paginateStatements } from '../components/statementPages.ts'
 import type { HistoricalStatement as Statement } from '../api.ts'
 import { api } from '../api.ts'
+import { printDocument } from '../print.ts'
 
 import { t } from '../i18n/index.ts'
 // PDP Statements — the OTHER archive DB #3 holds.
@@ -39,6 +40,12 @@ import { t } from '../i18n/index.ts'
 // the limit belongs to this screen alone and must not be copied outward.
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
+
+/**
+ * What the sheet is called — the heading printed at the top of it AND the name
+ * the browser saves it under, from the one string so the two cannot disagree.
+ */
+const DOCUMENT_NAME = 'PDP Account Statement'
 
 /**
  * Same default as the Historical screen (frmHistStmt.frm:1195-1197): Finacle
@@ -291,7 +298,7 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
           <button
             type="button"
             disabled={!hasReport}
-            onClick={() => window.print()}
+            onClick={() => printDocument(t(DOCUMENT_NAME))}
             title={hasReport ? undefined : 'Generate a statement first'}
             className={secondaryBtn}
           >
@@ -320,7 +327,7 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
               every statement card below, and repeating them here only invites
               the two to disagree. */}
           <header className="print-only mb-4 border-b border-edge pb-3">
-            <h1 className="text-lg font-bold text-ink">{t('PDP Account Statement')}</h1>
+            <h1 className="text-lg font-bold text-ink">{t(DOCUMENT_NAME)}</h1>
           </header>
 
           {/* One form for any count rather than an English singular/plural
