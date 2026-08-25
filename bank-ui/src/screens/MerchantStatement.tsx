@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Field, TextInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
 import { api } from '../api.ts'
+import { formatDate, todayYyyymmdd } from '../schema/helpers.ts'
 
 import { t } from '../i18n/index.ts'
 // Mirrors legacy frmMerchantStmt.frm ("Merchant Statement Printing", the
@@ -501,20 +502,46 @@ const digitsOnly = (value: string) => value.replace(/\D/g, '')
           the control character itself must not reach the screen. */}
       {hasReport && showReport && (
         <section className="print-page print-landscape mt-5 overflow-x-auto print-expand rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
-          {spoolPages(lines!).map((page, i) => (
-            <pre
-              key={i}
-              className={`whitespace-pre font-mono text-xs leading-5 text-ink ${
+          {/* The spool arrives already paginated — the acquiring system decides
+              where a page ends and marks it with a form feed — so unlike the
+              statement screens nothing has to be cut here. What was missing is
+              the number: the header the spool repeats at the top of every page
+              deliberately carries none (MockMerchantRepository.headerLine), and
+              once the pages are separate sheets a reader has no way to tell one
+              from the next. print-per-page makes each page its own sheet and
+              pins its number to the foot of it. */}
+          <div className="print-per-page">
+            {spoolPages(lines!).map((page, i, all) => (
+              <div
+                key={i}
                 // Every page after the first is set off from the one above it:
                 // a rule and a gap on screen, its own sheet in print (see
                 // .page-break in index.css, which also drops the rule — the
-                // sheet edge is the separator there).
-                i > 0 ? 'page-break mt-7 border-t border-edge-soft pt-7' : ''
-              }`}
-            >
-              {page.join('\n')}
-            </pre>
-          ))}
+                // sheet edge is the separator there — and supplies the top
+                // margin the page box no longer has).
+                className={i > 0 ? 'page-break mt-7 border-t border-edge-soft pt-7' : ''}
+              >
+                <pre className="whitespace-pre font-mono text-xs leading-5 text-ink">
+                  {page.join('\n')}
+                </pre>
+                {/* The sheet's own line: the day the statement was produced on
+                    the left, which sheet you are holding on the right. The
+                    spool text carries neither — the acquiring system formats
+                    the page, and its header deliberately repeats the same
+                    fields on every one of them. */}
+                <footer className="mt-2 flex items-baseline justify-between gap-4 text-xs text-muted-soft">
+                  <span>
+                    <span className="uppercase tracking-wider">{t('Statement Date')}</span>
+                    {' - '}
+                    <span className="font-medium text-ink">{formatDate(todayYyyymmdd())}</span>
+                  </span>
+                  <span className="shrink-0">
+                    {t('Page {page} of {pages}', { page: i + 1, pages: all.length })}
+                  </span>
+                </footer>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 

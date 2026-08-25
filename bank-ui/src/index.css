@@ -259,6 +259,12 @@ body {
      column, the only one that may wrap, room to do so. */
   .print-page table {
     width: 100%;
+    /* A grid sets a min-width so its columns hold their shape while the SCREEN
+       scrolls sideways under them. Paper cannot scroll: that same min-width
+       carries the table past the right edge of the sheet, and every column
+       beyond it is simply not printed. On paper the table is the width of the
+       page and the cells wrap. */
+    min-width: 0 !important;
     /* !important, like the colour rules above: these override Tailwind's
        text-sm / px-4 / py-2.5 on the cells themselves. */
     font-size: 8.5pt !important;
@@ -267,6 +273,13 @@ body {
   .print-page th,
   .print-page td {
     padding: 3px 5px !important;
+    /* A safety valve, not a layout choice. Cells that carry a date or an amount
+       are nowrap on screen so a column never breaks mid-value, and while the
+       table fits the sheet this changes nothing — auto table layout only wraps
+       a cell once the columns cannot all have their content width. When a grid
+       IS too wide for the paper, though, this is the difference between a
+       column that wraps and a column that is not printed at all. */
+    white-space: normal;
   }
 
   /* Keep a row and its stacked narrative lines together, and repeat the column
@@ -345,6 +358,17 @@ body {
   }
   .print-page .print-per-page > * > footer {
     margin-top: auto;
+  }
+
+  /* A landscape sheet is 210mm tall, not 297, so the page boxes on one have to
+     be measured against that paper: 210 less the 12mm padding at each edge.
+     The merchant spool is the report that prints this way — its pages are the
+     acquiring system's own, and one of them is one sheet. Measured: a full
+     spool page and its footer come to 695px of the 703 this leaves, the extra
+     45 on every sheet after the first being the top margin .page-break
+     supplies where the fragmented page box cannot. */
+  .print-page.print-landscape .print-per-page > * {
+    height: 186mm;
   }
 
   /* Chrome, Edge and Firefox draw their print header/footer — the document
