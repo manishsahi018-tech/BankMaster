@@ -104,6 +104,13 @@ const AR_EXTRA: Record<string, string> = {
   'historical statement — pdp': 'كشف حساب قديم — PDP',
   'archived pdp statements by customer or account number':
     'كشوف حسابات PDP المؤرشفة برقم العميل أو رقم الحساب',
+  // The PDP screen's two identifier labels. They name the ARCHIVE the number
+  // comes from — PDP's CUST_NUM and its 19-wide ACCT_NUM, neither of which is
+  // the plain 'رقم العميل' / 'رقم الحساب' the rest of the app keys — so the
+  // qualifier is part of the label rather than a heading above it, and PDP
+  // stays Latin here as it does everywhere else.
+  'pdp customer number': 'رقم عميل PDP',
+  'pdp account number': 'رقم حساب PDP',
   'name search': 'البحث بالاسم',
   'free-text customer name search': 'بحث حر باسم العميل',
   'sadad transactions': 'حركات سداد',
@@ -153,8 +160,6 @@ const AR_EXTRA: Record<string, string> = {
   'empty row selected — please select an account': 'لم يتم اختيار سجل — الرجاء اختيار حساب.',
   'not authorized to access the account details of enquiry restricted branch':
     'غير مصرح لك بالاطلاع على تفاصيل حسابات فرع مقيّد الاستفسار',
-  'transaction inquiry': 'استفسار عن حركة',
-  'transaction type enquiry': 'استفسار حركة',
 
   // ---- Sweep of the remaining screens ------------------------------------
   // None of these had a counterpart in the legacy caption tables: they are
@@ -353,8 +358,14 @@ const AR_EXTRA: Record<string, string> = {
     'أدخل رقم العميل أو رقم الحساب، وليس كليهما',
   'clear the account number to search by customer':
     'امسح رقم الحساب للبحث برقم العميل',
-  'clear the customer number to search by account':
-    'امسح رقم العميل للبحث برقم الحساب',
+  // The branch travels with the customer number, so both are named: keying
+  // either half of that route is what locks the account number out.
+  'clear the branch and customer number to search by account':
+    'امسح رمز الفرع ورقم العميل للبحث برقم الحساب',
+  // Branch Code greys out on the account route — it belongs to the customer
+  // route, which is the only one that filters on it.
+  'not needed when searching by account number':
+    'غير مطلوب عند البحث برقم الحساب',
 
   // The archived-statement card (StatementCard.tsx). {month} arrives already
   // formatted for the locale — "يناير 1990" — so the phrase around it reads
@@ -391,6 +402,23 @@ const AR_EXTRA: Record<string, string> = {
   'to month cannot be blank..please enter it': 'شهر النهاية لا يمكن أن يكون فارغاً.. الرجاء الإدخال',
   'from date cannot be later than to date': 'تاريخ البداية لا يمكن أن يكون بعد تاريخ النهاية',
   'enter a valid date': 'الرجاء إدخال تاريخ صحيح',
+
+  // Analysis (frmHistStmt cmdAnalyse / cmdViewAnalysis / cmdPrintAnalysis).
+  // The three captions themselves are in the legacy table; these are the
+  // report's own headings, which the VB6 never had — analyse.exe wrote its
+  // output as a text file, so nothing on the form was ever labelled.
+  // The success toast IS the legacy's, lifted out of the numbered error
+  // string '9027-analysis successfully completed'.
+  'analysis successfully completed': 'انتهى التحليل بنجاح',
+  'run analysis first': 'الرجاء تنفيذ التحليل أولاً',
+  'bankmaster statement analysis': 'تحليل كشف حساب BankMaster',
+  'bankmaster deleted account statement analysis': 'تحليل كشف حساب ملغى BankMaster',
+  'covers {from} to {to}': 'يغطي من {from} إلى {to}',
+  'period': 'الفترة',
+  'statement no': 'رقم الكشف',
+  'transactions': 'عدد الحركات',
+  'net movement': 'صافي الحركة',
+  'closing balance': 'الرصيد الختامي',
   'not authorized to print the statement for the staff branch':
     'غير مصرح بطباعة كشف الحساب لفرع الموظفين',
   'generate a statement first': 'أصدر كشف حساب أولاً',
@@ -402,8 +430,8 @@ const AR_EXTRA: Record<string, string> = {
   'online statement printing': 'طباعة كشف حساب فوري',
   'historical statement printing — pdp': 'طباعة كشف سابق للحساب — PDP',
   'generate the pdp statement': 'إصدار كشف حساب PDP',
-  'enter a customer number to cover every account that customer holds, or an account number for one account — one or the other, not both':
-    'أدخل رقم العميل لتغطية جميع حسابات ذلك العميل، أو رقم الحساب لحساب واحد — أحدهما وليس كليهما.',
+  'enter a branch code and customer number to cover every account that customer holds, or an account number on its own for one account — one route or the other, not both':
+    'أدخل رمز الفرع ورقم العميل لتغطية جميع حسابات ذلك العميل، أو رقم الحساب وحده لحساب واحد — أحد الطريقين وليس كليهما.',
 
   // Card / cheque header chips. The number is a Latin run, so it is a
   // placeholder rather than text sitting beside the translated word.
