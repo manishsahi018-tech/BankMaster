@@ -83,9 +83,16 @@ Navigation map (button labels, exact text):
 - Stop Cheque / Standing Order grids → select row → **Enquiry** (detail screens)
 - Cheque Book grid → select row → **History** (lifecycle detail)
 - Account grid → **Blocked Amount Breakup**, **BM Transaction Enquiry** and
-  **Transfer Enquiry** (self-fetching screens: fill dates, click **Fetch
-  Transactions** / **Fetch Transfers**, select row → **Transaction Detail** /
-  **Transfer Detail** renders inline; **Return** restores the grid)
+  **Transfer Enquiry** (self-fetching screens: fill dates, click **Go** /
+  **Fetch Transfers**, select row → **Detail** / **Transfer Detail** renders
+  inline; **Return** restores the grid). BM Transaction Enquiry also has a
+  **Trans Type** combo — an editable `input` + `datalist` (`#transType` /
+  `#transTypeOptions`), not a `select`; its code is the first two characters
+  of whatever is in the box, and `RR-…` filters to reversals.
+- Dates are NOT plain inputs. `DatePicker` renders a `button` carrying the
+  `id`; click it, then drive the popover's `select[aria-label="Month"]` /
+  `select[aria-label="Year"]` (native value setter + a `change` event) and
+  click the day button in `.grid-cols-7`.
 - Search screen → fill `#customerNo` → **ATM Cards** (card grid; card numbers
   masked) → **Card Detail** / **Card / Pin History** / **Update History**
 - Search screen → fill `#cardNumber` (4489370001234567890) → **Account**

@@ -294,7 +294,29 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("0", "Capitalise"),
                     new CodeEntry("1", "Pay to another account"),
                     new CodeEntry("2", "Pay by cheque"),
-                    new CodeEntry("3", "Memorandum interest only"))));
+                    new CodeEntry("3", "Memorandum interest only"))),
+            // Statement flag — thd0data.ts documents 0 and 1 and no more. See
+            // JdbcReferenceDataRepository for why the reversal values above
+            // '1' (which this fixture generates as "2") are not enumerated.
+            Map.entry("stmtFlag", List.of(
+                    new CodeEntry("0", "Print on statement"),
+                    new CodeEntry("1", "Do not print on statement"))),
+            // BM transaction type. Under denodo this set is EMPTY — the domain
+            // lives on the TTABLE parameter file, which the archival extract
+            // does not carry (see JdbcReferenceDataRepository).
+            //
+            // The mock carries the only two codes the legacy source attests
+            // anywhere: the design-time item list compiled into
+            // frmTransEnq.frx, which is what the combo showed before
+            // Form_Load replaced it from the local transtypeInfo table. They
+            // are here so a mock run can exercise the decode path at all —
+            // NOT as a claim about the real TTABLE. MockTransferRepository's
+            // fixtures also post "02", which has no attested name and so
+            // renders as a bare code: that is the "not defined in local" case
+            // the legacy showed, and it is worth being able to see.
+            Map.entry("bmTransType", List.of(
+                    new CodeEntry("00", "Reversal"),
+                    new CodeEntry("01", "Deposit"))));
 
     /**
      * Arabic for the demo sets, keyed {@code set/code}.
@@ -491,7 +513,11 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
             Map.entry("intApplication/0", "إضافة للرصيد"),
             Map.entry("intApplication/1", "تحويل لحساب آخر"),
             Map.entry("intApplication/2", "صرف بشيك"),
-            Map.entry("intApplication/3", "فائدة تذكيرية فقط"));
+            Map.entry("intApplication/3", "فائدة تذكيرية فقط"),
+            Map.entry("stmtFlag/0", "يطبع في كشف الحساب"),
+            Map.entry("stmtFlag/1", "لا يطبع في كشف الحساب"),
+            Map.entry("bmTransType/00", "عملية عكسية"),
+            Map.entry("bmTransType/01", "إيداع"));
 
     /** The English map with every description swapped for its Arabic, once. */
     private static final Map<String, List<CodeEntry>> CODES_AR = CODES.entrySet().stream()

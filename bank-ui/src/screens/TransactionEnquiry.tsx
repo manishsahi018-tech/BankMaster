@@ -2,7 +2,8 @@ import { useState } from 'react'
 import GridScreen from '../components/GridScreen.tsx'
 import type { GridColumn, GridRow } from '../components/GridScreen.tsx'
 import { useToast } from '../components/Toast.tsx'
-import { Field, Select } from '../components/fields.tsx'
+import { Combo, Field } from '../components/fields.tsx'
+import { codeLabel, codeOptions, useCodes } from '../codes.ts'
 import { DatePicker } from '../components/DatePicker.tsx'
 import type { Account } from '../types.ts'
 import TransactionDetail from './TransactionDetail.tsx'
@@ -31,17 +32,48 @@ import { t } from '../i18n/index.ts'
 // 07/11) rather than cbcmssrv, and has no archival source. It stays stubbed
 // in AccountInfo until DB #2 exists.
 
+// Column labels and order are the legacy grid's, from the RUNTIME caption table
+// (frmBmTransEnqCaption 13-18, applied in Form_Load) rather than the .frm's
+// commented-out rowTitle array: Trans.Ref, User Id, Transaction Date,
+// Trans.Amount, Trans.Counter, Trans.Type.
+//
+// Value Date is the one addition. The legacy fetched it on every row and its
+// grid column sits right there in the source, commented out immediately below
+// the Transaction Date assignment (frmTransEnq.frm:938-939) — while the printed
+// report and the detail screen both show it. Keeping it costs nothing and it
+// goes where the legacy's own commented-out line put it.
 const COLUMNS: GridColumn[] = [
-  { key: 'transRef', label: 'Reference No' },
-  { key: 'postDate', label: 'Post Date', render: formatDate },
-  { key: 'valueDate', label: 'Value Date', render: formatDate },
-  { key: 'transAmt', label: 'Amount', align: 'right', render: formatAmount },
-  { key: 'transType', label: 'Type' },
-  { key: 'transCounter', label: 'Counter' },
+  { key: 'transRef', label: 'Trans.Ref' },
   { key: 'userId', label: 'User Id' },
+  { key: 'postDate', label: 'Transaction Date', render: formatDate },
+  { key: 'valueDate', label: 'Value Date', render: formatDate },
+  { key: 'transAmt', label: 'Trans.Amount', align: 'right', render: formatAmount },
+  { key: 'transCounter', label: 'Trans.Counter' },
+  // "01" → "01-Deposit", exactly as fillGridFromLocalDb resolved tCode through
+  // the local transtypeInfo table. codeLabel falls back to the bare code, which
+  // is the legacy's "<code>-Not defined in local" case without the noise.
+  { key: 'transType', label: 'Trans.Type', render: (v) => codeLabel('bmTransType', v) },
 ]
 
-const TRANS_TYPES = ['', '01', '02', 'RR']
+/**
+ * The reversals filter.
+ *
+ * The legacy combo never listed this. Its cmbTransType is an EDITABLE VB6 combo
+ * filled from transtypeInfo (frmAccount.frm:1410-1423), and "RR" is a value the
+ * operator typed into it: the server reads the first two characters and, on
+ * "RR", selects statmentFlag > '1' instead of matching a type
+ * (cbswift.c:1893-1906). Offering it as a suggestion surfaces a capability that
+ * was otherwise folklore, and it is shaped "<code>-<description>" so the same
+ * two-character slice below reads it and every real code identically.
+ *
+ * Built at call time, not as a constant: the codes it sits beside in the list
+ * arrive from /api/codes already in the operator's language, so this one has to
+ * follow the locale too rather than staying English under an Arabic combo.
+ */
+const reversalsOption = () => `RR-${t('Reversals')}`
+
+/** The legacy's Mid$(cmbTransType, 1, 2) — the code is the first two chars. */
+const transTypeCode = (choice: string) => choice.trim().slice(0, 2).toUpperCase()
 
 // The legacy does NOT stop at one page: cmdGo_Click fetches 20 rows at a time
 // (`Do While recvBmTransEnqMsg.completionFlag = "0"`), loads every batch into a
@@ -64,10 +96,16 @@ export default function TransactionEnquiry({
   // (frmAccount.frm cmdTransEnq_Click).
   const [fromDate, setFromDate] = useState(todayYyyymmdd)
   const [toDate, setToDate] = useState(todayYyyymmdd)
-  const [transType, setTransType] = useState('')
+  // What the operator sees in the combo ("01-Deposit"); the two-character code
+  // the server wants is sliced off it, as the legacy did.
+  const [transTypeChoice, setTransTypeChoice] = useState('')
+  const transType = transTypeCode(transTypeChoice)
   const [rows, setRows] = useState<GridRow[] | null>(null)
   const [detail, setDetail] = useState<GridRow | null>(null)
   const [fetching, setFetching] = useState(false)
+  // Re-render when /api/codes lands, so the Trans.Type column and the combo's
+  // suggestions swap raw codes for descriptions in place.
+  useCodes()
   // Fetch errors surface as the shared top-center toast (shim keeps the existing
   // setError('…') call sites; setError('') is a no-op).
   const toast = useToast()
@@ -111,10 +149,12 @@ export default function TransactionEnquiry({
   // exactly as the legacy's `If Len(RTrim(rs("transamt"))) = 0 Then tranAmt = 0`
   // leaves them out of the sum.
   //
-  // No coinDenomination scaling: the legacy divides by the currency's decimal
-  // places before printing, but our grid shows amounts unscaled, so scaling only
-  // the total would put it out of step with the rows above it. Revisit together
-  // once real Denodo amounts confirm whether the view stores minor units.
+  // No coinDenomination scaling, and none is owed. The legacy divided by the
+  // currency's decimal places because BankMaster handed it MINOR units; the
+  // archival ETL has already scaled thd0data.transAmt to major units, so
+  // dividing again would be wrong for both the rows and this total. (The
+  // workbook's "decimal places are currency dependent" note on the column
+  // describes the pre-ETL record, not the view.)
   const total = (rows ?? []).reduce<number>((sum, r) => sum + (amountValue(r.transAmt) ?? 0), 0)
 
   if (detail) {
@@ -128,14 +168,28 @@ export default function TransactionEnquiry({
     <div className="print-page">
       <div className="mx-auto max-w-7xl px-4 pt-8 sm:px-6">
         <div className="print-hidden flex flex-wrap items-end gap-4 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
-          <Field label="From Date" htmlFor="fromDate">
+          {/* Labels are the runtime caption table's: frmBmTransEnqCaption(2)
+              and (3) are "Start Date" and "End Date", not From/To. */}
+          <Field label="Start Date" htmlFor="fromDate">
             <DatePicker id="fromDate" value={fromDate} onChange={setFromDate} className="w-40" max={toDate} />
           </Field>
-          <Field label="To Date" htmlFor="toDate">
+          <Field label="End Date" htmlFor="toDate">
             <DatePicker id="toDate" value={toDate} onChange={setToDate} className="w-40" min={fromDate} />
           </Field>
-          <Field label="Trans Type (RR = reversals)" htmlFor="transType">
-            <Select id="transType" options={TRANS_TYPES.filter(Boolean)} value={transType} onChange={(e) => setTransType(e.target.value)} className="w-40" />
+          <Field label="Trans Type" htmlFor="transType">
+            <Combo
+              id="transType"
+              listId="transTypeOptions"
+              // Empty under denodo until a TTABLE-derived view exists, which is
+              // why this is an editable combo and not a Select: the operator
+              // can still type any two-character code, exactly as they could
+              // into the legacy's Style-0 combo. Blank = all types.
+              options={[...codeOptions('bmTransType'), reversalsOption()]}
+              value={transTypeChoice}
+              onChange={(e) => setTransTypeChoice(e.target.value)}
+              placeholder="All types"
+              className="w-56"
+            />
           </Field>
           <button
             type="button"
@@ -143,7 +197,9 @@ export default function TransactionEnquiry({
             disabled={fetching}
             className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong disabled:cursor-not-allowed disabled:bg-faint"
           >
-            {fetching ? t('Fetching…') : t('Fetch Transactions')}
+            {/* cmdGo — frmBmTransEnqCaption(5). Refresh, next to it in the
+                legacy, re-ran the very same cmdGo_Click; one button does it. */}
+            {fetching ? t('Fetching…') : t('Go')}
           </button>
         </div>
         {rows !== null && rows.length > 0 && (
@@ -165,12 +221,17 @@ export default function TransactionEnquiry({
         // printed report's heading. On screen as well as on paper: a chip the
         // sheet has and the screen does not is the drift this is avoiding.
         header={[
-          { label: 'Account No', value: account.accountNumber },
-          { label: 'From Date', value: formatDate(fromDate) },
-          { label: 'To Date', value: formatDate(toDate) },
+          { label: 'Account number', value: account.accountNumber },
+          { label: 'Start Date', value: formatDate(fromDate) },
+          { label: 'End Date', value: formatDate(toDate) },
           {
             label: 'Trans Type',
-            value: transType === 'RR' ? 'RR (reversals)' : transType || 'All',
+            value:
+              transType === 'RR'
+                ? reversalsOption()
+                : transType
+                  ? codeLabel('bmTransType', transType)
+                  : t('All types'),
           },
         ]}
         columns={COLUMNS}
@@ -179,7 +240,8 @@ export default function TransactionEnquiry({
         buttonGroups={[
           [
             {
-              label: 'Transaction Detail',
+              // cmdDetail — frmBmTransEnqCaption(7).
+              label: 'Detail',
               kind: 'primary',
               onClick: ({ row, notify }) => {
                 if (!row) {

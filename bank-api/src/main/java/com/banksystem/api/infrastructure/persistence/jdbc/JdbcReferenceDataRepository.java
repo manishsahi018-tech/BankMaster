@@ -60,6 +60,12 @@ import org.springframework.stereotype.Repository;
  *       the stcardtab.ts field descriptions (schema wins over the mock's
  *       abbreviated labels: e.g. requestStatus 1 is 'Approved' and 9 is
  *       'Rejected' per the workbook, not 'Requested'/'Completed').</li>
+ *   <li>{@code stmtFlag} — fixed domain from thd0data.ts statmentFlag; the
+ *       legacy's Access stmtflagInfo maps here.</li>
+ *   <li>{@code bmTransType} — thd0data.transType. Registered but EMPTY: the
+ *       domain lives on the BankMaster TTABLE parameter file, which neither
+ *       the archival extract nor this repository carries. See the note at
+ *       the sets.put call.</li>
  * </ul>
  *
  * <p>Any set whose view is missing at runtime is logged and returned as an
@@ -433,6 +439,39 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
                 new Fixed("5", "Received By Customer", "مستلمة من العميل"),
                 new Fixed("8", "Canceled By Branch", "ملغاة من الفرع"),
                 new Fixed("9", "Rejected", "مرفوضة")));
+        // thd0data.statmentFlag, shown on the BM transaction detail. The
+        // legacy read it out of the local Access stmtflagInfo table
+        // (globalFunctions.bas:8734) and printed it code-with-text; the
+        // workbook documents the same domain on the column itself.
+        //
+        // ONLY 0 and 1 are enumerated there. cbswift.c:1902 treats anything
+        // ABOVE '1' as a reversal — that is what the enquiry's "RR" filter
+        // selects — but neither the workbook nor the C names the individual
+        // values, so they are deliberately absent and fall through to
+        // codes.ts's bare-code rendering. TransactionDetail adds the reversal
+        // note for them from the C's rule rather than guessing at labels here.
+        sets.put("stmtFlag", fixed(language,
+                new Fixed("0", "Print on statement", "يطبع في كشف الحساب"),
+                new Fixed("1", "Do not print on statement", "لا يطبع في كشف الحساب")));
+        // thd0data.transType, shown on the BM transaction enquiry grid, its
+        // filter combo and the detail. DELIBERATELY EMPTY.
+        //
+        // The workbook says the domain is "defined on the TTABLE parameter
+        // file" — a BankMaster parameter file that the archival extract does
+        // not carry and no stctltab record type enumerates. The legacy did not
+        // read it from the host either: it filled cmbTransType from a local
+        // Access table, transtypeInfo (frmAccount.frm:1410-1423), which ships
+        // inside statdata.mdb and is not in this repository.
+        //
+        // So there is nothing faithful to put here yet, and inventing labels
+        // would put words in the operator's mouth that the bank never wrote.
+        // The set is registered anyway so the whole path — grid column, filter
+        // combo, detail field — already resolves through it: land a
+        // TTABLE-derived view (or a port of transtypeInfo) in this one place
+        // and every code lights up as "01-Deposit" with no UI change. Until
+        // then codeLabel falls back to the bare code, which is what the screen
+        // shows today.
+        sets.put("bmTransType", List.of());
         logRowCounts(sets);
         return Collections.unmodifiableMap(sets);
     }
