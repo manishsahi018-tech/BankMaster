@@ -386,11 +386,9 @@ const AR_EXTRA: Record<string, string> = {
   // The heading each statement screen prints at the top of the SHEET. It names
   // the document, not the screen, so it is not the screen's own <h1>.
   'pdp account statement': 'كشف حساب PDP',
+  // One name for both of the Historical Statement screen's routes, the
+  // deleted-account one included — same archive, same document.
   'bankmaster account statement': 'كشف حساب BankMaster',
-  // 'deleted' here is the legacy's sense of a CLOSED account — its own caption
-  // for this route, 'historical statement - deleted a/c', renders it
-  // 'الحسابات الملغيه', not محذوف.
-  'bankmaster deleted account statement': 'كشف حساب ملغى BankMaster',
 
   // Statements — the frmHistStmt MsgBox texts, raised by BOTH statement screens
   // (Historical Statement Printing and its PDP counterpart). Toast.tsx
@@ -416,7 +414,6 @@ const AR_EXTRA: Record<string, string> = {
   'analysis successfully completed': 'انتهى التحليل بنجاح',
   'run analysis first': 'الرجاء تنفيذ التحليل أولاً',
   'bankmaster statement analysis': 'تحليل كشف حساب BankMaster',
-  'bankmaster deleted account statement analysis': 'تحليل كشف حساب ملغى BankMaster',
   // The analysis report (docs/analyse.c). Its labels are ours to translate:
   // analyse.exe wrote its headings in English whatever the statement's own
   // language - only the narrative matching branched on Arabic - so the caption

@@ -128,15 +128,13 @@ export default function HistoricalStatement({
   const canKeyAccount = deletedAccountRoute && hasAuthority('~87')
   // What the sheet is called — the heading printed at the top of it AND the
   // name the browser saves it under, from the one string so the two cannot
-  // disagree. The tag = "D" route prints a different document, so it says so.
-  const documentName = deletedAccountRoute
-    ? 'BankMaster Deleted Account Statement'
-    : 'BankMaster Account Statement'
+  // disagree. One name for both routes: the tag = "D" route differs in how the
+  // account is keyed, not in what comes out of the archive, and the document it
+  // produces is the same BankMaster statement, so it carries the same title.
+  const documentName = 'BankMaster Account Statement'
   // The analysis is its own document and saves under its own name — a folder
   // holding both must not have two files called the same thing.
-  const analysisDocumentName = deletedAccountRoute
-    ? 'BankMaster Deleted Account Statement Analysis'
-    : 'BankMaster Statement Analysis'
+  const analysisDocumentName = 'BankMaster Statement Analysis'
   const [accNo, setAccNo] = useState(account?.accountNumber ?? '')
   // Carried from the grid row, never keyed. There is no box for it on either
   // route — see the branch-code note in the header comment — so on the
@@ -665,9 +663,8 @@ export default function HistoricalStatement({
         >
           {/* Paper has to name the DOCUMENT; the screen's own <h1> names the
               screen it lives on. Just the title — the account, branch, month
-              and customer all appear on every statement card below. The legacy's
-              tag = "D" route prints a statement for a CLOSED account, so the
-              paper says which of the two documents it is. */}
+              and customer all appear on every statement card below. Both routes
+              print it under the one name. */}
           <header className="print-only mb-4 border-b border-edge pb-3">
             <h1 className="text-lg font-bold text-ink">{t(documentName)}</h1>
           </header>
