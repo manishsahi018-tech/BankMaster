@@ -11,13 +11,22 @@ import { amountValue, formatAmount, formatDate, todayYyyymmdd } from '../schema/
 import { printDocument } from '../print.ts'
 
 import { t } from '../i18n/index.ts'
-// Mirrors legacy frmTransEnq.frm ("Transaction Enquiry using specific type",
-// the frmAccount cmdTransEnq button) over thd0data — QUERY-SPECS §18, server
-// service 85 (cbswift.c processBmTransEnq). Self-fetching: the date range and
+// Mirrors legacy frmTransEnq.frm ("BM Transaction Enquiry", the frmAccount
+// cmdTransEnq button) over thd0data — QUERY-SPECS §18, server service 85
+// (cbswift.c processBmTransEnq).
+//
+// THE CAPTION IS THE RUNTIME ONE. Form_Load overwrites both the window
+// caption and the heading label from frmBmTransEnqCaption(0)
+// (frmTransEnq.frm:757-758), so the .frm's design-time "Transaction Enquiry
+// using specific type" never reached an operator — and neither did
+// "Transaction Type Enquiry", which is cmdTransEnq's design-time caption,
+// replaced from frmAccountGridCaption(27) at frmAccount.frm:1598.
+//
+// Self-fetching: the date range and
 // trans type parameterize the query, matching the legacy's three-way filter
 // (blank = all, RR = reversals via statmentFlag > '1', else exact match).
 //
-// NOT frmTransaction.frm — that is the separate "Transaction Inquiry" button,
+// NOT frmTransaction.frm — that is the separate "Transaction Enquiry" button,
 // which speaks the online-gateway envelope (checkSum/Source/EOT, services
 // 07/11) rather than cbcmssrv, and has no archival source. It stays stubbed
 // in AccountInfo until DB #2 exists.
@@ -150,7 +159,7 @@ export default function TransactionEnquiry({
       </div>
       <GridScreen
         kicker="Account"
-        title="Transaction Type Enquiry"
+        title="BM Transaction Enquiry"
         // The filter bar does not print, so the range and type it holds are
         // repeated as header fields — cmdPrint_Click put exactly these in the
         // printed report's heading. On screen as well as on paper: a chip the
@@ -195,7 +204,7 @@ export default function TransactionEnquiry({
               title: !rows || rows.length === 0 ? 'Fetch transactions first' : undefined,
               // Named for the screen's own report — this one prints the
               // enquiry, not a statement.
-              onClick: () => printDocument(t('Transaction Type Enquiry')),
+              onClick: () => printDocument(t('BM Transaction Enquiry')),
             },
             { label: 'Exit', kind: 'danger', alignEnd: true, onClick: () => onExit() },
           ],

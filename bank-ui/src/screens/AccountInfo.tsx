@@ -116,10 +116,10 @@ export default function AccountInfo({
             onClick: needRow((row) => onOndemandStatement(row)),
           },
           // Legacy cmdTransaction — frmTransaction.frm, same gateway, service
-          // 11. The ARCHIVAL transaction enquiry is "Transaction Type Enquiry"
+          // 11. The ARCHIVAL transaction enquiry is "BM Transaction Enquiry"
           // below; these two are different screens against different sources.
           {
-            label: 'Transaction Inquiry',
+            label: 'Transaction Enquiry',
             disabled: !canView,
             title: canView ? undefined : noAuthority,
             onClick: needRow((row) => onTransactionInquiry(row)),
@@ -145,9 +145,9 @@ export default function AccountInfo({
             title: canView ? undefined : noAuthority,
             onClick: needRow((row) => onHistStatement(row)),
           },
-          // Legacy cmdTransEnq ("Transaction Type Enquiry") — service 85 over
+          // Legacy cmdTransEnq ("BM Transaction Enquiry") — service 85 over
           // thd0data, with the date range + trans-type filter.
-          { label: 'Transaction Type Enquiry', onClick: needRow((row) => onTransactions(row)) },
+          { label: 'BM Transaction Enquiry', onClick: needRow((row) => onTransactions(row)) },
           { label: 'Transfer Enquiry', onClick: needRow((row) => onTransfers(row)) },
           { label: 'Blocked Amount Breakup', onClick: needRow((row) => onBlockedBreakup(row)) },
           { label: 'Account Update History', onClick: needRow((row) => onUpdateHistory(row)) },

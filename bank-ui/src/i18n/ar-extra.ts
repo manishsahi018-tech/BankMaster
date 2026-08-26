@@ -153,8 +153,6 @@ const AR_EXTRA: Record<string, string> = {
   'empty row selected — please select an account': 'لم يتم اختيار سجل — الرجاء اختيار حساب.',
   'not authorized to access the account details of enquiry restricted branch':
     'غير مصرح لك بالاطلاع على تفاصيل حسابات فرع مقيّد الاستفسار',
-  'transaction inquiry': 'استفسار عن حركة',
-  'transaction type enquiry': 'استفسار حركة',
 
   // ---- Sweep of the remaining screens ------------------------------------
   // None of these had a counterpart in the legacy caption tables: they are

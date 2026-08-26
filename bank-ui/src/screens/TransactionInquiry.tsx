@@ -11,7 +11,7 @@ import { t } from '../i18n/index.ts'
 // Mirrors legacy frmTransaction.frm ("Transaction Enquiry", the frmAccount
 // cmdTransaction button, authority ~60/~61/~62).
 //
-// NOT frmTransEnq.frm — that is the separate "Transaction Type Enquiry" button,
+// NOT frmTransEnq.frm — that is the separate "BM Transaction Enquiry" button,
 // which speaks cbcmssrv service 85 over thd0data (see TransactionEnquiry.tsx).
 // This one speaks the online-gateway envelope (checkSum / branchName / Source /
 // EOT, service 11) to bmrtServer over its own socket — but the server on the far
