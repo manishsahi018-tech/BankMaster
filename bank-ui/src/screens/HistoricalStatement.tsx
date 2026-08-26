@@ -52,13 +52,19 @@ import { t } from '../i18n/index.ts'
 // archive and gets its own screen — nothing here selects between them, and a
 // result is never a merge of the two.
 //
-// ANALYSE IS HERE, BUT RECONSTRUCTED. The legacy shelled a compiled `analyse`
+// ANALYSE IS PORTED, from docs/analyse.c. The legacy shelled that compiled
 // utility over the merged print file (prtall.$s! -> prtall.$a!) and read the
-// result back as text — Notepad for View, portrait A4 Courier for Print. The
-// utility is not in the source dump and no sample of its output survives with
-// it, so the figures below are a reconstruction from the only columns the
-// spool could have carried. statementAnalysis.ts states exactly what it
-// computes and, as importantly, what it refuses to compute.
+// result back as text — Notepad for View, portrait A4 Courier for Print. Its
+// source has since turned up, so the figures are its figures rather than the
+// reconstruction that stood here before: seventeen of them, over a spool it
+// had to parse column by column and we read as fields. statementAnalysis.ts
+// maps each one to its line in the C, and names the two places we knowingly
+// diverge — leap years, which analyse.c gets wrong, and missing statements,
+// which DB #3 can answer exactly where the spool could only be guessed at.
+//
+// The per-month table under those figures is OURS. The legacy report has no
+// monthly breakdown; this is the same data the operator would otherwise read
+// by paging the sheets.
 //
 // The four HO buttons stay out: View HO Stmt, Print HO Stmt, Analyse HO Stmt
 // and View HO Analysis all read prtall.$s! / prtall.$h! out of reqPath — the
