@@ -35,7 +35,7 @@ import { getLocale } from '../i18n/locale.ts'
  * (the legacy screens show "27/01/2001" unchanged), and a year in
  * Arabic-Indic digits here would be the only place that did not.
  */
-function monthLabel(yyyymmdd: string): string {
+export function monthLabel(yyyymmdd: string): string {
   if (!/^\d{8}$/.test(yyyymmdd)) return yyyymmdd
   const date = new Date(
     Number(yyyymmdd.slice(0, 4)),

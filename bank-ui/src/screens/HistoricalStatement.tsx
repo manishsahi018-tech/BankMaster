@@ -1,11 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Field, TextInput, ReadOnlyInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
 import { StatementCard, statementKey } from '../components/StatementCard.tsx'
+import { StatementAnalysisReport } from '../components/StatementAnalysis.tsx'
+import { analyseStatements } from '../components/statementAnalysis.ts'
+import type { StatementAnalysis } from '../components/statementAnalysis.ts'
 import { paginateStatements } from '../components/statementPages.ts'
 import type { Account } from '../types.ts'
 import type { HistoricalStatement as Statement } from '../api.ts'
 import { api } from '../api.ts'
+import { codeLabel } from '../codes.ts'
 import { hasAuthority } from '../session.ts'
 import { printDocument } from '../print.ts'
 
@@ -48,10 +52,18 @@ import { t } from '../i18n/index.ts'
 // archive and gets its own screen — nothing here selects between them, and a
 // result is never a merge of the two.
 //
-// NOT PORTED, descoped deliberately: Analyse. The legacy shelled out to an
-// `analyse` utility over the merged print file (prtall.$s! -> prtall.$a!, and
-// prtall.$h! for the HO variant) and opened the result in Notepad — four
-// buttons in all. It operated on rendered text, which no longer exists here.
+// ANALYSE IS HERE, BUT RECONSTRUCTED. The legacy shelled a compiled `analyse`
+// utility over the merged print file (prtall.$s! -> prtall.$a!) and read the
+// result back as text — Notepad for View, portrait A4 Courier for Print. The
+// utility is not in the source dump and no sample of its output survives with
+// it, so the figures below are a reconstruction from the only columns the
+// spool could have carried. statementAnalysis.ts states exactly what it
+// computes and, as importantly, what it refuses to compute.
+//
+// The four HO buttons stay out: View HO Stmt, Print HO Stmt, Analyse HO Stmt
+// and View HO Analysis all read prtall.$s! / prtall.$h! out of reqPath — the
+// directory the FTP request below fetched into. Nothing fetches into it now,
+// so there is no file for any of them to open.
 //
 // Not ported either: the FTP request to Head Office. It fetched a FILE onto a
 // mapped drive, which has no meaning against a relational archive.
@@ -81,6 +93,10 @@ const MSG = {
   noReport: 'No report found for this account for a given period',
   // The status-bar text on success (:1409).
   extracted: 'Statement extracted successfully.....',
+  // errAnalysisSuccess (:532) — the status-bar text AND the MsgBox the legacy
+  // raised when analyse.exe returned. Both said the same thing, so one toast
+  // carries it.
+  analysisDone: 'Analysis successfully completed..',
 } as const
 
 const digitsOnly = (value: string) => value.replace(/\D/g, '')
@@ -110,6 +126,11 @@ export default function HistoricalStatement({
   const documentName = deletedAccountRoute
     ? 'BankMaster Deleted Account Statement'
     : 'BankMaster Account Statement'
+  // The analysis is its own document and saves under its own name — a folder
+  // holding both must not have two files called the same thing.
+  const analysisDocumentName = deletedAccountRoute
+    ? 'BankMaster Deleted Account Statement Analysis'
+    : 'BankMaster Statement Analysis'
   const [accNo, setAccNo] = useState(account?.accountNumber ?? '')
   // Carried from the grid row, never keyed. There is no box for it on either
   // route — see the branch-code note in the header comment — so on the
@@ -128,13 +149,125 @@ export default function HistoricalStatement({
   })
   const [statements, setStatements] = useState<Statement[] | null>(null)
   const [generating, setGenerating] = useState(false)
+  // cmdAnalyse's output, held separately from the statements it was computed
+  // from: the legacy wrote it to its own file and the View/Print Analysis
+  // buttons keyed off that file existing, not off the statement's.
+  const [analysis, setAnalysis] = useState<StatementAnalysis | null>(null)
+  /**
+   * WHICH of the two reports is on screen. They are alternatives, not
+   * independent panels: View Statement shows the statement and puts the
+   * analysis away, View Analysis does the reverse.
+   *
+   * That is what the legacy's buttons did, once you account for the medium.
+   * cmdViewStmt shelled wordpad on prtall.$e! and cmdViewAnalysis shelled
+   * notepad on prtall.$a! — each opened its own window IN FRONT of whatever
+   * was there, so only one report ever faced the operator. Two independently
+   * toggled panels stacked down one page is not that; one view at a time is.
+   *
+   * Starts on the statement because that is the only one that can exist first:
+   * there is no analysis until Analysis has been pressed.
+   */
+  const [view, setView] = useState<'statement' | 'analysis'>('statement')
+  /**
+   * Bumped by the two View buttons, and by nothing else.
+   *
+   * The scroll below has to fire on every press — including a press that does
+   * not change `view`, i.e. asking for the report already chosen, which should
+   * still take you to it. `view` alone cannot express that, and Generate must
+   * NOT scroll: it sets the view too, and yanking the page down on every
+   * generate is not what the button is for.
+   */
+  const [viewRequest, setViewRequest] = useState(0)
+  /**
+   * Which report the browser is about to put on paper.
+   *
+   * The stylesheet reveals exactly one .print-page region and positions it
+   * absolutely, leaving everything else in flow but invisible — so a second
+   * report left mounted would contribute nothing but its HEIGHT, and print as
+   * trailing blank sheets. Both regions therefore consult this: the one being
+   * printed takes .print-page, the other is `hidden` outright.
+   *
+   * It is state rather than a class toggled just before window.print() because
+   * the DOM has to be committed BEFORE the print dialog reads it; the effect
+   * below runs after the commit, which is the guarantee a straight-line call
+   * cannot make.
+   */
+  const [printing, setPrinting] = useState<'statement' | 'analysis' | null>(null)
+  const analysisRef = useRef<HTMLDivElement>(null)
+  const statementRef = useRef<HTMLDivElement>(null)
   const toast = useToast()
+
+  /**
+   * Bring the chosen report into view.
+   *
+   * The legacy's View buttons shelled Notepad and wordpad, so the result
+   * arrived as a new window in front of everything. A panel added to a page
+   * cannot do that on its own: it can sit below the fold, and a button whose
+   * effect is off-screen reads as a button that does nothing. Scrolling to it
+   * is what makes the click visible.
+   */
+  useEffect(() => {
+    if (viewRequest === 0) return
+    const target = view === 'analysis' ? analysisRef : statementRef
+    target.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [viewRequest, view])
+
+  /** cmdViewStmt (:1117) and cmdViewAnalysis (:1067) — one report at a time. */
+  const showReport = (which: 'statement' | 'analysis') => {
+    setView(which)
+    setViewRequest((n) => n + 1)
+  }
+
+  useEffect(() => {
+    if (printing === null) return
+    let settled = false
+    const done = () => {
+      if (settled) return
+      settled = true
+      setPrinting(null)
+    }
+    // afterprint is the RIGHT signal, but it cannot be the only one. This flag
+    // hides one of the two reports while it is set, so a signal that never
+    // arrives does not merely leave a stale title — it strands the other
+    // report inside a hidden div, where a later Generate renders invisibly and
+    // the screen looks broken. (Headless Chrome reproduces exactly that: its
+    // window.print() is a no-op and fires nothing.) So anything that means the
+    // operator is back on the page clears it: the dialog closing, the window
+    // regaining focus, or simply the next click or keystroke. Whichever lands
+    // first wins; `settled` keeps the rest from firing a second setState.
+    const events: [EventTarget, string][] = [
+      [window, 'afterprint'],
+      [window, 'focus'],
+      [document, 'pointerdown'],
+      [document, 'keydown'],
+    ]
+    for (const [target, type] of events) target.addEventListener(type, done, { once: true })
+    printDocument(t(printing === 'analysis' ? analysisDocumentName : documentName))
+    return () => {
+      for (const [target, type] of events) target.removeEventListener(type, done)
+    }
+  }, [printing, analysisDocumentName, documentName])
 
   // Legacy disableButtons (:1570): ANY edit re-enables Generate and kills
   // View/Print, so a report can never be shown against a changed form.
   const set = (key: keyof typeof form, value: string) => {
     setForm((f) => ({ ...f, [key]: value }))
+    clearReport()
+  }
+
+  /**
+   * disableButtons() (:1576) in one place: the report goes, and the analysis
+   * goes with it. The legacy cleared Analyse/View Analysis/Print Analysis in
+   * the same breath as View/Print Statement, and it had to — prtall.$a! was
+   * computed from a spool that no longer described the form on screen.
+   */
+  function clearReport() {
     setStatements(null)
+    setAnalysis(null)
+    setView('statement')
+    // Nothing is being printed once the report it was printing is gone, and a
+    // flag left set here would hide the next one.
+    setPrinting(null)
   }
 
   /** cmdGenerate_Click (:686) validation, in the legacy's own order. */
@@ -171,11 +304,19 @@ export default function HistoricalStatement({
       // reportFoundFlag (:1383, :1414): no statement in any month is not an
       // error, it is "no report found", and View/Print stay disabled.
       if (rows.length === 0) {
-        setStatements(null)
+        clearReport()
         toast.warn(MSG.noReport)
         return
       }
+      // enablePrintButtons (:1595) turns View/Print Statement and Analyse on
+      // and View Analysis explicitly OFF: a fresh report has no analysis yet,
+      // and any analysis still in hand belongs to the previous one.
       setStatements(rows)
+      setAnalysis(null)
+      // A fresh report is shown as a statement, and the analysis of the
+      // PREVIOUS one must not be what is on screen when it lands.
+      setView('statement')
+      setPrinting(null)
       toast.success(MSG.extracted)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -189,6 +330,45 @@ export default function HistoricalStatement({
   const hasReport = statements !== null && statements.length > 0
   const lineCount = (statements ?? []).reduce((n, s) => n + s.lines.length, 0)
 
+  /**
+   * cmdAnalyse_Click (:507), minus the shell-out. The legacy ran analyse.exe
+   * over the spool and then enabled View/Print Analysis; here the computation
+   * is synchronous, so the wait message it showed in between (errWaitAnalysis)
+   * has nothing to cover and is not raised.
+   *
+   * Like the legacy, this does NOT open the result — cmdAnalyse only enabled
+   * the two buttons that show it. View Analysis is still a deliberate second
+   * click.
+   */
+  const handleAnalyse = () => {
+    if (!hasReport) return
+    setAnalysis(analyseStatements(statements!))
+    // enablePrintButtons (:1595) leaves cmdViewAnalysis OFF: computing the
+    // analysis does not display it, so the view stays where it is.
+    toast.success(MSG.analysisDone)
+  }
+
+  /**
+   * The two boxes the legacy filled from the account number itself: currency
+   * from digits 1-2 and account type from 3-5, each looked up for its
+   * description and shown as "<code>-<description>"
+   * (frmAccount.frm:857-878 on the normal route, frmHistStmt.frm:758-780 on the
+   * deleted-account one). The Access tables it read, currencyinfo and
+   * bmledgerinfo, are the stctltabXC and stctltabMM views this build serves as
+   * the `currency` and `ledger` reference sets.
+   *
+   * Derived as the account is typed rather than filled once. The legacy could
+   * only fill them at the two moments it had an account in hand; deriving them
+   * means the deleted-account route shows them while the operator keys, and
+   * neither route can leave a stale pair beside a changed account number.
+   */
+  const currencyLabel = codeLabel('currency', accNo.slice(0, 2))
+  const acctTypeLabel = codeLabel('ledger', accNo.slice(2, 5))
+
+  // Which region is on paper, and which is merely mounted — see `printing`.
+  const printingAnalysis = printing === 'analysis'
+  const analysisOnScreen = analysis !== null && (view === 'analysis' || printingAnalysis)
+
   const secondaryBtn =
     'rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft ' +
     'shadow-xs transition-colors hover:bg-surface-muted ' +
@@ -197,7 +377,9 @@ export default function HistoricalStatement({
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="mb-6">
-        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">{t('Account')}</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-primary-ink">
+          {t('Account')}
+        </p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
           {t('Historical Statement Printing')}
         </h1>
@@ -219,7 +401,7 @@ export default function HistoricalStatement({
                 placeholder={t('14 digits')}
                 onChange={(e) => {
                   setAccNo(digitsOnly(e.target.value))
-                  setStatements(null)
+                  clearReport()
                 }}
               />
             ) : (
@@ -228,12 +410,21 @@ export default function HistoricalStatement({
                 value={accNo}
                 readOnly
                 title={
-                  deletedAccountRoute
-                    ? 'Keying an account here requires authority ~87'
-                    : undefined
+                  deletedAccountRoute ? 'Keying an account here requires authority ~87' : undefined
                 }
               />
             )}
+          </Field>
+
+          {/* txtCurrDesc / txtAcctDesc — display-only on both routes; the
+              legacy never let either be typed, they were only ever derived
+              from the account number. */}
+          <Field label="Currency" htmlFor="currency">
+            <ReadOnlyInput id="currency" value={currencyLabel} readOnly />
+          </Field>
+
+          <Field label="Account Type" htmlFor="acctType">
+            <ReadOnlyInput id="acctType" value={acctTypeLabel} readOnly />
           </Field>
 
           <Field label="From Date (month / year)" htmlFor="fromMonth">
@@ -294,7 +485,28 @@ export default function HistoricalStatement({
           </p>
         )}
 
+        {/* THE LEGACY'S BUTTONS, in the legacy's own
+            captions — taken from frmHistStmtCaption (frmHistStmt.frm:1171-1181),
+            not from the .frm's design-time Caption= properties, which are stale.
+            The VB6 laid them out as a 5 x 2 block with Exit centred underneath;
+            here they are grouped by what they act on, which is the same three
+            groups the legacy's two rows already implied — less the four Head
+            Office buttons, held back for now (see the header comment).
+
+            Csv and FTP are the two the legacy itself hid (Visible = 0 on both;
+            FTP is revealed only for authority ~94, and Csv never). They are not
+            on the screen this replaces, so they are not here either. */}
         <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-edge-soft pt-4">
+          {/* ONE DELIBERATE DEPARTURE from the legacy's gating, and the only
+                one on this screen: enablePrintButtons (:1595) sets
+                cmdGenerate.Enabled = False, so after a successful generate the
+                legacy would not let you press it again until an edit to the
+                form re-ran disableButtons. That guarded the SPOOL FILE it had
+                just written — regenerating would have overwritten the thing
+                View and Print were about to read. There is no file here, a
+                re-run is a fresh query and nothing else, and disabling it would
+                also leave a failed request needing a pointless field edit
+                before it could be retried. */}
           <button
             type="button"
             onClick={handleGenerate}
@@ -304,17 +516,84 @@ export default function HistoricalStatement({
             {generating ? t('Generating…') : t('Generate Stmt')}
           </button>
 
-          {/* Legacy cmdPrintStmt shells the spool file to the printer in
-              landscape; in the browser that is window.print() over the sheet
-              rendered below. */}
+          {/* cmdViewStmt (:1117) — wordpad on prtall.$e!, the converted
+                spool. The report is already on the page here, so "view" is a
+                matter of getting the operator to it and back: the same
+                show/scroll/hide the analysis button does. It stays enabled on
+                the same terms as the legacy's (enablePrintButtons :1595). */}
           <button
             type="button"
             disabled={!hasReport}
-            onClick={() => printDocument(t(documentName))}
-            title={hasReport ? undefined : 'Generate a statement first'}
+            aria-pressed={view === 'statement'}
+            onClick={() => showReport('statement')}
+            title={hasReport ? undefined : t('Generate a statement first')}
+            className={secondaryBtn}
+          >
+            {t('View Statement')}
+          </button>
+
+          {/* Legacy cmdPrintStmt shells the spool file to the printer in
+                landscape; in the browser that is window.print() over the sheet
+                rendered below. */}
+          <button
+            type="button"
+            disabled={!hasReport}
+            onClick={() => setPrinting('statement')}
+            title={hasReport ? undefined : t('Generate a statement first')}
             className={secondaryBtn}
           >
             {t('Print Statement')}
+          </button>
+
+          {/* The legacy's second row became this rule. One line reads better
+                than two, but the split those rows drew — what acts on the
+                statement, what acts on its analysis — is worth keeping visible,
+                and a rule costs a line nothing. It folds away below sm, where
+                the buttons wrap and a divider between wrapped rows would be
+                pointing at nothing. */}
+          <span className="mx-1 hidden h-6 w-px bg-edge sm:block" aria-hidden="true" />
+
+          {/* cmdAnalyse — enabled by enablePrintButtons (:1595), i.e. only
+                once there is a report to analyse. */}
+          <button
+            type="button"
+            disabled={!hasReport}
+            onClick={handleAnalyse}
+            title={hasReport ? undefined : t('Generate a statement first')}
+            className={secondaryBtn}
+          >
+            {t('Analysis')}
+          </button>
+
+          {/* cmdViewAnalysis — Notepad on prtall.$a! in the legacy, which is
+                the analysis appearing in its own window. Here it appears above
+                the statements, and the same button puts it away again: a panel
+                on the page needs a way to be closed that a separate Notepad
+                window did not. aria-pressed says which of the two the next
+                click does, since the caption is the legacy's and stays put. */}
+          <button
+            type="button"
+            disabled={analysis === null}
+            aria-pressed={view === 'analysis'}
+            onClick={() => showReport('analysis')}
+            title={analysis === null ? t('Run Analysis first') : undefined}
+            className={secondaryBtn}
+          >
+            {t('View Analysis')}
+          </button>
+
+          {/* cmdPrintAnalysis (:793) — portrait A4 Courier, and it read the
+                analysis FILE, so it never depended on the analysis being open.
+                Neither does this: printing reveals the report whether or not
+                View Analysis has been clicked. */}
+          <button
+            type="button"
+            disabled={analysis === null}
+            onClick={() => setPrinting('analysis')}
+            title={analysis === null ? t('Run Analysis first') : undefined}
+            className={secondaryBtn}
+          >
+            {t('Print Analysis')}
           </button>
 
           <button
@@ -327,11 +606,57 @@ export default function HistoricalStatement({
         </div>
       </div>
 
+      {/* The analysis, ABOVE the statements rather than after them. The legacy
+          opened it in a Notepad window that landed in front of the operator;
+          appended below a pack of statement cards it opens several screens
+          down instead, and View Analysis reads as a dead button. Mounted from
+          the moment it is computed so Print Analysis can reach it without it
+          being on screen, and `hidden` until something asks for it.
+
+          Which of the two reports reaches the paper is decided by print-exclude
+          (a @media print rule), NOT by hiding one on screen: the flag driving
+          it depends on the browser firing afterprint, and when that did not
+          arrive the statement stayed hidden and Generate appeared to return
+          nothing. Screen state no longer depends on it. */}
+      {analysis !== null && (
+        <div
+          ref={analysisRef}
+          /* scroll-mt-24 keeps the scroll below from parking the report's own
+             heading underneath the sticky top bar. print-exclude keeps this
+             report off the paper when the STATEMENT is the one printing — and
+             only off the paper, never off the screen. */
+          className={printingAnalysis ? 'print-page' : 'print-exclude scroll-mt-24'}
+          hidden={!analysisOnScreen}
+        >
+          {/* No print-only document header here, unlike the statement region
+              below: the report's own card is headed with the document name
+              already, and a second copy of it printed the title twice. The
+              statement region needs one because ITS cards are headed by month,
+              not by the document. */}
+          <div className="mt-6">
+            <StatementAnalysisReport
+              analysis={analysis}
+              documentName={analysisDocumentName}
+              accountNumber={accNo.trim()}
+              currency={currencyLabel}
+              accountType={acctTypeLabel}
+            />
+          </div>
+        </div>
+      )}
+
       {/* The report region, and the ONLY thing that prints — the printout is
           this markup rather than a second, print-only rendering that has to be
           kept in step with it by hand. Same arrangement as the PDP screen. */}
       {hasReport && (
-        <div className="print-page">
+        <div
+          ref={statementRef}
+          className={
+            printingAnalysis
+              ? 'print-exclude'
+              : `print-page scroll-mt-24${view === 'statement' ? '' : ' screen-hidden'}`
+          }
+        >
           {/* Paper has to name the DOCUMENT; the screen's own <h1> names the
               screen it lives on. Just the title — the account, branch, month
               and customer all appear on every statement card below. The legacy's

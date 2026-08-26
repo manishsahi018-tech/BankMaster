@@ -186,6 +186,16 @@ body {
   display: none;
 }
 
+/* Put away on screen, still printed — the inverse of .print-hidden, and NOT
+   the same thing as .print-only, which is for content that exists for paper
+   alone. A report the operator has closed with its View button must still be
+   reachable by its Print button: the legacy printed the FILE, never the window
+   that happened to be showing it, so cmdPrintStmt worked whether or not
+   cmdViewStmt had ever been pressed. */
+.screen-hidden {
+  display: none;
+}
+
 @media print {
   /* Dark mode is a property of a SCREEN, not of paper. `color-scheme: dark` on
      <html> makes the user agent paint the canvas itself dark — the one surface
@@ -230,7 +240,8 @@ body {
     box-shadow: none !important;
   }
 
-  .print-only {
+  .print-only,
+  .screen-hidden {
     display: block;
   }
   /* Anything that is only a control belongs to the screen, not the report —
@@ -385,6 +396,21 @@ body {
      needs the width; the card layouts stay portrait. */
   .print-page.print-landscape {
     page: landscape-sheet;
+  }
+
+  /* A screen that holds TWO printable reports (Historical Statement: the
+     statement pack and its analysis) marks the one that is not being printed.
+     Visibility alone is not enough — everything outside .print-page is already
+     visibility:hidden, but it still occupies flow height and prints as
+     trailing blank sheets. display:none is what actually removes it.
+
+     Deliberately scoped to @media print: the screen must never depend on this
+     class. An earlier version hid the other report with the `hidden` attribute
+     instead, and when the state driving it failed to clear — the browser not
+     firing afterprint — the statement stayed hidden on screen and every later
+     Generate rendered into an invisible div. A print-only rule cannot do that. */
+  .print-exclude {
+    display: none !important;
   }
 }
 
