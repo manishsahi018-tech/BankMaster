@@ -26,6 +26,12 @@ const AR_EXTRA: Record<string, string> = {
   // Legacy: 'خروج' (Exit) — the VB6 Cancel buttons were captioned "leave".
   // Our Cancel dismisses a dialog without leaving the screen.
   cancel: 'إلغاء',
+  // Legacy: 'مباغ الحوالة' — 'مباغ' is a misspelling of 'مبلغ' (amount) that
+  // the VB6 caption table repeats three times, so the extractor's
+  // most-frequent rule adopted it. The correct spelling is in that same table:
+  // frmBmTransEnqCaption(16, 0), the BM enquiry grid's own Trans.Amount
+  // heading, is 'مبلغ الحوالة'.
+  'trans.amount': 'مبلغ الحوالة',
   // Legacy: 'نعم' (Yes) — fine on a confirm prompt, wrong on the About
   // dialog's dismiss button.
   ok: 'موافق',
@@ -329,8 +335,6 @@ const AR_EXTRA: Record<string, string> = {
   'transfer detail': 'تفاصيل الحوالة',
 
   // Enquiry forms and their validation
-  'trans type (rr = reversals)': 'نوع الحركة (RR = عكسية)',
-  'fetch transactions': 'جلب الحركات',
   'fetch transfers': 'جلب الحوالات',
   'fetch transactions first': 'اجلب الحركات أولاً',
   'enter a date range and fetch': 'أدخل نطاق التاريخ ثم نفّذ.',
@@ -701,6 +705,13 @@ const AR_EXTRA: Record<string, string> = {
   year: 'السنة',
   'history — this is the record as of {asof}, not the live profile':
     'أرشيف — هذا هو السجل كما كان في {asOf}، وليس الملف الحالي.',
+
+  // BM Transaction Enquiry. The legacy left its trans-type combo blank to mean
+  // "every type" and captioned neither that nor the RR reversals filter the
+  // server accepts, so both strings are ours.
+  'all types': 'كل الأنواع',
+  reversals: 'العمليات العكسية',
+  reversal: 'عملية عكسية',
 }
 
 export default AR_EXTRA

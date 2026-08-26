@@ -294,7 +294,41 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
                     new CodeEntry("0", "Capitalise"),
                     new CodeEntry("1", "Pay to another account"),
                     new CodeEntry("2", "Pay by cheque"),
-                    new CodeEntry("3", "Memorandum interest only"))));
+                    new CodeEntry("3", "Memorandum interest only"))),
+            // Statement flag — thd0data.ts documents 0 and 1 and no more. See
+            // JdbcReferenceDataRepository for why the reversal values above
+            // '1' (which this fixture generates as "2") are not enumerated.
+            Map.entry("stmtFlag", List.of(
+                    new CodeEntry("0", "Print on statement"),
+                    new CodeEntry("1", "Do not print on statement"))),
+            // BM transaction type. Under denodo this set is EMPTY — the domain
+            // lives on the TTABLE parameter file, which the archival extract
+            // does not carry (see JdbcReferenceDataRepository).
+            //
+            // DEMO DATA, then, and only that. It pairs with
+            // MockTransferRepository.TRANS_KINDS, which posts these same codes,
+            // so the mock profile has a Trans.Type column that reads like a
+            // ledger instead of a column of bare "02"s. It is NOT a claim about
+            // what TTABLE holds and must not be copied into the denodo set.
+            //
+            // The only BM transaction-type names the legacy source attests
+            // anywhere are "00-Reversal" and "01-Deposit", from the design-time
+            // item list compiled into frmTransEnq.frx — which Form_Load then
+            // replaced from the local transtypeInfo table. They are left OUT
+            // rather than mixed in: two real codes sitting in a list of
+            // invented ones reads as though the whole list were sourced.
+            Map.entry("bmTransType", List.of(
+                    new CodeEntry("10", "Cash Deposit"),
+                    new CodeEntry("11", "Cash Withdrawal"),
+                    new CodeEntry("15", "Cheque Deposit"),
+                    new CodeEntry("20", "Transfer In"),
+                    new CodeEntry("21", "Transfer Out"),
+                    new CodeEntry("30", "Standing Order"),
+                    new CodeEntry("40", "Service Fee"),
+                    new CodeEntry("50", "Interest Application"),
+                    new CodeEntry("60", "ATM Withdrawal"),
+                    new CodeEntry("61", "POS Purchase"),
+                    new CodeEntry("90", "Reversal"))));
 
     /**
      * Arabic for the demo sets, keyed {@code set/code}.
@@ -491,7 +525,20 @@ public class MockReferenceDataRepository implements ReferenceDataRepository {
             Map.entry("intApplication/0", "إضافة للرصيد"),
             Map.entry("intApplication/1", "تحويل لحساب آخر"),
             Map.entry("intApplication/2", "صرف بشيك"),
-            Map.entry("intApplication/3", "فائدة تذكيرية فقط"));
+            Map.entry("intApplication/3", "فائدة تذكيرية فقط"),
+            Map.entry("stmtFlag/0", "يطبع في كشف الحساب"),
+            Map.entry("stmtFlag/1", "لا يطبع في كشف الحساب"),
+            Map.entry("bmTransType/10", "إيداع نقدي"),
+            Map.entry("bmTransType/11", "سحب نقدي"),
+            Map.entry("bmTransType/15", "إيداع شيك"),
+            Map.entry("bmTransType/20", "حوالة واردة"),
+            Map.entry("bmTransType/21", "حوالة صادرة"),
+            Map.entry("bmTransType/30", "أمر ثابت"),
+            Map.entry("bmTransType/40", "رسوم خدمة"),
+            Map.entry("bmTransType/50", "إضافة فائدة"),
+            Map.entry("bmTransType/60", "سحب من الصراف الآلي"),
+            Map.entry("bmTransType/61", "شراء نقاط بيع"),
+            Map.entry("bmTransType/90", "قيد عكسي"));
 
     /** The English map with every description swapped for its Arabic, once. */
     private static final Map<String, List<CodeEntry>> CODES_AR = CODES.entrySet().stream()

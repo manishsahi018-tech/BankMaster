@@ -34,18 +34,47 @@ public class MockTransferRepository implements TransferRepository {
     // BankMaster transactions (thd0data)
     // ---------------------------------------------------------------------
 
-    /** transType, then the two narrative lines the detail screen shows. */
-    private static final List<String[]> TRANS_KINDS = List.of(
-            new String[] {"01", "SALARY CREDIT", "MONTHLY PAYROLL"},
-            new String[] {"01", "CASH DEPOSIT", "BRANCH COUNTER"},
-            new String[] {"02", "ATM WITHDRAWAL", "ANB ATM"},
-            new String[] {"02", "POS PURCHASE", "MADA POS"},
-            new String[] {"02", "SADAD PAYMENT", "BILL SETTLEMENT"},
-            new String[] {"02", "STANDING ORDER DR", "SCHEDULED TRANSFER"},
-            new String[] {"01", "CHEQUE DEPOSIT", "CLEARING CYCLE"},
-            new String[] {"02", "SERVICE FEE", "MONTHLY CHARGE"},
-            new String[] {"01", "INWARD TRANSFER", "SARIE CREDIT"},
-            new String[] {"02", "OUTWARD TRANSFER", "SARIE DEBIT"});
+    /**
+     * One BankMaster transaction type, as the demo tells its story.
+     *
+     * <p>These codes are DEMO DATA. The real domain lives on the BankMaster
+     * TTABLE parameter file, which the archival extract does not carry — see
+     * JdbcReferenceDataRepository, where the denodo bmTransType set is
+     * deliberately empty for that reason. The pairs here exist so the mock
+     * profile has a Trans.Type column worth looking at and so the decode path
+     * is exercisable at all; they are NOT a claim about what TTABLE holds, and
+     * MockReferenceDataRepository.bmTransType is their only other home.
+     *
+     * @param credit   true if the posting increases the balance. The legacy
+     *                 derived its Cr/Dr flag from the amount's sign
+     *                 (frmTransEnq.frm fillGridFromLocalDb), so the sign is
+     *                 what carries this onto the screen.
+     * @param valueLag days between posting and value date.
+     * @param floor    smallest amount in riyals, @param span the range above it
+     *                 — a service fee and a cheque deposit should not come out
+     *                 of the same bracket, which is what made every old row
+     *                 look interchangeable.
+     */
+    private record Kind(String code, String narrative1, String narrative2,
+                        boolean credit, int valueLag, long floor, long span) {}
+
+    private static final List<Kind> TRANS_KINDS = List.of(
+            new Kind("10", "CASH DEPOSIT", "BRANCH COUNTER", true, 0, 500, 19_500),
+            new Kind("11", "CASH WITHDRAWAL", "BRANCH COUNTER", false, 0, 200, 9_800),
+            new Kind("15", "CHEQUE DEPOSIT", "CLEARING CYCLE", true, 2, 1_000, 74_000),
+            new Kind("20", "INWARD TRANSFER", "SARIE CREDIT", true, 0, 500, 49_500),
+            new Kind("21", "OUTWARD TRANSFER", "SARIE DEBIT", false, 0, 500, 49_500),
+            new Kind("30", "STANDING ORDER", "SCHEDULED TRANSFER", false, 0, 250, 4_750),
+            new Kind("40", "SERVICE FEE", "MONTHLY CHARGE", false, 0, 10, 290),
+            new Kind("50", "INTEREST APPLICATION", "PERIODIC CREDIT", true, 0, 5, 1_995),
+            new Kind("60", "ATM WITHDRAWAL", "ANB ATM", false, 0, 100, 2_900),
+            new Kind("61", "POS PURCHASE", "MADA POS", false, 0, 20, 2_480),
+            new Kind("90", "REVERSAL", "CORRECTION ENTRY", true, 0, 50, 7_950));
+
+    private static Kind kindOf(String code) {
+        return TRANS_KINDS.stream().filter(k -> k.code().equals(code)).findFirst()
+                .orElse(TRANS_KINDS.get(0));
+    }
 
     private static final List<String> LOCATIONS = List.of(
             "RIYADH OLAYA", "JEDDAH TAHLIA", "DAMMAM CORNICHE", "KHOBAR RAKAH",
@@ -65,22 +94,25 @@ public class MockTransferRepository implements TransferRepository {
                     ? 1 + DemoData.pick(accNo + daysAgo, 2, 2) : 0;
             for (int k = 0; k < perDay; k++) {
                 String key = accNo + daysAgo + k;
-                String[] kind = DemoData.pick(key, 3, TRANS_KINDS);
+                Kind kind = DemoData.pick(key, 3, TRANS_KINDS);
                 // Company accounts move larger sums than personal ones.
-                long floor = c.juristic() ? 2_500 : 50;
-                long span = c.juristic() ? 480_000 : 9_500;
-                long riyals = floor + DemoData.seed(key, 4) % span;
-                // Cheque deposits clear two days after posting; everything
-                // else values same-day.
-                int valueLag = "CHEQUE DEPOSIT".equals(kind[1]) ? 2 : 0;
+                long scale = c.juristic() ? 8 : 1;
+                long riyals = (kind.floor() + DemoData.seed(key, 4) % kind.span()) * scale;
                 rows.add(new TransactionSummary(
                         "TR" + String.format("%08d", 100000 + DemoData.seed(key, 5) % 899999),
                         DemoData.dateBack(daysAgo),
-                        DemoData.dateBack(daysAgo + valueLag),
+                        DemoData.dateBack(daysAgo + kind.valueLag()),
                         String.valueOf(500 + DemoData.pick(key, 6, 400)),
-                        DemoData.amount((int) riyals, DemoData.pick(key, 7, 100) * 10),
+                        // Debits post negative. A ledger where every row is a
+                        // credit makes the screen's Total meaningless, and the
+                        // legacy read the sign off this very field. A plain
+                        // leading minus, which is what the workbook's
+                        // "Numeric 16,3" column would carry and what
+                        // helpers.ts amountValue reads back unchanged.
+                        (kind.credit() ? "" : "-")
+                                + DemoData.amount((int) riyals, DemoData.pick(key, 7, 100) * 10),
                         String.format("%05d", counter++),
-                        kind[0]));
+                        kind.code()));
             }
         }
         // Newest first, as the legacy grid loads them.
@@ -102,9 +134,17 @@ public class MockTransferRepository implements TransferRepository {
         return PagedResult.page(all, page);
     }
 
-    /** Mock stand-in for statmentFlag > '1': roughly one in twenty. */
+    /**
+     * Mock stand-in for statmentFlag > '1'.
+     *
+     * <p>Every "90" posting is one, plus a thin scatter across the other types
+     * — because the flag and the type are SEPARATE columns in thd0data and the
+     * RR filter keys on the flag alone (cbswift.c:1902). Tying reversals to
+     * type 90 outright would make the filter look like a type filter, which is
+     * the one thing about this screen worth not teaching wrongly.
+     */
     private static boolean isReversal(TransactionSummary t) {
-        return DemoData.pick(t.transRef(), 9, 20) == 0;
+        return "90".equals(t.transType()) || DemoData.pick(t.transRef(), 9, 40) == 0;
     }
 
     @Override
@@ -113,13 +153,16 @@ public class MockTransferRepository implements TransferRepository {
                 .filter(t -> t.transRef().equals(refNo))
                 .findFirst()
                 .map(t -> {
-                    String[] kind = DemoData.pick(t.transRef(), 10, TRANS_KINDS);
+                    // The row's OWN kind. This used to re-pick from the
+                    // reference number, so a debit row opened onto credit
+                    // narratives — an "02" posting captioned SALARY CREDIT.
+                    Kind kind = kindOf(t.transType());
                     return new TransactionDetail(accNo, t.transRef(),
                             DemoData.customerForAccount(accNo).shortName(),
                             t.postDate(), t.valueDate(), t.transAmt(), t.transType(), t.userId(),
                             String.valueOf(52000 + DemoData.pick(t.transRef(), 11, 3000)),
                             isReversal(t) ? "2" : "1",
-                            kind[1], kind[2],
+                            kind.narrative1(), kind.narrative2(),
                             DemoData.pick(t.transRef(), 12, LOCATIONS));
                 });
     }

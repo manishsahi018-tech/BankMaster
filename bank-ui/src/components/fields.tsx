@@ -50,6 +50,49 @@ export function ReadOnlyInput({ className = '', ...props }: ComponentProps<'inpu
   return <input type="text" readOnly className={`${readOnlyBase} ${className}`} {...props} />
 }
 
+/**
+ * An EDITABLE combo: a text box with a dropdown of suggestions.
+ *
+ * This is VB6's ComboBox Style 0, which is what most of the legacy forms
+ * actually used — the operator picks a suggestion or types a value the list
+ * does not offer. Select (below) is Style 2, the drop-down LIST, and the two
+ * are not interchangeable: rendering a Style 0 combo as a Select silently
+ * removes the ability to enter anything the list is missing, which matters
+ * wherever the suggestion list comes from reference data that may be
+ * incomplete or absent.
+ *
+ * Suggestions are the same "<code>-<description>" strings Select takes, so a
+ * caller slices the code back out exactly as the legacy's Mid$(combo, 1, n)
+ * did. A blank list is a legitimate state: the field is then plain free text,
+ * which is precisely how the legacy behaved when its local lookup table had no
+ * rows.
+ */
+export function Combo({
+  className = '',
+  options = [],
+  listId,
+  placeholder,
+  ...props
+}: ComponentProps<'input'> & { options?: string[]; listId: string }) {
+  const { t } = useT()
+  return (
+    <>
+      <input
+        type="text"
+        list={listId}
+        placeholder={placeholder ? t(placeholder) : undefined}
+        className={`${inputBase} ${className}`}
+        {...props}
+      />
+      <datalist id={listId}>
+        {options.map((opt) => (
+          <option key={opt} value={opt} />
+        ))}
+      </datalist>
+    </>
+  )
+}
+
 export function Select({
   className = '',
   placeholder,
