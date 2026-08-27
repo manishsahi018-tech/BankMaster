@@ -43,6 +43,14 @@ const SHOW_DORMANT_FACILITIES = false
 // remain behind SHOW_DORMANT_FACILITIES.
 const SHOW_ENQUIRIES_SERVICES = true
 
+// Merchant Statement is off the search screen. The button is the ONLY way into
+// frmMerchantStmt's port — App.tsx routes 'merchant' from nowhere else — so
+// this takes the screen out of reach rather than just tidying the row. Kept as
+// a flag rather than deleted for that reason: the screen, its ~81 gate and its
+// validation are all still there and working, and flipping this to true is the
+// whole of putting it back.
+const SHOW_MERCHANT_STATEMENT = false
+
 const secondaryBtn =
   'rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft ' +
   'shadow-xs transition-colors hover:bg-surface-muted ' +
@@ -718,19 +726,21 @@ export default function CustomerStaticData({
                     customer context — the merchant number is keyed on the
                     statement form itself — so it belongs with the errands, not
                     with Customer / Account / ATM Cards. */}
-                <button
-                  type="button"
-                  disabled={!hasAuthority('~81')}
-                  onClick={() => onMerchant?.()}
-                  title={
-                    hasAuthority('~81')
-                      ? 'Merchant statement facilities'
-                      : 'Requires merchant statement authority (~81)'
-                  }
-                  className={secondaryBtn}
-                >
-                  {t('Merchant Statement')}
-                </button>
+                {SHOW_MERCHANT_STATEMENT && (
+                  <button
+                    type="button"
+                    disabled={!hasAuthority('~81')}
+                    onClick={() => onMerchant?.()}
+                    title={
+                      hasAuthority('~81')
+                        ? 'Merchant statement facilities'
+                        : 'Requires merchant statement authority (~81)'
+                    }
+                    className={secondaryBtn}
+                  >
+                    {t('Merchant Statement')}
+                  </button>
+                )}
               </div>
             </div>
           )}
