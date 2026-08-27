@@ -382,6 +382,24 @@ body {
     height: 186mm;
   }
 
+  /* And the spool is set a little tighter than the 1.2 above, to pay for the
+     mark at the top of the page.
+     
+     This is the one report where the mark cannot ride in a heading row — there
+     is no heading, only the spool — so it costs the page 32px it did not have:
+     a full page and its footer already came to 695 of these 703, leaving 8.
+     The 44 lines of a full page give it back at 0.08 of a line each, which is
+     the cheapest place to find 32px on this sheet and the least visible.
+     
+     Without it the page simply overflows, and it does NOT overflow visibly:
+     the page box is a flex column, so a full page compresses the mark itself
+     to nothing rather than pushing past the sheet edge — the second sheet of
+     the spool printed a 0.5px logo. shrink-0 on the mark is the other half of
+     this; the two go together. */
+  .print-page.print-landscape pre {
+    line-height: 1.12;
+  }
+
   /* Chrome, Edge and Firefox draw their print header/footer — the document
      title and date at the top, the PAGE URL and page number at the bottom —
      inside the page MARGIN box. A page with no margin leaves them nowhere to

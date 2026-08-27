@@ -52,6 +52,9 @@ const AR_EXTRA: Record<string, string> = {
   'version {version}': 'الإصدار {version}',
   'this software used to manage atm cards': 'يُستخدم هذا البرنامج لإدارة بطاقات الصراف الآلي.',
   'copyright © arab national bank, riyadh': 'حقوق النشر © البنك العربي الوطني، الرياض',
+  // The mark on every printed sheet (BankLogo) names the bank to a screen
+  // reader; the artwork itself is wordmark-only and carries no text.
+  'arab national bank': 'البنك العربي الوطني',
   'close about dialog': 'إغلاق نافذة حول البرنامج',
   'sign out': 'تسجيل الخروج',
 

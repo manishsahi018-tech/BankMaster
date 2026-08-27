@@ -9,6 +9,7 @@ import {
   todayYyyymmdd,
 } from '../schema/helpers.ts'
 import { codeDescription } from '../codes.ts'
+import { BankLogo } from './BankLogo.tsx'
 import { t } from '../i18n/index.ts'
 import { getLocale } from '../i18n/locale.ts'
 
@@ -114,40 +115,56 @@ export function StatementCard({
     <section className="print-expand overflow-hidden rounded-2xl border border-edge bg-surface shadow-sm">
       <header className="border-b border-edge-soft bg-surface-muted px-4 py-4 sm:px-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-ink">
-              {t('Statement for {month}', { month: monthLabel(s.stmtDate) })}
-              {s.stmtNum && (
-                <span className="ms-2 text-sm font-normal text-muted">
-                  {t('No. {stmtNum}', { stmtNum: s.stmtNum })}
+          {/* The mark, at the head of the card and so at the top corner of
+              every sheet — the legacy re-painted it after each NewPage
+              (globalFunctions.bas), and .print-per-page makes one card one
+              sheet, so putting it here is that same arrangement.
+
+              It rides INSIDE the heading row rather than in a band of its own.
+              The row is already two lines tall — heading, then account, type
+              and currency — and the mark is shorter than that, so it costs the
+              sheet no height. Which matters more than it looks: the printed
+              card is a fixed 270mm box and statementPages.ts cuts the
+              transactions to fill what is left of it, so a taller header would
+              push the last row off the bottom of every sheet and make every
+              page number after it wrong. */}
+          <div className="flex items-start gap-3">
+            <BankLogo className="mt-0.5 h-6 w-auto shrink-0" />
+            <div>
+              <h2 className="text-base font-semibold text-ink">
+                {t('Statement for {month}', { month: monthLabel(s.stmtDate) })}
+                {s.stmtNum && (
+                  <span className="ms-2 text-sm font-normal text-muted">
+                    {t('No. {stmtNum}', { stmtNum: s.stmtNum })}
+                  </span>
+                )}
+                {/* A statement whose transactions did not fit one sheet repeats
+                    its whole header on the next, so each sheet identifies itself
+                    — and says which of the two it is. */}
+                {continued && (
+                  <span className="ms-2 text-sm font-normal text-muted">{t('(continued)')}</span>
+                )}
+              </h2>
+              {/* ACCT_TYPE and CRNCY are the archive's own words, and under
+                  Arabic they were the one line on the card still reading English.
+                  ACCT_TYPE is free text ("CURRENT ACCOUNT"), so it goes through
+                  the caption dictionary — an entry it has no Arabic for falls
+                  through to its English, which is t()'s normal behaviour. CRNCY
+                  is a code, so it goes through the reference sets instead. */}
+              <p className="mt-0.5 text-sm text-muted">
+                {/* PDP's account is 19 digits, and 19 unbroken digits is a number
+                    nobody can read back or check against a paying-in slip, so it
+                    is grouped the way the bank writes it. BM's 14-digit accounts
+                    keep their stored form — the grouping is PDP's, not the
+                    card's. Held on one line: the hyphens are group separators,
+                    and a wrap at one of them would read as two accounts. */}
+                <span className="whitespace-nowrap tabular-nums">
+                  {s.source === 'PDP' ? formatPdpAccount(s.acctNum) : s.acctNum}
                 </span>
-              )}
-              {/* A statement whose transactions did not fit one sheet repeats
-                  its whole header on the next, so each sheet identifies itself
-                  — and says which of the two it is. */}
-              {continued && (
-                <span className="ms-2 text-sm font-normal text-muted">{t('(continued)')}</span>
-              )}
-            </h2>
-            {/* ACCT_TYPE and CRNCY are the archive's own words, and under
-                Arabic they were the one line on the card still reading English.
-                ACCT_TYPE is free text ("CURRENT ACCOUNT"), so it goes through
-                the caption dictionary — an entry it has no Arabic for falls
-                through to its English, which is t()'s normal behaviour. CRNCY
-                is a code, so it goes through the reference sets instead. */}
-            <p className="mt-0.5 text-sm text-muted">
-              {/* PDP's account is 19 digits, and 19 unbroken digits is a number
-                  nobody can read back or check against a paying-in slip, so it
-                  is grouped the way the bank writes it. BM's 14-digit accounts
-                  keep their stored form — the grouping is PDP's, not the
-                  card's. Held on one line: the hyphens are group separators,
-                  and a wrap at one of them would read as two accounts. */}
-              <span className="whitespace-nowrap tabular-nums">
-                {s.source === 'PDP' ? formatPdpAccount(s.acctNum) : s.acctNum}
-              </span>
-              {s.acctType && ` · ${t(s.acctType)}`}
-              {s.crncy && ` · ${currencyLabel(s.crncy)}`}
-            </p>
+                {s.acctType && ` · ${t(s.acctType)}`}
+                {s.crncy && ` · ${currencyLabel(s.crncy)}`}
+              </p>
+            </div>
           </div>
           <div className="text-end">
             {/* Top right of the header, where a statement carries its date.

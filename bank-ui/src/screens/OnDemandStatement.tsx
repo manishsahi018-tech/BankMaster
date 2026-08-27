@@ -6,6 +6,7 @@ import type { Account } from '../types.ts'
 import type { OnlineStatementPage, OnlineTransaction } from '../api.ts'
 import { api, ApiError } from '../api.ts'
 import { printDocument } from '../print.ts'
+import { BankLogo } from '../components/BankLogo.tsx'
 import {
   balanceMarker,
   formatGatewayDate,
@@ -366,25 +367,33 @@ export default function OnDemandStatement({
                 >
                   <header className="border-b border-edge-soft bg-surface-muted px-4 py-4 sm:px-5">
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        {/* Every sheet repeats the whole heading, so a sheet
-                            that leaves the pile still says whose statement it
-                            is — and says which of them it is. */}
-                        <h2 className="text-base font-semibold text-ink">
-                          {t('ON DEMAND STATEMENT')}
-                          {!first && (
-                            <span className="ms-2 text-sm font-normal text-muted">
-                              {t('(continued)')}
-                            </span>
-                          )}
-                        </h2>
-                        <p className="mt-0.5 text-sm text-muted">
-                          {page.branchName} · {formatGatewayDate(page.fromDate)} to{' '}
-                          {formatGatewayDate(page.toDate)}
-                        </p>
-                        <p className="mt-1 text-sm text-ink-soft">
-                          {page.custName} — {page.address}
-                        </p>
+                      {/* The mark rides in the heading row, not above it: this
+                          card is a fixed-height sheet box and the rows were cut
+                          to fill it, so header height taken here comes off the
+                          last transaction on every sheet. The row is three
+                          lines tall and the mark is not, so it takes none. */}
+                      <div className="flex items-start gap-3">
+                        <BankLogo className="mt-0.5 h-6 w-auto shrink-0" />
+                        <div>
+                          {/* Every sheet repeats the whole heading, so a sheet
+                              that leaves the pile still says whose statement it
+                              is — and says which of them it is. */}
+                          <h2 className="text-base font-semibold text-ink">
+                            {t('ON DEMAND STATEMENT')}
+                            {!first && (
+                              <span className="ms-2 text-sm font-normal text-muted">
+                                {t('(continued)')}
+                              </span>
+                            )}
+                          </h2>
+                          <p className="mt-0.5 text-sm text-muted">
+                            {page.branchName} · {formatGatewayDate(page.fromDate)} to{' '}
+                            {formatGatewayDate(page.toDate)}
+                          </p>
+                          <p className="mt-1 text-sm text-ink-soft">
+                            {page.custName} — {page.address}
+                          </p>
+                        </div>
                       </div>
                       {/* Top right, as on the archived-statement cards: the day
                           the document is produced, not the period it covers —

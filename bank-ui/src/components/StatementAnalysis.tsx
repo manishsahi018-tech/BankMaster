@@ -1,5 +1,6 @@
 import { formatDate, formatPlainAmount } from '../schema/helpers.ts'
 import { monthLabel } from './StatementCard.tsx'
+import { BankLogo } from './BankLogo.tsx'
 import type { StatementAnalysis as Analysis, Extreme } from './statementAnalysis.ts'
 import { t } from '../i18n/index.ts'
 
@@ -90,22 +91,37 @@ export function StatementAnalysisReport({
   return (
     <section className="print-expand overflow-hidden rounded-2xl border border-edge bg-surface shadow-sm">
       <header className="border-b border-edge-soft bg-surface-muted px-4 py-4 sm:px-5">
-        <h2 className="text-base font-semibold text-ink">{t(documentName)}</h2>
-        <p className="mt-0.5 text-sm text-muted">
-          <span className="whitespace-nowrap tabular-nums">{accountNumber}</span>
-          {currency && ` · ${currency}`}
-          {accountType && ` · ${accountType}`}
-        </p>
-        {/* The legacy's "Analysis Period" line: first transaction date to the
-            statement end date, both as dates rather than months. */}
-        {analysis.fromDate && (
-          <p className="mt-1 text-sm text-muted">
-            {t('Analysis Period: {from} - {to}', {
-              from: formatDate(analysis.fromDate),
-              to: formatDate(analysis.toDate),
-            })}
-          </p>
-        )}
+        {/* The mark, as on the statement cards this report is printed beside.
+            NOT a port: cmdPrintAnalysis_Click (frmHistStmt.frm:793) spooled
+            prtall.$a! to the printer as plain Courier and painted no picture at
+            all, where every statement route did. The two reports leave the same
+            screen on the same paper, so they are headed the same way.
+
+            Once, at the head of the document, rather than once per sheet: this
+            report is not cut into sheet boxes the way the statement pack is —
+            it has no .print-per-page, so it FLOWS and the browser decides where
+            it breaks. There is no per-sheet header here to repeat a mark in. */}
+        <div className="flex items-start gap-3">
+          <BankLogo className="mt-0.5 h-6 w-auto shrink-0" />
+          <div>
+            <h2 className="text-base font-semibold text-ink">{t(documentName)}</h2>
+            <p className="mt-0.5 text-sm text-muted">
+              <span className="whitespace-nowrap tabular-nums">{accountNumber}</span>
+              {currency && ` · ${currency}`}
+              {accountType && ` · ${accountType}`}
+            </p>
+            {/* The legacy's "Analysis Period" line: first transaction date to
+                the statement end date, both as dates rather than months. */}
+            {analysis.fromDate && (
+              <p className="mt-1 text-sm text-muted">
+                {t('Analysis Period: {from} - {to}', {
+                  from: formatDate(analysis.fromDate),
+                  to: formatDate(analysis.toDate),
+                })}
+              </p>
+            )}
+          </div>
+        </div>
       </header>
 
       <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">

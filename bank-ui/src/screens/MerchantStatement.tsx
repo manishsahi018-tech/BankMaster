@@ -4,6 +4,7 @@ import { useToast } from '../components/Toast.tsx'
 import { api } from '../api.ts'
 import { formatDate, todayYyyymmdd } from '../schema/helpers.ts'
 import { printDocument } from '../print.ts'
+import { BankLogo } from '../components/BankLogo.tsx'
 
 import { t } from '../i18n/index.ts'
 // Mirrors legacy frmMerchantStmt.frm ("Merchant Statement Printing", the
@@ -498,6 +499,25 @@ const digitsOnly = (value: string) => value.replace(/\D/g, '')
                 // margin the page box no longer has).
                 className={i > 0 ? 'page-break mt-7 border-t border-edge-soft pt-7' : ''}
               >
+                {/* The mark at the top-left corner of every page, the corner
+                    the legacy painted it into. The spool's own first line
+                    already reads "ARAB NATIONAL BANK" — that is the acquiring
+                    system's text, formatted into a 150-char line we do not
+                    control, so the mark goes above it rather than in place of
+                    it.
+
+                    This is the one report where the mark costs the sheet
+                    height: there is no heading row to ride in, only the spool.
+                    A landscape page box is 186mm and a full spool page already
+                    fills nearly all of it, so the height taken here is given
+                    back in print by tightening the spool's leading (see
+                    .print-landscape pre in index.css).
+
+                    self-start, because the page box is a flex COLUMN: left to
+                    stretch, the svg spans the full width of the sheet and
+                    centres its own artwork inside that box, which printed the
+                    mark in the middle of the page instead of the corner. */}
+                <BankLogo className="mb-2 h-6 w-auto shrink-0 self-start" />
                 <pre className="whitespace-pre font-mono text-xs leading-5 text-ink">
                   {page.join('\n')}
                 </pre>
