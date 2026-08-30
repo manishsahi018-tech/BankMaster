@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Field, TextInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
 import { StatementCard, statementKey } from '../components/StatementCard.tsx'
+import { packLocale } from '../components/statementLocale.ts'
 import { paginateStatements } from '../components/statementPages.ts'
 import type { HistoricalStatement as Statement } from '../api.ts'
 import { api } from '../api.ts'
@@ -14,7 +15,8 @@ import {
   statementFileName,
 } from '../components/statementExport.ts'
 
-import { t } from '../i18n/index.ts'
+import { t, translate } from '../i18n/index.ts'
+import { dirOf } from '../i18n/locale.ts'
 // PDP Statements — the OTHER archive DB #3 holds.
 //
 // THIS SCREEN HAS NO LEGACY FORM. frmHistStmt read one Btrieve index tree keyed
@@ -204,6 +206,13 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
   // one account with a confusing duplicate month.
   const accountCount = new Set(rows.map((s) => s.acctNum)).size
 
+  // The DOCUMENT's language, from PDP_STMT_HEADER's LANG_CODE — not the
+  // operator's. The form above and the counts line below stay on the app
+  // locale: those are the app talking to the operator, where the cards are the
+  // bank talking to the customer. See statementLocale.ts.
+  const docLocale = packLocale(rows)
+  const docName = translate(docLocale, DOCUMENT_NAME)
+
   /**
    * The same statements as a workbook — one transaction per row, each carrying
    * its own statement's header (statementExport.ts).
@@ -222,14 +231,14 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
     try {
       await downloadWorkbook(
         statementFileName(
-          t(DOCUMENT_NAME),
+          docName,
           form.accNo.trim() || form.custNo.trim(),
           archivedPeriod(
             `${form.fromYear}${form.fromMonth}`,
             `${form.toYear}${form.toMonth}`,
           ),
         ),
-        archivedStatementSheet(rows, t(DOCUMENT_NAME)),
+        archivedStatementSheet(rows, docName, docLocale),
       )
       toast.success(t('Statement downloaded — {txns} transactions.', { txns: lineCount }))
     } catch (e: unknown) {
@@ -386,7 +395,7 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
           <button
             type="button"
             disabled={!hasReport}
-            onClick={() => printDocument(t(DOCUMENT_NAME))}
+            onClick={() => printDocument(docName)}
             title={hasReport ? undefined : 'Generate a statement first'}
             className={secondaryBtn}
           >
@@ -414,8 +423,8 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
               the title: the customer, account, branch and period all appear on
               every statement card below, and repeating them here only invites
               the two to disagree. */}
-          <header className="print-only mb-4 border-b border-edge pb-3">
-            <h1 className="text-lg font-bold text-ink">{t(DOCUMENT_NAME)}</h1>
+          <header dir={dirOf(docLocale)} className="print-only mb-4 border-b border-edge pb-3">
+            <h1 className="text-lg font-bold text-ink">{docName}</h1>
           </header>
 
           {/* One form for any count rather than an English singular/plural
@@ -442,6 +451,7 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
               <StatementCard
                 key={`${statementKey(sheet.statement)}-${i}`}
                 statement={sheet.statement}
+                locale={docLocale}
                 lines={sheet.lines}
                 continued={sheet.continued}
                 page={i + 1}

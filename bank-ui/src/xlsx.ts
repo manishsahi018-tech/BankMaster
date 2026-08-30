@@ -111,6 +111,16 @@ export interface Sheet {
    * "statement".
    */
   hideGridLines?: boolean
+  /**
+   * Run the columns right to left, for a document in a right-to-left language.
+   *
+   * This is Excel's own mirroring — column A moves to the right edge and the
+   * whole sheet reads the other way — and it is the spreadsheet's answer to the
+   * `dir="rtl"` the same document carries on screen. Note that it does NOT
+   * mirror cell alignment, which stays physical; callers put their own text on
+   * the reading end.
+   */
+  rightToLeft?: boolean
   landscape?: boolean
 }
 
@@ -396,6 +406,7 @@ function buildSheet(sheet: Sheet, styles: StyleTable, hasDrawing: boolean): stri
     `<dimension ref="A1:${lastColumn}${Math.max(sheet.rows.length, 1)}"/>` +
     '<sheetViews><sheetView' +
     (sheet.hideGridLines ? ' showGridLines="0"' : '') +
+    (sheet.rightToLeft ? ' rightToLeft="1"' : '') +
     ' workbookViewId="0"><selection activeCell="A1" sqref="A1"/></sheetView></sheetViews>' +
     '<sheetFormatPr defaultRowHeight="15"/>' +
     (cols ? `<cols>${cols}</cols>` : '') +

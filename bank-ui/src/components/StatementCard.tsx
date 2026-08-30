@@ -10,8 +10,8 @@ import {
 } from '../schema/helpers.ts'
 import { codeDescription } from '../codes.ts'
 import { BankLogo } from './BankLogo.tsx'
-import { t } from '../i18n/index.ts'
-import { getLocale } from '../i18n/locale.ts'
+import { translate, type Locale } from '../i18n/index.ts'
+import { dirOf, getLocale } from '../i18n/locale.ts'
 
 // The rendering of one archived statement, shared by the two screens that
 // produce them: Historical Statement Printing (the BM archive) and PDP
@@ -36,14 +36,14 @@ import { getLocale } from '../i18n/locale.ts'
  * (the legacy screens show "27/01/2001" unchanged), and a year in
  * Arabic-Indic digits here would be the only place that did not.
  */
-export function monthLabel(yyyymmdd: string): string {
+export function monthLabel(yyyymmdd: string, locale: Locale): string {
   if (!/^\d{8}$/.test(yyyymmdd)) return yyyymmdd
   const date = new Date(
     Number(yyyymmdd.slice(0, 4)),
     Number(yyyymmdd.slice(4, 6)) - 1,
     Number(yyyymmdd.slice(6, 8)),
   )
-  const tag = getLocale() === 'ar' ? 'ar-u-ca-gregory-nu-latn' : 'en-GB'
+  const tag = locale === 'ar' ? 'ar-u-ca-gregory-nu-latn' : 'en-GB'
   return date.toLocaleDateString(tag, { month: 'long', year: 'numeric' })
 }
 
@@ -60,9 +60,16 @@ export function monthLabel(yyyymmdd: string): string {
  * currency the way their own source did: `isoCurrency` is keyed on the 3-char
  * ISO alpha ("SAR"), `currency` on BankMaster's own 2-char code ("01"). An
  * unresolvable code returns itself, so nothing is ever lost.
+ *
+ * The one thing it will NOT do is dress an English name up as the Arabic one.
+ * The reference sets are fetched once, in the OPERATOR's language (codes.ts
+ * re-fetches on a locale change), so an Arabic statement opened while the app
+ * is in English would resolve "SAR" to an English name and print it where the
+ * Arabic belongs. Rather than that, it falls back to the code — which is
+ * exactly what the English rendering shows, and never claims to be Arabic.
  */
-export function currencyLabel(crncy: string): string {
-  if (getLocale() !== 'ar') return crncy
+export function currencyLabel(crncy: string, locale: Locale): string {
+  if (locale !== 'ar' || getLocale() !== 'ar') return crncy
   const iso = codeDescription('isoCurrency', crncy)
   return iso !== crncy ? iso : codeDescription('currency', crncy)
 }
@@ -96,12 +103,18 @@ function narrativeOf(line: Statement['lines'][number]): string[] {
  */
 export function StatementCard({
   statement,
+  locale,
   lines,
   continued = false,
   page,
   pages,
 }: {
   statement: Statement
+  /**
+   * The DOCUMENT's language, from the archive's own LANG_CODE — not the
+   * operator's. See statementLocale.ts.
+   */
+  locale: Locale
   /** The transactions on THIS sheet; the whole statement when not paginated. */
   lines?: Line[]
   continued?: boolean
@@ -111,8 +124,17 @@ export function StatementCard({
   const s = statement
   const rows = lines ?? s.lines
   const address = addressLines(s)
+  /** Every word on this card is the document's language, never the screen's. */
+  const tr = (key: string, vars?: Record<string, string | number>) => translate(locale, key, vars)
   return (
-    <section className="print-expand overflow-hidden rounded-2xl border border-edge bg-surface shadow-sm">
+    // dir is what actually mirrors the card: the logical Tailwind utilities it
+    // is built from (ms-/ps-/text-start/text-end) resolve against the nearest
+    // dir, not against <html>, so an Arabic statement runs right-to-left inside
+    // an English screen without a single rule being duplicated.
+    <section
+      dir={dirOf(locale)}
+      className="print-expand overflow-hidden rounded-2xl border border-edge bg-surface shadow-sm"
+    >
       <header className="border-b border-edge-soft bg-surface-muted px-4 py-4 sm:px-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           {/* The mark, at the head of the card and so at the top corner of
@@ -132,24 +154,24 @@ export function StatementCard({
             <BankLogo className="mt-0.5 h-6 w-auto shrink-0" />
             <div>
               <h2 className="text-base font-semibold text-ink">
-                {t('Statement for {month}', { month: monthLabel(s.stmtDate) })}
+                {tr('Statement for {month}', { month: monthLabel(s.stmtDate, locale) })}
                 {s.stmtNum && (
                   <span className="ms-2 text-sm font-normal text-muted">
-                    {t('No. {stmtNum}', { stmtNum: s.stmtNum })}
+                    {tr('No. {stmtNum}', { stmtNum: s.stmtNum })}
                   </span>
                 )}
                 {/* A statement whose transactions did not fit one sheet repeats
                     its whole header on the next, so each sheet identifies itself
                     — and says which of the two it is. */}
                 {continued && (
-                  <span className="ms-2 text-sm font-normal text-muted">{t('(continued)')}</span>
+                  <span className="ms-2 text-sm font-normal text-muted">{tr('(continued)')}</span>
                 )}
               </h2>
               {/* ACCT_TYPE and CRNCY are the archive's own words, and under
                   Arabic they were the one line on the card still reading English.
                   ACCT_TYPE is free text ("CURRENT ACCOUNT"), so it goes through
                   the caption dictionary — an entry it has no Arabic for falls
-                  through to its English, which is t()'s normal behaviour. CRNCY
+                  through to its English, which is translate()'s normal behaviour. CRNCY
                   is a code, so it goes through the reference sets instead. */}
               <p className="mt-0.5 text-sm text-muted">
                 {/* PDP's account is 19 digits, and 19 unbroken digits is a number
@@ -158,11 +180,15 @@ export function StatementCard({
                     keep their stored form — the grouping is PDP's, not the
                     card's. Held on one line: the hyphens are group separators,
                     and a wrap at one of them would read as two accounts. */}
-                <span className="whitespace-nowrap tabular-nums">
+                {/* dir="ltr" is load-bearing on an Arabic card: the hyphens
+                    between the groups are bidi-NEUTRAL characters, so in a
+                    right-to-left paragraph the browser reorders the groups and
+                    prints a different account number than the one stored. */}
+                <span dir="ltr" className="inline-block whitespace-nowrap tabular-nums">
                   {s.source === 'PDP' ? formatPdpAccount(s.acctNum) : s.acctNum}
                 </span>
-                {s.acctType && ` · ${t(s.acctType)}`}
-                {s.crncy && ` · ${currencyLabel(s.crncy)}`}
+                {s.acctType && ` · ${tr(s.acctType)}`}
+                {s.crncy && ` · ${currencyLabel(s.crncy, locale)}`}
               </p>
             </div>
           </div>
@@ -179,7 +205,7 @@ export function StatementCard({
                 date. */}
             <p className="text-end text-sm text-ink">
               <span className="text-xs uppercase tracking-wider text-muted-soft">
-                {t('Statement Date')}
+                {tr('Statement Date')}
               </span>
               {' - '}
               <span className="font-medium">{formatDate(todayYyyymmdd())}</span>
@@ -193,7 +219,7 @@ export function StatementCard({
                 how many pages the archived statement ran to. */}
             {s.pageCount > 1 && (
               <p className="mt-1 text-xs text-muted-soft">
-                {t('{pages} printed pages', { pages: s.pageCount })}
+                {tr('{pages} printed pages', { pages: s.pageCount })}
               </p>
             )}
           </div>
@@ -201,35 +227,40 @@ export function StatementCard({
 
         <dl className="mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
           <div>
-            <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Customer')}</dt>
-            <dd className="text-ink-soft">
+            <dt className="text-xs uppercase tracking-wider text-muted-soft">{tr('Customer')}</dt>
+            {/* The archive's own name, in the archive's own script — which is
+                not necessarily the card's. dir="auto" reads the direction off
+                the value itself, so a Latin name stays left-to-right on an
+                Arabic card and an Arabic one stays right-to-left on an English
+                one. Same for every value below. */}
+            <dd dir="auto" className="text-ink-soft">
               {s.custName || '—'}
               {s.custNum && <span className="ms-1 text-muted">({s.custNum})</span>}
             </dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Branch')}</dt>
-            <dd className="text-ink-soft">
+            <dt className="text-xs uppercase tracking-wider text-muted-soft">{tr('Branch')}</dt>
+            <dd dir="auto" className="text-ink-soft">
               {s.branchCode}
               {s.branchName && ` — ${s.branchName}`}
             </dd>
           </div>
           {s.iban && (
             <div>
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('IBAN')}</dt>
-              <dd className="font-mono text-xs text-ink-soft">{s.iban}</dd>
+              <dt className="text-xs uppercase tracking-wider text-muted-soft">{tr('IBAN')}</dt>
+              <dd dir="ltr" className="font-mono text-xs text-ink-soft">{s.iban}</dd>
             </div>
           )}
           {s.refNum && (
             <div>
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Reference')}</dt>
-              <dd className="text-ink-soft">{s.refNum}</dd>
+              <dt className="text-xs uppercase tracking-wider text-muted-soft">{tr('Reference')}</dt>
+              <dd dir="auto" className="text-ink-soft">{s.refNum}</dd>
             </div>
           )}
           {address.length > 0 && (
             <div className="sm:col-span-2 lg:col-span-1">
-              <dt className="text-xs uppercase tracking-wider text-muted-soft">{t('Address')}</dt>
-              <dd className="text-ink-soft">{address.join(', ')}</dd>
+              <dt className="text-xs uppercase tracking-wider text-muted-soft">{tr('Address')}</dt>
+              <dd dir="auto" className="text-ink-soft">{address.join(', ')}</dd>
             </div>
           )}
         </dl>
@@ -237,20 +268,20 @@ export function StatementCard({
 
       {rows.length === 0 ? (
         <p className="px-4 py-6 text-sm text-muted sm:px-5">
-          {t('This statement has a header but no transaction lines in the archive.')}
+          {tr('This statement has a header but no transaction lines in the archive.')}
         </p>
       ) : (
         <div className="overflow-x-auto print-expand">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-edge-soft text-start text-xs uppercase tracking-wider text-muted-soft">
-                <th className="px-4 py-2.5 font-semibold">{t('Date')}</th>
-                <th className="px-4 py-2.5 font-semibold">{t('Value Date')}</th>
-                <th className="px-4 py-2.5 font-semibold">{t('Narrative')}</th>
-                <th className="px-4 py-2.5 font-semibold">{t('Branch')}</th>
-                <th className="px-4 py-2.5 text-end font-semibold">{t('Debit')}</th>
-                <th className="px-4 py-2.5 text-end font-semibold">{t('Credit')}</th>
-                <th className="px-4 py-2.5 text-end font-semibold">{t('Balance')}</th>
+                <th className="px-4 py-2.5 font-semibold">{tr('Date')}</th>
+                <th className="px-4 py-2.5 font-semibold">{tr('Value Date')}</th>
+                <th className="px-4 py-2.5 font-semibold">{tr('Narrative')}</th>
+                <th className="px-4 py-2.5 font-semibold">{tr('Branch')}</th>
+                <th className="px-4 py-2.5 text-end font-semibold">{tr('Debit')}</th>
+                <th className="px-4 py-2.5 text-end font-semibold">{tr('Credit')}</th>
+                <th className="px-4 py-2.5 text-end font-semibold">{tr('Balance')}</th>
               </tr>
             </thead>
             <tbody>
@@ -266,7 +297,7 @@ export function StatementCard({
                     <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted">
                       {formatDate(line.valueDate)}
                     </td>
-                    <td className="px-4 py-2.5 text-ink-soft">
+                    <td dir="auto" className="px-4 py-2.5 text-ink-soft">
                       {narrative.length === 0 ? (
                         <span className="text-muted-soft">—</span>
                       ) : (
@@ -309,7 +340,7 @@ export function StatementCard({
           read as a document, and a document says which sheet you are holding. */}
       {page !== undefined && pages !== undefined && (
         <footer className="border-t border-edge-soft px-4 py-2 text-end text-xs text-muted-soft sm:px-5">
-          {t('Page {page} of {pages}', { page, pages })}
+          {tr('Page {page} of {pages}', { page, pages })}
         </footer>
       )}
     </section>

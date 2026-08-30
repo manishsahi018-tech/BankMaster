@@ -208,7 +208,7 @@ public class MockStatementRepository implements StatementRepository {
                 "SAR",
                 pdp ? "" : "SA0380000000608010167519",
                 pdp ? "" : "REF" + stmtDate.format(YYYYMMDD),
-                "E",
+                langCodeFor(acctNum),
                 pdp ? "1" : "",
                 1,
                 pdp ? "0127" : "",
@@ -217,6 +217,23 @@ public class MockStatementRepository implements StatementRepository {
     }
 
     /** Same account + month always yields the same statement. */
+    /**
+     * LANG_CODE — the language the statement was PRODUCED in, which the screens
+     * now render it in ("A" is Arabic, anything else English).
+     *
+     * Derived from the account rather than fixed at "E" so both cases are
+     * reachable in the demo: an account whose number ends in an odd digit is
+     * Arabic. A real archive records whatever each statement was actually sent
+     * in; this fixture only has to make the two renderings visible, and it has
+     * to be stable per account — the screens take the language of the FIRST
+     * statement for the whole pack, so a value that varied by month would make
+     * the pack's language depend on which months happened to have statements.
+     */
+    private static String langCodeFor(String acctNum) {
+        char last = acctNum == null || acctNum.isEmpty() ? '0' : acctNum.charAt(acctNum.length() - 1);
+        return Character.isDigit(last) && (last - '0') % 2 == 1 ? "A" : "E";
+    }
+
     private static Random seededFor(String acctNum, YearMonth month) {
         return new Random(31L * acctNum.hashCode() + month.hashCode());
     }

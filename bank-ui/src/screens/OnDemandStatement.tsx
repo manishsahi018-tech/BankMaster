@@ -18,7 +18,7 @@ import {
   todayYyyymmdd,
 } from '../gateway.ts'
 
-import { t } from '../i18n/index.ts'
+import { getLocale, t } from '../i18n/index.ts'
 import { cutIntoSheets, rowCost, ROW_PADDING } from '../components/statementPages.ts'
 // Mirrors legacy frmInputform (OnlineStmt.frm, "OnLine Statement Printing") —
 // the frmAccount cmdStatement button, authority ~60/~61/~62.
@@ -266,7 +266,10 @@ export default function OnDemandStatement({
           account.accountNumber,
           `${page.fromDate} to ${page.toDate}`,
         ),
-        onlineStatementSheet(page, rows!, documentName),
+        // The operator's locale, not an archived LANG_CODE: this statement is
+        // produced now, for the person on the screen, and the screen it came
+        // off was in their language.
+        onlineStatementSheet(page, rows!, documentName, getLocale()),
       )
       toast.success(t('Statement downloaded — {txns} transactions.', { txns: rows!.length }))
     } catch (e: unknown) {

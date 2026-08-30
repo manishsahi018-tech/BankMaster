@@ -2,7 +2,7 @@ import { formatDate, formatPlainAmount } from '../schema/helpers.ts'
 import { monthLabel } from './StatementCard.tsx'
 import { BankLogo } from './BankLogo.tsx'
 import type { StatementAnalysis as Analysis, Extreme } from './statementAnalysis.ts'
-import { t } from '../i18n/index.ts'
+import { getLocale, t } from '../i18n/index.ts'
 
 // The rendering of an Analysis — see statementAnalysis.ts for what every figure
 // is and where in analyse.c it comes from.
@@ -176,8 +176,9 @@ export function StatementAnalysisReport({
             {analysis.missingPeriods.map((m) => (
               <p key={`${m.from}-${m.to}`} className="py-1.5 text-sm text-ink-soft">
                 {m.from === m.to
-                  ? monthLabel(`${m.from}01`)
-                  : `${monthLabel(`${m.from}01`)} – ${monthLabel(`${m.to}01`)}`}
+                  ? monthLabel(`${m.from}01`, getLocale())
+                  : `${monthLabel(`${m.from}01`, getLocale())} – ` +
+                    `${monthLabel(`${m.to}01`, getLocale())}`}
               </p>
             ))}
           </Group>
@@ -200,7 +201,7 @@ export function StatementAnalysisReport({
           <tbody>
             {periods.map((p) => (
               <tr key={`${p.stmtDate}-${p.stmtNum}`} className="border-b border-edge-soft">
-                <td className={`${cell} text-ink-soft`}>{monthLabel(p.stmtDate)}</td>
+                <td className={`${cell} text-ink-soft`}>{monthLabel(p.stmtDate, getLocale())}</td>
                 <td className={`${cell} text-muted`}>{p.stmtNum || '—'}</td>
                 <td className={`${cell} text-end text-ink-soft`}>{count(p.txns)}</td>
                 <td className={`${cell} text-end text-ink-soft`}>

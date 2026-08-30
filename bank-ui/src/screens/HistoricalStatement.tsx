@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Field, TextInput, ReadOnlyInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
 import { StatementCard, statementKey } from '../components/StatementCard.tsx'
+import { packLocale } from '../components/statementLocale.ts'
 import { StatementAnalysisReport } from '../components/StatementAnalysis.tsx'
 import { analyseStatements } from '../components/statementAnalysis.ts'
 import type { StatementAnalysis } from '../components/statementAnalysis.ts'
@@ -20,7 +21,8 @@ import {
   statementFileName,
 } from '../components/statementExport.ts'
 
-import { t } from '../i18n/index.ts'
+import { t, translate } from '../i18n/index.ts'
+import { dirOf } from '../i18n/locale.ts'
 // Mirrors legacy frmHistStmt.frm ("Historical Statement Printing", the
 // frmAccount cmdHistStmt button, authority ~60/~61/~62).
 //
@@ -159,6 +161,17 @@ export default function HistoricalStatement({
     toYear: LAST_ARCHIVED_YEAR,
   })
   const [statements, setStatements] = useState<Statement[] | null>(null)
+
+  // The DOCUMENT's language, from BM_STMT_HEADER's LANG_CODE — not the
+  // operator's. The form, the buttons and the counts line stay on the app
+  // locale: those are the app talking to the operator, where the cards are the
+  // bank talking to the customer. See statementLocale.ts.
+  //
+  // The ANALYSIS is not covered. It is not the archived document — it is a
+  // reading of it, computed here and never sent to anybody — so it stays in the
+  // operator's language along with the rest of the screen.
+  const docLocale = packLocale(statements ?? [])
+  const docName = translate(docLocale, documentName)
   const [generating, setGenerating] = useState(false)
   const [downloading, setDownloading] = useState(false)
   // cmdAnalyse's output, held separately from the statements it was computed
@@ -254,11 +267,11 @@ export default function HistoricalStatement({
       [document, 'keydown'],
     ]
     for (const [target, type] of events) target.addEventListener(type, done, { once: true })
-    printDocument(t(printing === 'analysis' ? analysisDocumentName : documentName))
+    printDocument(printing === 'analysis' ? t(analysisDocumentName) : docName)
     return () => {
       for (const [target, type] of events) target.removeEventListener(type, done)
     }
-  }, [printing, analysisDocumentName, documentName])
+  }, [printing, analysisDocumentName, docName])
 
   // Legacy disableButtons (:1570): ANY edit re-enables Generate and kills
   // View/Print, so a report can never be shown against a changed form.
@@ -362,14 +375,14 @@ export default function HistoricalStatement({
     try {
       await downloadWorkbook(
         statementFileName(
-          t(documentName),
+          docName,
           accNo.trim(),
           archivedPeriod(
             `${form.fromYear}${form.fromMonth}`,
             `${form.toYear}${form.toMonth}`,
           ),
         ),
-        archivedStatementSheet(statements!, t(documentName)),
+        archivedStatementSheet(statements!, docName, docLocale),
       )
       toast.success(t('Statement downloaded — {txns} transactions.', { txns: lineCount }))
     } catch (e: unknown) {
@@ -710,8 +723,8 @@ export default function HistoricalStatement({
               screen it lives on. Just the title — the account, branch, month
               and customer all appear on every statement card below. Both routes
               print it under the one name. */}
-          <header className="print-only mb-4 border-b border-edge pb-3">
-            <h1 className="text-lg font-bold text-ink">{t(documentName)}</h1>
+          <header dir={dirOf(docLocale)} className="print-only mb-4 border-b border-edge pb-3">
+            <h1 className="text-lg font-bold text-ink">{docName}</h1>
           </header>
 
           {/* Translated through a placeholder form, like the PDP screen's — the
@@ -736,6 +749,7 @@ export default function HistoricalStatement({
               <StatementCard
                 key={`${statementKey(sheet.statement)}-${i}`}
                 statement={sheet.statement}
+                locale={docLocale}
                 lines={sheet.lines}
                 continued={sheet.continued}
                 page={i + 1}

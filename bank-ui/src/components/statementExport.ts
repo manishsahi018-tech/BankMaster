@@ -16,7 +16,7 @@ import {
   coinPrecision,
   formatGatewayDate,
 } from '../gateway.ts'
-import { t } from '../i18n/index.ts'
+import { translate, type Locale } from '../i18n/index.ts'
 
 // The statements as a WORKBOOK — the same document the screen shows and the
 // printer prints, in Excel.
@@ -72,14 +72,25 @@ const HEAD: Style = {
   valign: 'bottom',
   bottom: RULE_SOFT,
 }
-const HEAD_END: Style = { ...HEAD, align: 'right' }
+/**
+ * The END of the reading direction — right in English, LEFT in Arabic.
+ *
+ * Excel's horizontal alignment is physical, not logical: a cell set to "right"
+ * stays on the right edge even in a right-to-left sheet, where the reading eye
+ * finishes on the left. So the mirroring the browser gets for free from
+ * `dir="rtl"` and Tailwind's logical utilities has to be spelled out here.
+ */
+type Align = Style['align']
+const endOf = (locale: Locale): Align => (locale === 'ar' ? 'left' : 'right')
+
+const headEnd = (end: Align): Style => ({ ...HEAD, align: end })
 const LABEL: Style = { size: 8, color: MUTED_SOFT, fill: HEADER_FILL, valign: 'bottom' }
 const VALUE: Style = { size: 9, color: INK_SOFT, fill: HEADER_FILL, valign: 'top' }
 const BODY: Style = { size: 9, color: INK_SOFT, valign: 'top', bottom: RULE_SOFT }
 const BODY_MUTED: Style = { ...BODY, color: MUTED }
 const BODY_DATE: Style = { ...BODY, numFmt: DATE }
-const BODY_AMOUNT: Style = { ...BODY, numFmt: AMOUNT, align: 'right' }
-const BODY_TEXT_END: Style = { ...BODY, align: 'right' }
+const bodyAmount = (end: Align): Style => ({ ...BODY, numFmt: AMOUNT, align: end })
+const bodyTextEnd = (end: Align): Style => ({ ...BODY, align: end })
 const NARRATIVE: Style = { ...BODY, wrap: true }
 const BLOCK: Style = { fill: HEADER_FILL }
 
@@ -154,6 +165,19 @@ const WIDTH = 7
 class SheetBuilder {
   readonly rows: Row[] = []
   readonly logoRows: number[] = []
+  /** The DOCUMENT's language — the archive's LANG_CODE, not the operator's. */
+  readonly locale: Locale
+  /** Which side of a cell the reading direction ends on. */
+  readonly end: Align
+
+  constructor(locale: Locale) {
+    this.locale = locale
+    this.end = endOf(locale)
+  }
+
+  /** Translated into the document's language rather than the screen's. */
+  tr = (key: string, vars?: Record<string, string | number>): string =>
+    translate(this.locale, key, vars)
 
   /** Appends a row and returns its 0-based index. */
   push(cells: RowCell[], height?: number, breakAfter = false): number {
@@ -197,7 +221,7 @@ class SheetBuilder {
       const spans = SPANS.slice(0, group.length)
       spans[spans.length - 1] += SPANS.slice(group.length).reduce((n, s) => n + s, 0)
       this.push(
-        group.map((f, i) => ({ value: t(f.label), span: spans[i], style: LABEL })),
+        group.map((f, i) => ({ value: this.tr(f.label), span: spans[i], style: LABEL })),
         12,
       )
       this.push(
@@ -211,8 +235,8 @@ class SheetBuilder {
   tableHead(headings: string[], numeric: number[]): void {
     this.push(
       headings.map((h, i) => ({
-        value: t(h),
-        style: numeric.includes(i) ? HEAD_END : HEAD,
+        value: this.tr(h),
+        style: numeric.includes(i) ? headEnd(this.end) : HEAD,
       })),
       16,
     )
@@ -240,6 +264,9 @@ class SheetBuilder {
     return {
       name,
       columns,
+      // Excel's own mirroring: the columns run right-to-left, so an Arabic
+      // statement opens laid out the way its printed counterpart is.
+      rightToLeft: this.locale === 'ar',
       rows: this.rows,
       images: this.logoRows.map((row) => ({
         png,
@@ -304,17 +331,29 @@ function archivedCard(
   // The heading row. The mark rides in it, at the left, exactly where the card
   // puts it — column A is the Date column and wide enough to hold it.
   const heading =
-    t('Statement for {month}', { month: monthLabel(s.stmtDate) }) +
-    (s.stmtNum ? `   ${t('No. {stmtNum}', { stmtNum: s.stmtNum })}` : '') +
-    (continued ? `   ${t('(continued)')}` : '')
+    build.tr('Statement for {month}', { month: monthLabel(s.stmtDate, build.locale) }) +
+    (s.stmtNum ? `   ${build.tr('No. {stmtNum}', { stmtNum: s.stmtNum })}` : '') +
+    (continued ? `   ${build.tr('(continued)')}` : '')
   const headingRow = build.push(
     [
       { value: '', style: BLOCK },
       { value: heading, span: 3, style: { bold: true, size: 12, color: INK, fill: HEADER_FILL, valign: 'center' } },
-      { value: t('Statement Date'), span: 2, style: { ...LABEL, align: 'right', valign: 'center' } },
+      {
+        value: build.tr('Statement Date'),
+        span: 2,
+        style: { ...LABEL, align: build.end, valign: 'center' },
+      },
       {
         value: excelDate(todayYyyymmdd()),
-        style: { size: 9, bold: true, color: INK, fill: HEADER_FILL, align: 'right', valign: 'center', numFmt: DATE },
+        style: {
+          size: 9,
+          bold: true,
+          color: INK,
+          fill: HEADER_FILL,
+          align: build.end,
+          valign: 'center',
+          numFmt: DATE,
+        },
       },
     ],
     24,
@@ -324,7 +363,11 @@ function archivedCard(
   // PDP's 19-digit account is grouped the way the card groups it; BM's 14 keep
   // their stored form.
   const account = s.source === 'PDP' ? formatPdpAccount(s.acctNum) : s.acctNum
-  const subheading = [account, s.acctType && t(s.acctType), s.crncy && currencyLabel(s.crncy)]
+  const subheading = [
+    account,
+    s.acctType && build.tr(s.acctType),
+    s.crncy && currencyLabel(s.crncy, build.locale),
+  ]
     .filter(Boolean)
     .join(' · ')
   build.push(
@@ -334,9 +377,9 @@ function archivedCard(
       {
         // pageCount, not pageNum — see the note in StatementCard: the archive's
         // own PAGE_NUM reads 1 on every folded statement.
-        value: s.pageCount > 1 ? t('{pages} printed pages', { pages: s.pageCount }) : '',
+        value: s.pageCount > 1 ? build.tr('{pages} printed pages', { pages: s.pageCount }) : '',
         span: 3,
-        style: { ...LABEL, align: 'right' },
+        style: { ...LABEL, align: build.end },
       },
     ],
     14,
@@ -354,7 +397,7 @@ function archivedCard(
     build.push(
       [
         {
-          value: t('This statement has a header but no transaction lines in the archive.'),
+          value: build.tr('This statement has a header but no transaction lines in the archive.'),
           span: WIDTH,
           style: { size: 9, color: MUTED, bottom: RULE_SOFT },
         },
@@ -373,11 +416,11 @@ function archivedCard(
         { value: line.txnBranchCode, style: BODY_MUTED },
         {
           value: excelNumber(line.drAmt) === '' ? EMPTY : excelNumber(line.drAmt),
-          style: excelNumber(line.drAmt) === '' ? BODY_TEXT_END : BODY_AMOUNT,
+          style: excelNumber(line.drAmt) === '' ? bodyTextEnd(build.end) : bodyAmount(build.end),
         },
         {
           value: excelNumber(line.crAmt) === '' ? EMPTY : excelNumber(line.crAmt),
-          style: excelNumber(line.crAmt) === '' ? BODY_TEXT_END : BODY_AMOUNT,
+          style: excelNumber(line.crAmt) === '' ? bodyTextEnd(build.end) : bodyAmount(build.end),
         },
         {
           value: excelNumber(line.runBal),
@@ -385,7 +428,7 @@ function archivedCard(
             ...BODY,
             bold: true,
             color: INK,
-            align: 'right',
+            align: build.end,
             numFmt: balanceFormat(line.runBalType),
           },
         },
@@ -399,8 +442,13 @@ function archivedCard(
 }
 
 /** Every statement on screen, cut into the same sheets the screen shows. */
-export function archivedStatementSheet(statements: Statement[], documentName: string): Sheet {
-  const build = new SheetBuilder()
+export function archivedStatementSheet(
+  statements: Statement[],
+  documentName: string,
+  /** The document's own language (statementLocale.ts), not the operator's. */
+  locale: Locale,
+): Sheet {
+  const build = new SheetBuilder(locale)
   build.title(documentName)
   for (const sheet of paginateStatements(statements)) {
     archivedCard(build, sheet.statement, sheet.lines, sheet.continued)
@@ -442,11 +490,17 @@ export function onlineStatementSheet(
   page: OnlineStatementPage,
   rows: OnlineRow[],
   documentName: string,
+  /**
+   * The OPERATOR's locale, unlike the archived sheets'. This statement is
+   * produced now rather than recovered, so it is in the language of the person
+   * asking for it — the same language the screen it came off was in.
+   */
+  locale: Locale,
 ): Sheet {
-  const build = new SheetBuilder()
+  const build = new SheetBuilder(locale)
   const dp = page.decimalPlace || '3'
   const major = (minor: number) => minor / coinDenomination(dp)
-  const amountStyle: Style = { ...BODY, numFmt: gatewayFormat(dp), align: 'right' }
+  const amountStyle: Style = { ...BODY, numFmt: gatewayFormat(dp), align: build.end }
 
   const sheets = cutIntoSheets(
     rows,
@@ -478,14 +532,26 @@ export function onlineStatementSheet(
       [
         { value: '', style: BLOCK },
         {
-          value: t('ON DEMAND STATEMENT') + (first ? '' : `   ${t('(continued)')}`),
+          value: build.tr('ON DEMAND STATEMENT') + (first ? '' : `   ${build.tr('(continued)')}`),
           span: 3,
           style: { bold: true, size: 12, color: INK, fill: HEADER_FILL, valign: 'center' },
         },
-        { value: t('Statement Date'), span: 2, style: { ...LABEL, align: 'right', valign: 'center' } },
+        {
+          value: build.tr('Statement Date'),
+          span: 2,
+          style: { ...LABEL, align: build.end, valign: 'center' },
+        },
         {
           value: excelDate(todayYyyymmdd()),
-          style: { size: 9, bold: true, color: INK, fill: HEADER_FILL, align: 'right', valign: 'center', numFmt: DATE },
+          style: {
+            size: 9,
+            bold: true,
+            color: INK,
+            fill: HEADER_FILL,
+            align: build.end,
+            valign: 'center',
+            numFmt: DATE,
+          },
         },
       ],
       24,
@@ -531,7 +597,7 @@ export function onlineStatementSheet(
         [
           { value: EMPTY, style: BODY_MUTED },
           { value: excelDate(page.fromDate), style: { ...BODY_DATE, color: MUTED } },
-          { value: t('Balance Brought Forward'), span: 3, style: { ...BODY, bold: true } },
+          { value: build.tr('Balance Brought Forward'), span: 3, style: { ...BODY, bold: true } },
           { value: '', style: BODY },
           {
             value: major(Math.abs(bf)),
@@ -539,7 +605,7 @@ export function onlineStatementSheet(
               ...BODY,
               bold: true,
               color: INK,
-              align: 'right',
+              align: build.end,
               numFmt: gatewayFormat(dp, balanceMarker(bf)),
             },
           },
@@ -556,15 +622,21 @@ export function onlineStatementSheet(
           { value: excelDate(r.txn.postDate), style: BODY_DATE },
           { value: narrative, style: NARRATIVE },
           { value: excelDate(r.txn.valueDate), style: { ...BODY_DATE, color: MUTED } },
-          { value: r.credit ? EMPTY : major(r.minor), style: r.credit ? BODY_TEXT_END : amountStyle },
-          { value: r.credit ? major(r.minor) : EMPTY, style: r.credit ? amountStyle : BODY_TEXT_END },
+          {
+            value: r.credit ? EMPTY : major(r.minor),
+            style: r.credit ? bodyTextEnd(build.end) : amountStyle,
+          },
+          {
+            value: r.credit ? major(r.minor) : EMPTY,
+            style: r.credit ? amountStyle : bodyTextEnd(build.end),
+          },
           {
             value: major(Math.abs(r.balanceMinor)),
             style: {
               ...BODY,
               bold: true,
               color: INK,
-              align: 'right',
+              align: build.end,
               numFmt: gatewayFormat(dp, balanceMarker(r.balanceMinor)),
             },
           },
@@ -580,7 +652,7 @@ export function onlineStatementSheet(
         size: 9,
         bold: true,
         color: INK,
-        align: 'right',
+        align: build.end,
         numFmt: gatewayFormat(dp),
         top: { style: 'medium', color: EDGE },
       }
@@ -591,7 +663,7 @@ export function onlineStatementSheet(
       }
       build.push(
         [
-          { value: t('Value of Movements'), span: 4, style: totalLabel },
+          { value: build.tr('Value of Movements'), span: 4, style: totalLabel },
           { value: major(totals.debit), style: totalStyle },
           { value: major(totals.credit), style: totalStyle },
           { value: '', style: { top: { style: 'medium', color: EDGE } } },
@@ -600,9 +672,9 @@ export function onlineStatementSheet(
       )
       build.push(
         [
-          { value: t('Number of Movements'), span: 4, style: { size: 8, color: MUTED_SOFT } },
-          { value: totals.debitCount, style: { size: 9, color: INK_SOFT, align: 'right' } },
-          { value: totals.creditCount, style: { size: 9, color: INK_SOFT, align: 'right' } },
+          { value: build.tr('Number of Movements'), span: 4, style: { size: 8, color: MUTED_SOFT } },
+          { value: totals.debitCount, style: { size: 9, color: INK_SOFT, align: build.end } },
+          { value: totals.creditCount, style: { size: 9, color: INK_SOFT, align: build.end } },
           '',
         ],
         15,
