@@ -12,6 +12,13 @@ import { api } from '../api.ts'
 import { codeLabel } from '../codes.ts'
 import { hasAuthority } from '../session.ts'
 import { printDocument } from '../print.ts'
+import { downloadWorkbook } from '../xlsx.ts'
+import { DownloadExcelButton } from '../components/DownloadExcelButton.tsx'
+import {
+  archivedPeriod,
+  archivedStatementSheet,
+  statementFileName,
+} from '../components/statementExport.ts'
 
 import { t } from '../i18n/index.ts'
 // Mirrors legacy frmHistStmt.frm ("Historical Statement Printing", the
@@ -153,6 +160,7 @@ export default function HistoricalStatement({
   })
   const [statements, setStatements] = useState<Statement[] | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   // cmdAnalyse's output, held separately from the statements it was computed
   // from: the legacy wrote it to its own file and the View/Print Analysis
   // buttons keyed off that file existing, not off the statement's.
@@ -333,6 +341,43 @@ export default function HistoricalStatement({
   // deleted-account route, where there is no row to carry it.
   const hasReport = statements !== null && statements.length > 0
   const lineCount = (statements ?? []).reduce((n, s) => n + s.lines.length, 0)
+
+  /**
+   * The statement as a workbook — one transaction per row, each carrying its
+   * own statement's header (statementExport.ts).
+   *
+   * The legacy had no counterpart, and could not have: its report was a spool
+   * FILE it shelled wordpad on. What it did have was the reason for this — the
+   * Analysis button, which existed because an operator needs the statement
+   * ADDED UP, not just read. Analysis answers the questions the legacy's
+   * analyse.exe was written to answer; this hands over the rows so the operator
+   * can ask their own.
+   *
+   * clearReport() drops the statements on any edit to the form, so the account
+   * and period named in the file name always describe the rows inside it.
+   */
+  const handleDownload = async () => {
+    if (!hasReport) return
+    setDownloading(true)
+    try {
+      await downloadWorkbook(
+        statementFileName(
+          t(documentName),
+          accNo.trim(),
+          archivedPeriod(
+            `${form.fromYear}${form.fromMonth}`,
+            `${form.toYear}${form.toMonth}`,
+          ),
+        ),
+        archivedStatementSheet(statements!, t(documentName)),
+      )
+      toast.success(t('Statement downloaded — {txns} transactions.', { txns: lineCount }))
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   /**
    * cmdAnalyse_Click (:507), minus the shell-out. The legacy ran analyse.exe
@@ -671,12 +716,21 @@ export default function HistoricalStatement({
 
           {/* Translated through a placeholder form, like the PDP screen's — the
               English plural pair had no Arabic and showed through untranslated. */}
-          <p className="print-hidden mt-6 text-sm text-muted">
-            {t('{stmts} statements · {txns} transactions', {
-              stmts: statements!.length,
-              txns: lineCount,
-            })}
-          </p>
+          {/* The report's own header line: what it covers on the left, what
+              can be done with it on the right. The action bar above acts on the
+              FORM — enablePrintButtons (:1595) turns its buttons on and off
+              because they are there before there is a report; this acts on the
+              report itself, so it arrives and leaves with it. Off the paper,
+              like the line beside it. */}
+          <div className="print-hidden mt-6 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted">
+              {t('{stmts} statements · {txns} transactions', {
+                stmts: statements!.length,
+                txns: lineCount,
+              })}
+            </p>
+            <DownloadExcelButton onClick={handleDownload} busy={downloading} />
+          </div>
           <div className="mt-3 space-y-5 print-per-page">
             {paginateStatements(statements!).map((sheet, i, all) => (
               <StatementCard

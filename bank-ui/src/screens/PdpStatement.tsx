@@ -6,6 +6,13 @@ import { paginateStatements } from '../components/statementPages.ts'
 import type { HistoricalStatement as Statement } from '../api.ts'
 import { api } from '../api.ts'
 import { printDocument } from '../print.ts'
+import { downloadWorkbook } from '../xlsx.ts'
+import { DownloadExcelButton } from '../components/DownloadExcelButton.tsx'
+import {
+  archivedPeriod,
+  archivedStatementSheet,
+  statementFileName,
+} from '../components/statementExport.ts'
 
 import { t } from '../i18n/index.ts'
 // PDP Statements — the OTHER archive DB #3 holds.
@@ -28,12 +35,23 @@ import { t } from '../i18n/index.ts'
 //
 // The two are EXCLUSIVE, by request: one or the other, never both. So the
 // screen keys off exactly one identifier and the operator is never composing a
-// pair that has to belong together — keying the one disables the other rather
-// than waiting to refuse the combination at Generate.
+// pair that has to belong together — keying the one disables AND empties the
+// other rather than waiting to refuse the combination at Generate.
 //
-// Branch Code is a real predicate here, not the carried-from-the-grid value it
-// is on the Historical screen: the PDP header is branch-filtered, and a
-// customer-number enquiry without a branch would sweep every branch.
+// Branch Code belongs to the CUSTOMER route and only to it. It is a real
+// predicate there, not the carried-from-the-grid value it is on the Historical
+// screen: the PDP header is branch-filtered, and a customer number without a
+// branch would sweep every branch. An account number identifies its own
+// statements, so the account route asks for no branch — which makes the screen
+// two self-contained routes rather than one form with an optional half:
+//
+//   branch + customer number   →  every account that customer holds
+//   account number             →  that one account
+//
+// Touching either route greys out and clears everything the OTHER route needs,
+// so the operator only ever has one route's worth of input in front of them —
+// and a branch code counts as touching the customer route, because it is half
+// of it. Clearing every box on the screen puts both routes back within reach.
 //
 // ACCT_NUM is 19 here, not the 14 the rest of the app keys. That is the PDP
 // table's own width — the BM archive and the online gateway both hold 14 — so
@@ -89,23 +107,53 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
   })
   const [statements, setStatements] = useState<Statement[] | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const toast = useToast()
 
   // Legacy disableButtons (frmHistStmt.frm:1570): ANY edit invalidates the
   // report on screen, so what is displayed can never belong to a changed form.
+  //
+  // On top of that, touching a box on either route CLEARS the other route's
+  // boxes. Greying them out alone would leave a stale value sitting in a
+  // disabled input that the operator can see but not correct — and if they then
+  // cleared their way back, that old value would come alive again and key an
+  // enquiry nobody meant to ask. Emptying the other route makes the switch
+  // total: what is on screen is always exactly one route's worth of input.
   const set = (key: keyof typeof form, value: string) => {
-    setForm((f) => ({ ...f, [key]: value }))
+    const cleared: Partial<typeof form> =
+      key === 'branchCode' || key === 'custNo'
+        ? { accNo: '' }
+        : key === 'accNo'
+          ? { branchCode: '', custNo: '' }
+          : {}
+    setForm((f) => ({ ...f, ...cleared, [key]: value }))
     setStatements(null)
   }
 
-  /** cmdGenerate_Click's order, with the customer/account rule in the account's place. */
+  // Exactly one route at a time: touching either route locks out AND empties
+  // the other's boxes. A branch code counts as the customer route just as the
+  // customer number does — the two are one route together, so keying either
+  // half of it is what greys out the account number. The rule shows up as
+  // something the form will not let you do rather than as a refusal after the
+  // round trip.
+  const byCustomer = form.branchCode.trim() !== '' || form.custNo.trim() !== ''
+  const byAccount = form.accNo.trim() !== ''
+
+  /**
+   * cmdGenerate_Click's order, except that the identifier is asked for BEFORE
+   * the branch rather than after it. It has to be: until one of the two
+   * identifiers is known there is no route yet, and only one of the routes
+   * wants a branch at all.
+   */
   const validate = (): string | null => {
-    if (form.branchCode.trim().length !== 4) return MSG.branchCode
     if (form.custNo.trim() === '' && form.accNo.trim() === '') return MSG.custOrAccount
     // Unreachable while the inputs disable each other, but a disabled input is
     // not a control — the same rule is enforced on the server, and this keeps
     // the message the operator sees identical either way.
     if (form.custNo.trim() !== '' && form.accNo.trim() !== '') return MSG.bothKeyed
+    // Customer route only. The account route sends no branch and is not asked
+    // for one.
+    if (form.custNo.trim() !== '' && form.branchCode.trim().length !== 4) return MSG.branchCode
     if (form.fromYear === '') return MSG.fromYear
     if (form.fromMonth === '') return MSG.fromMonth
     if (form.toYear === '') return MSG.toYear
@@ -122,6 +170,8 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
     setGenerating(true)
     try {
       const rows = await api.pdpStatements({
+        // Already blank on the account route — keying an account clears it —
+        // so there is nothing here to guard against.
         branchCode: form.branchCode.trim(),
         // Padded to 7 the way the search screen pads it (CustomerStaticData's
         // padStart(7, '0') before service 21) so an operator can key 1234 for
@@ -146,12 +196,6 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
     }
   }
 
-  // Exactly one identifier at a time: keying either one locks the other out,
-  // so the exclusive rule shows up as something the form will not let you do
-  // rather than as a refusal after the round trip.
-  const byCustomer = form.custNo.trim() !== ''
-  const byAccount = form.accNo.trim() !== ''
-
   const hasReport = statements !== null && statements.length > 0
   const rows = statements ?? []
   const lineCount = rows.reduce((n, s) => n + s.lines.length, 0)
@@ -159,6 +203,41 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
   // say how many the report covers — otherwise a two-account result reads as
   // one account with a confusing duplicate month.
   const accountCount = new Set(rows.map((s) => s.acctNum)).size
+
+  /**
+   * The same statements as a workbook — one transaction per row, each carrying
+   * its own statement's header (statementExport.ts).
+   *
+   * The form is guaranteed to still describe what is on screen: set() drops the
+   * report on any edit, so the period and identifier named in the file name
+   * cannot belong to a different enquiry than the rows inside it.
+   *
+   * A customer-route report can span several accounts, so the file is named for
+   * whichever identifier was keyed rather than for one account it happens to
+   * contain.
+   */
+  const handleDownload = async () => {
+    if (!hasReport) return
+    setDownloading(true)
+    try {
+      await downloadWorkbook(
+        statementFileName(
+          t(DOCUMENT_NAME),
+          form.accNo.trim() || form.custNo.trim(),
+          archivedPeriod(
+            `${form.fromYear}${form.fromMonth}`,
+            `${form.toYear}${form.toMonth}`,
+          ),
+        ),
+        archivedStatementSheet(rows, t(DOCUMENT_NAME)),
+      )
+      toast.success(t('Statement downloaded — {txns} transactions.', { txns: lineCount }))
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   const secondaryBtn =
     'rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft ' +
@@ -179,21 +258,28 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
       <div className="rounded-2xl border border-edge bg-surface p-5 shadow-sm sm:p-6">
         <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
           {/* Filters the PDP header, unlike on the Historical screen where it is
-              carried from the grid row and only authorises. Required. */}
+              carried from the grid row and only authorises. Required by the
+              CUSTOMER route and part of it — an account number narrows to one
+              account on its own, so keying one greys this out with the customer
+              number it goes with. */}
           <Field label="Branch Code" htmlFor="pdpBranchCode">
             <TextInput
               id="pdpBranchCode"
               value={form.branchCode}
               maxLength={4}
               inputMode="numeric"
+              disabled={byAccount}
               onChange={(e) => set('branchCode', digitsOnly(e.target.value))}
               placeholder="0000"
+              title={byAccount ? t('Not needed when searching by account number') : undefined}
+              className={byAccount ? 'cursor-not-allowed bg-surface-muted text-muted' : ''}
             />
           </Field>
 
           {/* CUST_NUM exists on the PDP header alone — this box is the reason
-              the screen exists. Either this or the account number, never both. */}
-          <Field label="Customer Number" htmlFor="pdpCustNo">
+              the screen exists. It travels with the branch above it: the two
+              together are one route, the account number below is the other. */}
+          <Field label="PDP Customer Number" htmlFor="pdpCustNo">
             <TextInput
               id="pdpCustNo"
               value={form.custNo}
@@ -209,7 +295,7 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
 
           {/* 19, not the 14 every other account box in the app takes: PDP's
               ACCT_NUM is that wide in DB #3. */}
-          <Field label="Account Number" htmlFor="pdpAccNo">
+          <Field label="PDP Account Number" htmlFor="pdpAccNo">
             <TextInput
               id="pdpAccNo"
               value={form.accNo}
@@ -218,7 +304,9 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
               disabled={byCustomer}
               onChange={(e) => set('accNo', digitsOnly(e.target.value))}
               placeholder={t('19 digits')}
-              title={byCustomer ? t('Clear the customer number to search by account') : undefined}
+              title={
+                byCustomer ? t('Clear the branch and customer number to search by account') : undefined
+              }
               className={byCustomer ? 'cursor-not-allowed bg-surface-muted text-muted' : ''}
             />
           </Field>
@@ -274,7 +362,7 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
 
         <p className="mt-4 text-xs text-muted">
           {t(
-            'Enter a customer number to cover every account that customer holds, or an account number for one account — one or the other, not both.',
+            'Enter a branch code and customer number to cover every account that customer holds, or an account number on its own for one account — one route or the other, not both.',
           )}
           {form.fromMonth && form.fromYear && form.toMonth && form.toYear && (
             <>
@@ -333,13 +421,22 @@ export default function PdpStatement({ onExit }: { onExit: () => void }) {
           {/* One form for any count rather than an English singular/plural
               pair: three independent counts would need eight keys, and Arabic
               does not split two ways in the first place. */}
-          <p className="print-hidden mt-6 text-sm text-muted">
-            {t('{stmts} statements · {accts} accounts · {txns} transactions', {
-              stmts: rows.length,
-              accts: accountCount,
-              txns: lineCount,
-            })}
-          </p>
+          {/* The report's own header line: what it covers on the left, what
+              can be done with it on the right. The action bar above acts on the
+              FORM — its buttons are there before there is a report and grey out
+              to say so; this acts on the report itself, so it arrives and
+              leaves with it. Off the paper, like the line beside it: a button
+              printed onto a bank statement would be absurd. */}
+          <div className="print-hidden mt-6 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted">
+              {t('{stmts} statements · {accts} accounts · {txns} transactions', {
+                stmts: rows.length,
+                accts: accountCount,
+                txns: lineCount,
+              })}
+            </p>
+            <DownloadExcelButton onClick={handleDownload} busy={downloading} />
+          </div>
           <div className="mt-3 space-y-5 print-per-page">
             {paginateStatements(rows).map((sheet, i, all) => (
               <StatementCard

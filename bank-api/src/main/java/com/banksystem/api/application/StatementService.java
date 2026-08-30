@@ -186,9 +186,16 @@ public class StatementService {
      * wherever the same input exists (branch, the four date parts, the range
      * direction) and new only where the input itself is new.
      *
-     * @param branchCode 4-digit branch. A real predicate here, not only the
-     *                   staff-branch key it is for BM — a customer-number
-     *                   enquiry without it would sweep every branch.
+     * <p>There are two self-contained ways to key it, and the screen offers
+     * exactly one at a time: BRANCH + CUSTOMER NUMBER, or an ACCOUNT NUMBER on
+     * its own. Neither route asks for anything the other one needs.
+     *
+     * @param branchCode 4-digit branch. Required by the CUSTOMER route, where it
+     *                   is a real predicate — a customer number without one
+     *                   would sweep every branch. Blank on the account route,
+     *                   which has no box for it: an account number already
+     *                   identifies its own statements, and branch is neither
+     *                   checked nor applied there.
      * @param custNo     PDP CUST_NUM, or blank
      * @param accNo      account number, or blank. EXACTLY ONE of the two is
      *                   required — a customer number answers for every account
@@ -203,17 +210,23 @@ public class StatementService {
         String customer = trim(custNo);
         String account = trim(accNo);
 
-        // Same order as cmdGenerate_Click for the inputs it shares, so an
-        // operator moving between the two screens gets the same message for the
-        // same mistake.
-        if (branch.length() != 4) {
-            throw new BadRequestException(ERR_BRANCH_CODE);
-        }
+        // The identifier is checked FIRST here, unlike cmdGenerate_Click, which
+        // opens with the branch. It has to be: the two routes are
+        // self-contained — branch + customer number, or an account number on its
+        // own — so until one of the identifiers is known there is no route to
+        // say whether a branch is even wanted.
         if (customer.isEmpty() && account.isEmpty()) {
             throw new BadRequestException(ERR_CUST_OR_ACCOUNT);
         }
         if (!customer.isEmpty() && !account.isEmpty()) {
             throw new BadRequestException(ERR_BOTH_KEYED);
+        }
+        // Branch belongs to the CUSTOMER route alone, where it is a real
+        // predicate: CUST_NUM without one would sweep every branch. An account
+        // number identifies its own statements, so that route needs no branch
+        // and the screen no longer offers a box for one.
+        if (!customer.isEmpty() && branch.length() != 4) {
+            throw new BadRequestException(ERR_BRANCH_CODE);
         }
         requireYearMonth(fromYearMonth, ERR_FROM_YEAR, ERR_FROM_MONTH);
         requireYearMonth(toYearMonth, ERR_TO_YEAR, ERR_TO_MONTH);
@@ -226,6 +239,11 @@ public class StatementService {
         // the screen it is reached through — so it applies here too. It applies
         // with more force, if anything: the branch is typed on this screen
         // rather than carried from a grid row the operator already had.
+        //
+        // On the ACCOUNT route no branch is typed, so this cannot fire — the
+        // same position the BM deleted-account route is already in, and for the
+        // same reason: the rule keys on a branch the operator supplied, and
+        // there is none.
         if (STAFF_BRANCH.equals(branch) && !STAFF_BRANCH.equals(caller.branchCode())) {
             throw new BadRequestException(ERR_STAFF_BRANCH);
         }

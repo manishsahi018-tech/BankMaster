@@ -25,6 +25,10 @@ import org.mockito.ArgumentCaptor;
  * no combined form. The screen disables one box as soon as the other is keyed,
  * but a disabled input is not a control: anything reaching the API directly must
  * meet the same rule, which is what this pins.
+ *
+ * <p>Each identifier brings its own route with it, and the branch belongs to one
+ * of them: BRANCH + CUSTOMER NUMBER, or an ACCOUNT NUMBER on its own. So the
+ * branch is required on the one route and not asked for on the other.
  */
 class PdpStatementValidationTest {
 
@@ -78,12 +82,43 @@ class PdpStatementValidationTest {
     }
 
     @Test
-    void branchCodeIsCheckedBeforeTheIdentifiers() {
-        // cmdGenerate_Click's order. An operator who has keyed nothing at all
-        // must be told about the branch first, on both statement screens.
+    void theIdentifierIsCheckedBeforeTheBranch() {
+        // Unlike cmdGenerate_Click, which opens with the branch. It has to be
+        // this way round here: only one of the two routes wants a branch, so
+        // until an identifier is keyed there is nothing to check it against.
         assertThatThrownBy(() -> service.pdpStatements("12", "", "", "200901", "200906", caller))
                 .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Please enter one of them");
+    }
+
+    @Test
+    void branchCodeIsRequiredByTheCustomerRoute() {
+        // A customer number without a branch would sweep every branch, so the
+        // branch is half of that route rather than an optional extra.
+        assertThatThrownBy(() ->
+                service.pdpStatements("12", "0001234", "", "200901", "200906", caller))
+                .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("Branch Code should be 4 characters");
+    }
+
+    @Test
+    void theAccountRouteNeedsNoBranchCode() {
+        // The whole point of the two routes: an account number identifies its
+        // own statements, so the screen greys the branch box out beside it and
+        // sends nothing. A blank branch must therefore be accepted, and must
+        // reach the repository blank so it drops out of the SQL rather than
+        // filtering on "".
+        when(statements.pdpStatements(anyString(), anyString(), anyString(), anyString(),
+                anyString())).thenReturn(List.of());
+
+        assertThatCode(() ->
+                service.pdpStatements("", "", "0127000123400000001", "200901", "200906", caller))
+                .doesNotThrowAnyException();
+
+        ArgumentCaptor<String> branch = ArgumentCaptor.forClass(String.class);
+        verify(statements).pdpStatements(
+                branch.capture(), anyString(), anyString(), anyString(), anyString());
+        assertThat(branch.getValue()).isEmpty();
     }
 
     @Test

@@ -61,7 +61,7 @@ export function monthLabel(yyyymmdd: string): string {
  * ISO alpha ("SAR"), `currency` on BankMaster's own 2-char code ("01"). An
  * unresolvable code returns itself, so nothing is ever lost.
  */
-function currencyLabel(crncy: string): string {
+export function currencyLabel(crncy: string): string {
   if (getLocale() !== 'ar') return crncy
   const iso = codeDescription('isoCurrency', crncy)
   return iso !== crncy ? iso : codeDescription('currency', crncy)

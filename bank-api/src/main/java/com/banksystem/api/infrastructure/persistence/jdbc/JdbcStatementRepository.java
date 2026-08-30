@@ -104,6 +104,11 @@ import org.springframework.stereotype.Repository;
  * <p>The value BOUND is not the value keyed: PDP's BRANCH_CODE holds the
  * significant digits alone, so the screen's zero-padded four characters are
  * stripped on the way into the parameter — see {@link #branchParam}.
+ *
+ * <p>Even for PDP it is only a predicate when one is GIVEN. The screen keys
+ * either branch + customer number or an account number on its own, and the
+ * account route supplies no branch — so the fragment is added per request
+ * rather than fixed to the pair.
  */
 @Repository
 @Profile("denodo")
@@ -209,6 +214,11 @@ public class JdbcStatementRepository implements StatementRepository {
      * still applied if both arrive: an argument that is silently dropped is
      * worse than one that narrows, and it keeps this method's answer a function
      * of its arguments alone.
+     *
+     * <p>The branch is optional and follows the same rule — applied when given,
+     * absent from the SQL when not. The customer route always gives one
+     * (a customer number alone would sweep every branch, and the service
+     * refuses it); the account route never does.
      */
     @Override
     public List<HistoricalStatement> pdpStatements(
@@ -226,22 +236,28 @@ public class JdbcStatementRepository implements StatementRepository {
         LocalDate from = firstDayOf(fromYearMonth);
         LocalDate toExclusive = firstDayOf(toYearMonth).plusMonths(1);
 
+        String branch = branchParam(branchCode);
         String customer = custNum == null ? "" : custNum.trim();
         String account = acctNum == null ? "" : acctNum.trim();
 
         MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("branchCode", branchParam(branchCode))
+                .addValue("branchCode", branch)
                 .addValue("custNum", customer)
                 .addValue("acctNum", account)
                 .addValue("fromDate", Date.valueOf(from))
                 .addValue("toDate", Date.valueOf(toExclusive));
 
-        // Branch always; the other two only when given. Validated upstream to be
-        // exactly one of the two, so this can never degrade to "every account at
-        // the branch". These are fixed fragments with BOUND parameters — no
-        // operator value ever reaches the SQL text.
+        // Every filter only when given. The screen keys one of two
+        // self-contained routes — branch + customer number, or an account number
+        // on its own — and validation upstream guarantees exactly one identifier
+        // arrives, so this can never degrade to "every account at the branch"
+        // even though the branch itself is now optional. These are fixed
+        // fragments with BOUND parameters — no operator value ever reaches the
+        // SQL text.
         List<String> filters = new ArrayList<>();
-        filters.add("AND  BRANCH_CODE = :branchCode");
+        if (!branch.isEmpty()) {
+            filters.add("AND  BRANCH_CODE = :branchCode");
+        }
         if (!customer.isEmpty()) {
             filters.add("AND  CUST_NUM = :custNum");
         }

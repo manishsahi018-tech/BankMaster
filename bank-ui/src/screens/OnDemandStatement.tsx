@@ -6,6 +6,9 @@ import type { Account } from '../types.ts'
 import type { OnlineStatementPage, OnlineTransaction } from '../api.ts'
 import { api, ApiError } from '../api.ts'
 import { printDocument } from '../print.ts'
+import { downloadWorkbook } from '../xlsx.ts'
+import { DownloadExcelButton } from '../components/DownloadExcelButton.tsx'
+import { onlineStatementSheet, statementFileName } from '../components/statementExport.ts'
 import { BankLogo } from '../components/BankLogo.tsx'
 import {
   balanceMarker,
@@ -120,6 +123,7 @@ export default function OnDemandStatement({
   const [rows, setRows] = useState<StatementRow[] | null>(null)
   const [unavailable, setUnavailable] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const toast = useToast()
 
   // Any edit invalidates a generated report, as disableButtons does.
@@ -239,6 +243,39 @@ export default function OnDemandStatement({
     },
   )
 
+  /**
+   * The statement as a workbook — the same rows, opened by the brought forward
+   * line, with the running balance this screen computed (statementExport.ts).
+   *
+   * The movement totals do NOT go in: they close the printed document, and a
+   * totals row inside a filterable table is the one row that goes wrong the
+   * moment anyone sorts or filters. SUM does that job in the spreadsheet.
+   *
+   * Named for the period the GATEWAY reports back, not the boxes on the form.
+   * They agree — set() drops the report on any edit — but the reply is what the
+   * rows actually came from.
+   */
+  const handleDownload = async () => {
+    if (!hasReport || !page) return
+    setDownloading(true)
+    try {
+      const documentName = t('On Demand Statement')
+      await downloadWorkbook(
+        statementFileName(
+          documentName,
+          account.accountNumber,
+          `${page.fromDate} to ${page.toDate}`,
+        ),
+        onlineStatementSheet(page, rows!, documentName),
+      )
+      toast.success(t('Statement downloaded — {txns} transactions.', { txns: rows!.length }))
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   const dateFields = (which: 'from' | 'to') => (
     <div className="flex gap-2">
       <div className="w-20 shrink-0">
@@ -356,6 +393,14 @@ export default function OnDemandStatement({
               printed on. The gateway hands back one long run of transactions —
               it has no idea where a page ends — and the browser will not say
               where it broke, so this is the only place that can know. */}
+          {/* Top right of the report, below the Exit button in the card
+              above. The action bar acts on the FORM; this acts on the report,
+              so it arrives with the report and goes when it does. Off the
+              paper — a button printed onto a bank statement would be absurd. */}
+          <div className="print-hidden mt-6 flex justify-end">
+            <DownloadExcelButton onClick={handleDownload} busy={downloading} />
+          </div>
+
           <div className="mt-5 space-y-5 print-per-page">
             {sheets.map((sheetRows, i) => {
               const first = i === 0
