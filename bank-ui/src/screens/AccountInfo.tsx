@@ -2,7 +2,7 @@ import GridScreen from '../components/GridScreen.tsx'
 import type { GridButtonContext, GridColumn, Notify } from '../components/GridScreen.tsx'
 import StatusBadge, { statusTone } from '../components/StatusBadge.tsx'
 import type { Account, Customer } from '../types.ts'
-import { hasAuthority } from '../session.ts'
+import { ENQUIRY_RESTRICTIONS_ENABLED, hasAuthority } from '../session.ts'
 import { codeLabel } from '../codes.ts'
 import { formatAmount } from '../schema/helpers.ts'
 
@@ -77,7 +77,9 @@ export default function AccountInfo({
     // :1365-1371 — cmdStatement / cmdTransaction / cmdTransEnq / cmdHistStmt
     // all do the same three lines). The server has already zeroed the amounts;
     // this stops the operator drilling into the account at all.
-    if (row.balEnqRestricted === '1') {
+    // Off while ENQUIRY_RESTRICTIONS_ENABLED is false — the server no longer
+    // marks any row restricted, so there is nothing here to refuse.
+    if (ENQUIRY_RESTRICTIONS_ENABLED && row.balEnqRestricted === '1') {
       notify('warn', 'Not authorized to access the account details of enquiry restricted branch')
       return
     }

@@ -152,10 +152,14 @@ public class StatementService {
             if (accounts.accountByNumber(account).isPresent()) {
                 throw new BadRequestException(ERR_ACCOUNT_STILL_EXISTS);
             }
-        } else if (STAFF_BRANCH.equals(branch) && !STAFF_BRANCH.equals(caller.branchCode())) {
+        } else if (EnquiryRestrictions.ENABLED
+                && STAFF_BRANCH.equals(branch) && !STAFF_BRANCH.equals(caller.branchCode())) {
             // frmHistStmt.frm:782 guards this with `tag <> "D"` — the staff-branch
             // rule keys on the account's branch as the GRID reported it, and the
             // deleted-account route has no grid row to have reported one.
+            //
+            // Off while EnquiryRestrictions.ENABLED is false: a staff-branch
+            // statement prints for any branch's operator.
             throw new BadRequestException(ERR_STAFF_BRANCH);
         }
 
@@ -244,7 +248,10 @@ public class StatementService {
         // same position the BM deleted-account route is already in, and for the
         // same reason: the rule keys on a branch the operator supplied, and
         // there is none.
-        if (STAFF_BRANCH.equals(branch) && !STAFF_BRANCH.equals(caller.branchCode())) {
+        //
+        // Off while EnquiryRestrictions.ENABLED is false, like its BM twin above.
+        if (EnquiryRestrictions.ENABLED
+                && STAFF_BRANCH.equals(branch) && !STAFF_BRANCH.equals(caller.branchCode())) {
             throw new BadRequestException(ERR_STAFF_BRANCH);
         }
 

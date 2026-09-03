@@ -96,3 +96,13 @@ export const hasAuthority = (code: string) => session.authorityLevel.includes(co
 
 // Merchant-only operators (authorityLevel exactly "~81~") cannot run customer searches.
 export const isMerchantOnly = () => session.authorityLevel.trim() === '~81~'
+
+// The client half of the API's EnquiryRestrictions switch — the identity-based
+// gates that refused an enquiry because of WHO was asking: the balance-enquiry
+// restriction on the account grid's row actions (AccountInfo) and the
+// enquiry-only / merchant-only lock on the customer Search button
+// (CustomerStaticData). Both are OFF: any logged-in operator may search any
+// customer and open any account. Keep this in step with
+// EnquiryRestrictions.ENABLED on the server — the server is the one that
+// matters, this only stops the UI refusing first.
+export const ENQUIRY_RESTRICTIONS_ENABLED = false

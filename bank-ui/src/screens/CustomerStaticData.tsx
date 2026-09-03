@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { Field, TextInput, Select, SectionCard } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
-import { hasAuthority, isMerchantOnly, session } from '../session.ts'
+import { ENQUIRY_RESTRICTIONS_ENABLED, hasAuthority, isMerchantOnly, session } from '../session.ts'
 import { stcusttab, staccopencard, stcardtab } from '../schema/index.ts'
 import { maskCardNo, maxLen } from '../schema/helpers.ts'
 import type { SearchCriteria } from '../types.ts'
@@ -145,7 +145,12 @@ export default function CustomerStaticData({
   const canOpenAccounts = hasLookupIdentifier && (hasAuthority('~6') || hasAuthority('~32'))
   const canOpenAtmCards = hasLookupIdentifier && hasAuthority('~4')
   const enquiryOnlyUser = hasAuthority('~99')
-  const canSearchCustomer = !enquiryOnlyUser && !isMerchantOnly()
+  // With ENQUIRY_RESTRICTIONS_ENABLED off, customer search is open to every
+  // logged-in operator. The legacy gate — which shut the Search button for a
+  // ~99 installation user and for a merchant-only (~81 alone) operator — is
+  // kept on the right so turning the switch back on restores it.
+  const canSearchCustomer =
+    !ENQUIRY_RESTRICTIONS_ENABLED || (!enquiryOnlyUser && !isMerchantOnly())
 
   // Digits-only fields. The legacy rejects non-numerics on keypress with
   // errOnlyNumeralsAllowed — txtCustomerNo, txtCardNumber, txtMobileNo,

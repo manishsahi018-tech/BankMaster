@@ -82,8 +82,9 @@ class HistoricalStatementBranchRuleTest {
 
     @Test
     void normalRouteStillRequiresFourCharacters() {
-        // Here the branch DOES come from somewhere — the grid row — and still
-        // keys the staff-branch rule, so a malformed one is a real fault.
+        // Here the branch DOES come from somewhere — the grid row — so a
+        // malformed one is a real fault. Independent of
+        // EnquiryRestrictions.ENABLED: this is input validation, not access.
         assertThatThrownBy(() -> service.historicalStatements("01008041574100", "12", "200901",
                 "200906", "BM", false, caller))
                 .isInstanceOf(BadRequestException.class)
@@ -92,6 +93,9 @@ class HistoricalStatementBranchRuleTest {
 
     @Test
     void staffBranchRefusalIsUnchangedOnTheNormalRoute() {
+        // Only while the switch is on; with it off the same call prints.
+        org.junit.jupiter.api.Assumptions.assumeTrue(EnquiryRestrictions.ENABLED,
+                "EnquiryRestrictions.ENABLED is off - the staff branch prints for everyone");
         assertThatThrownBy(() -> service.historicalStatements("01008041574100", "0175", "200901",
                 "200906", "BM", false, caller))
                 .isInstanceOf(BadRequestException.class)
@@ -102,6 +106,7 @@ class HistoricalStatementBranchRuleTest {
     void staffBranchRefusalNeverFiresOnTheDeletedAccountRoute() {
         // frmHistStmt.frm:782 guards it with `tag <> "D"`. Removing the box did
         // not quietly open a way past it — there was never a way to open.
+        // Holds either way, so it runs with the switch off too.
         assertThatCode(() -> deleted("0175")).doesNotThrowAnyException();
     }
 }

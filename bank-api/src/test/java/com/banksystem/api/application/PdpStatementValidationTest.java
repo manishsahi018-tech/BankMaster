@@ -123,6 +123,8 @@ class PdpStatementValidationTest {
 
     @Test
     void staffBranchIsRefusedToOutsiders() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(EnquiryRestrictions.ENABLED,
+                "EnquiryRestrictions.ENABLED is off - the staff branch prints for everyone");
         // frmHistStmt.frm:782. The branch is TYPED on this screen rather than
         // carried from a grid row, so the rule matters more here, not less.
         assertThatThrownBy(() ->

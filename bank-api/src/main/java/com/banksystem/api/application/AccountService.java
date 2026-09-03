@@ -58,9 +58,20 @@ public class AccountService {
      *
      * Note the inversion: ~86 GRANTS branch-scoped access. Without it the
      * operator is restricted outright on any branch whose flag is set.
+     *
+     * <p>Currently a NO-OP: {@link EnquiryRestrictions#ENABLED} is off, so every
+     * row keeps its real balances and none is marked restricted. The rule below
+     * is the transcription of the C and stays here for when the switch goes back
+     * on.
      */
     private List<AccountSummary> applyBalEnqRestriction(List<AccountSummary> rows, EnquiryUser user) {
         if (rows.isEmpty()) {
+            return rows;
+        }
+        if (!EnquiryRestrictions.ENABLED) {
+            // Both repositories already build every row with balEnqRestricted
+            // "0" (the C's own initial value, cbbranch2.c:5867), so the rows go
+            // out exactly as the source produced them — nothing to unset.
             return rows;
         }
         boolean has86 = user.has("~86");

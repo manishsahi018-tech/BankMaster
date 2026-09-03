@@ -129,9 +129,20 @@ public class OnlineEnquiryService {
         });
     }
 
-    /** A restricted branch's records are visible only to that branch's operators. */
+    /**
+     * A restricted branch's records are visible only to that branch's operators.
+     *
+     * <p>Currently a NO-OP for all three call sites above (staff branch on the
+     * statement and on the transaction enquiry, plus branch 0176 on the
+     * statement): {@link EnquiryRestrictions#ENABLED} is off, so a reply is
+     * returned whatever branch it came back from. The guard is here rather than
+     * at the call sites so the switch cannot be half-applied.
+     */
     private static void requireOwnBranch(
             OnlineStatementPage page, EnquiryUser caller, String branch, String message) {
+        if (!EnquiryRestrictions.ENABLED) {
+            return;
+        }
         if (branch.equals(trim(page.branchCode())) && !branch.equals(trim(caller.branchCode()))) {
             throw new BadRequestException(message);
         }
