@@ -670,6 +670,13 @@ public class MockCustomerRepository implements CustomerRepository {
         all.put("pkgStmtFreqOverride", "0");
         all.put("interGroupAccNo", "");
         all.put("specialRefNo", "");
+        // frmJointAccName. Seeded only for a customer that HAS joint holders,
+        // the same condition singleJointAcc is derived from above — the dialog
+        // is reachable from the joint holders grid alone.
+        boolean joint = !jointHolders(custNo).isEmpty();
+        all.put("jointAccNameOnCheck1", joint ? "سامي حمزه ملا" : "");
+        all.put("jointAccNameOnCheck2", joint ? "عاصم وباسم حمزه ملا" : "");
+        all.put("jointAccNameOnReports", joint ? "سامي وعاصم وباسم ملا" : "");
         // stidtab 'M' — home country id.
         all.put("homeCountryId", "A1234567");
         all.put("homeCountryIdDateType", "1");

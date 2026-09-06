@@ -632,6 +632,10 @@ const AR_EXTRA: Record<string, string> = {
   'joined': 'تاريخ الانضمام',
   'joined on': 'تاريخ الانضمام',
   'joint account holders': 'الشركاء في الحساب',
+  // frmJointAccName's own captions are in the generated legacy table; this is
+  // the button that opens it, which the VB6 never had (it popped the dialog
+  // automatically), and the dialog's single dismiss.
+  close: 'إغلاق',
   'joint cust no': 'رقم عميل مشترك',
   'joint customer number': 'رقم العميل المشترك',
   'joint holder details': 'بيانات الشريك في الحساب',

@@ -580,6 +580,7 @@ export default function App() {
         <JointHolders
           customer={customer}
           rows={screen.gridRows ?? []}
+          acctInfo={screen.acctInfo}
           hasMore={screen.paging?.gridRows?.hasMore ?? false}
           onMore={appendPage('gridRows', (p) => api.jointHolders(customer.custNo, p))}
           onEnquiry={(row) =>

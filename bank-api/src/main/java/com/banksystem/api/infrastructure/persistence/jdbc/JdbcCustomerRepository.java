@@ -1382,6 +1382,21 @@ public class JdbcCustomerRepository implements CustomerRepository {
         return s != null && !s.isBlank();
     }
 
+    /**
+     * Splits stcusttab.jointAccNameOnCheck into the two cheque lines the
+     * legacy dialog shows, as frmIndividualJoint does: places 1-30 are line 1,
+     * 31-60 line 2. Short values are padded first so a right-trimmed column
+     * still yields a well-formed (empty) second line rather than an
+     * out-of-range cut.
+     */
+    private static String[] chequeNameLines(String packed) {
+        String v = packed == null ? "" : packed;
+        if (v.length() < 60) {
+            v = v + " ".repeat(60 - v.length());
+        }
+        return new String[] { v.substring(0, 30).trim(), v.substring(30, 60).trim() };
+    }
+
     @Override
     public Map<String, String> acctInfo(String custNo) {
         // Page-2 enquiry fields for BOTH individual profiles — stcusttab
@@ -1417,6 +1432,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                        accFreezingGracePeriod, department, ownerShip, singleJointAcc,
                        excludeFromAtmFees, excludeFromMinBalFees, pkgStmtFreqOverride,
                        interGroupAccNo, specialRefNo,
+                       jointAccNameOnCheck, jointAccNameOnReports,
                        branchCode, createdUserId, createdDateTime
                 FROM   stcusttab
                 WHERE  BankingDate = :bankingDate
@@ -1456,6 +1472,18 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     d.put("pkgStmtFreqOverride", trim(rs.getString("pkgStmtFreqOverride")));
                     d.put("interGroupAccNo", trim(rs.getString("interGroupAccNo")));
                     d.put("specialRefNo", trim(rs.getString("specialRefNo")));
+                    // frmJointAccName — the read-only "Joint Account Names"
+                    // dialog the legacy pops on leaving the joint holders grid
+                    // (frmIndividualJoint.frm:2578-2603, cmdCancel/cmdDone
+                    // under searchAction). Its cheque name is ONE 60-char
+                    // column holding two 30-char lines, split with
+                    // Mid$(...,1,30) / Mid$(...,31,30) — so it is padded back
+                    // to 60 before the cut, or a value the ETL right-trimmed
+                    // would lose line 2 entirely.
+                    String[] chq = chequeNameLines(rs.getString("jointAccNameOnCheck"));
+                    d.put("jointAccNameOnCheck1", chq[0]);
+                    d.put("jointAccNameOnCheck2", chq[1]);
+                    d.put("jointAccNameOnReports", trim(rs.getString("jointAccNameOnReports")));
                     String[] f = acctFacilityRows(rs.getString("branchCode"),
                             rs.getString("createdUserId"), rs.getString("createdDateTime"));
                     d.put("currentAcFlag", f[0]);
