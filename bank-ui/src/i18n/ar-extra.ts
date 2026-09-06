@@ -721,6 +721,10 @@ const AR_EXTRA: Record<string, string> = {
   'statement month': 'شهر الكشف',
   'subs. number': 'رقم المشترك',
   'the list also stops at the legacy cap of 31 rows': 'كما تتوقف القائمة عند حد النظام السابق البالغ 31 سجلاً.',
+  // The disabled Joint Account button's tooltip. The legacy said it in a
+  // MsgBox instead — errNotAJointAccount, '1036-this account is not a joint
+  // account' — so this is that message's Arabic without the error code.
+  'this account is not a joint account': 'هذا الحساب غير مشترك',
   'this statement has a header but no transaction lines in the archive': 'يحتوي هذا الكشف على ترويسة دون أي حركات في الأرشيف.',
   'trans. ref. no': 'رقم مرجع الحركة',
   'transaction': 'الحركة',

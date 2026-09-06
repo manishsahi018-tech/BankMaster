@@ -659,8 +659,12 @@ public class MockCustomerRepository implements CustomerRepository {
         // Six positional flags: rented house, own house, company accommodation,
         // rented car, own car, company transport.
         all.put("ownerShip", "010010");
-        // 0-single / 1-joint / 2-unknown (workbook row 87).
-        all.put("singleJointAcc", "0");
+        // 0-single / 1-joint / 2-unknown (workbook row 87). Derived from the
+        // joint-holder rows rather than pinned, so the two agree: this column
+        // is what enables the acct-info page's Joint Account button, and a
+        // hardcoded "0" left it disabled for every mock customer — including
+        // the ones jointHolders() does hand rows for.
+        all.put("singleJointAcc", jointHolders(custNo).isEmpty() ? "0" : "1");
         all.put("excludeFromAtmFees", "0");
         all.put("excludeFromMinBalFees", "0");
         all.put("pkgStmtFreqOverride", "0");

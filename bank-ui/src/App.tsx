@@ -627,6 +627,12 @@ export default function App() {
           acctInfo={screen.acctInfo}
           historyAsOf={screen.historyAsOf}
           onPrevPage={() => go('detail')}
+          onJointAcc={() =>
+            goFetch('jointHolders', { partyFrom: 'detail2' }, async () => {
+              const _r = await api.jointHolders(customer!.custNo)
+              return { gridRows: _r.rows, paging: { gridRows: { page: 0, hasMore: _r.hasMore } } }
+            })
+          }
           onDocuments={() =>
             // Reset docsFrom rather than relying on its default — the juristic
             // page 2 sets it, and `go` would carry that value into here.
@@ -661,6 +667,12 @@ export default function App() {
           acctInfo={screen.acctInfo}
           historyAsOf={screen.historyAsOf}
           onPrevPage={() => go('others2')}
+          onJointAcc={() =>
+            goFetch('jointHolders', { partyFrom: 'others3' }, async () => {
+              const _r = await api.jointHolders(customer!.custNo)
+              return { gridRows: _r.rows, paging: { gridRows: { page: 0, hasMore: _r.hasMore } } }
+            })
+          }
           onDocuments={() =>
             goFetch('documents', { docsFrom: 'others3' }, async () => ({
               documents: await fetchDocuments(customer!.custNo, screen.historyAsOf),
