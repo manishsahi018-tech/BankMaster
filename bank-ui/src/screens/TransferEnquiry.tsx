@@ -127,12 +127,18 @@ export default function TransferEnquiry({
               label: 'Transfer Detail',
               kind: 'primary',
               onClick: ({ row, notify }) => {
-                if (!row) {
+                // Same value test SarieTransGrid_DblClick applies before
+                // sending service 83 (frmSarieTransferEnq.frm:1156-1159): a
+                // reference-less row has nothing to open, and passing its
+                // blank through would ask the API for /api/transfers/ — a 404
+                // that reads as a missing transfer rather than a missing key.
+                const ref = row?.transRef == null ? '' : String(row.transRef).trim()
+                if (!row || ref === '') {
                   notify('warn', 'Empty row selected — please select a transfer.')
                   return
                 }
                 api
-                  .transferDetail(String(row.transRef))
+                  .transferDetail(ref)
                   .then(setDetail)
                   .catch((e: unknown) => notify('warn', e instanceof Error ? e.message : String(e)))
               },

@@ -244,12 +244,22 @@ export default function TransactionEnquiry({
               label: 'Detail',
               kind: 'primary',
               onClick: ({ row, notify }) => {
-                if (!row) {
+                // The reference is the KEY, and thd0data hands back rows that
+                // have none. BmTransGrid_DblClick tests the value, not the row
+                // — Len(RTrim(tTransRefNo)) = 0 raises errEmptyRowSelected and
+                // never sends service 84 (frmTransEnq.frm:287-293). Testing
+                // only for a missing row let a blank reference through, and it
+                // reached the API as an empty path segment
+                // (/transactions/ + ""), which is a 404 the operator reads as
+                // "the transaction is missing" when the truth is that the row
+                // carries nothing to look one up by.
+                const ref = row?.transRef == null ? '' : String(row.transRef).trim()
+                if (!row || ref === '') {
                   notify('warn', 'Empty row selected — please select a transaction.')
                   return
                 }
                 api
-                  .bmTransactionDetail(account.accountNumber, String(row.transRef))
+                  .bmTransactionDetail(account.accountNumber, ref)
                   .then(setDetail)
                   .catch((e: unknown) => notify('warn', e instanceof Error ? e.message : String(e)))
               },
