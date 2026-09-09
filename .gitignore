@@ -47,3 +47,9 @@ Thumbs.db
 
 # ---- Claude: personal local settings (skills are kept) ----
 .claude/settings.local.json
+
+# ---- Source snapshots taken by hand before a risky checkout ----
+# Local safety copies (bank-ui/src.zip, bank-api/src/main/java.zip). Keep them
+# on disk, out of the history: they are whole-tree duplicates of files git
+# already versions.
+*.zip
