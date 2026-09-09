@@ -208,12 +208,14 @@ public class JdbcCustomerRepository implements CustomerRepository {
             "crIssueDateType", "licenseNo", "approvalRefNo",
             "contractNo", "diplomaticCardNo"};
 
-    /** Raw column values keyed by label — the as-of path overlays
-     *  stidlog/staddrlog values into this map before the record is built. */
+    /** Column values keyed by label, unwrapped ({@link #unquote}) — the as-of
+     *  path overlays stidlog/staddrlog values into this map before the record
+     *  is built, so unwrapping HERE covers the point read and the as-of read
+     *  both, and the overlays match it column for column. */
     private static final RowMapper<Map<String, String>> PROFILE_COLUMN_MAPPER = (rs, i) -> {
         Map<String, String> m = new HashMap<>();
         for (String col : PROFILE_COLUMNS) {
-            m.put(col, rs.getString(col));
+            m.put(col, unquote(rs.getString(col)));
         }
         return m;
     };
@@ -275,13 +277,14 @@ public class JdbcCustomerRepository implements CustomerRepository {
     }
 
     private static final RowMapper<IdDocument> ID_DOCUMENT_MAPPER = (rs, i) -> new IdDocument(
-            rs.getString("idType"), rs.getString("idNo"), rs.getString("idIssuedAt"),
-            rs.getString("idDateType"), rs.getString("iqamaType"),
-            BmForms.actualDate(rs.getString("idIssueDateH")),
-            BmForms.actualDate(rs.getString("idIssueDateG")),
-            BmForms.actualDate(rs.getString("idExpiryDateH")),
-            BmForms.actualDate(rs.getString("idExpiryDateG")),
-            rs.getString("idRefName"));
+            unquote(rs.getString("idType")), unquote(rs.getString("idNo")),
+            unquote(rs.getString("idIssuedAt")),
+            unquote(rs.getString("idDateType")), unquote(rs.getString("iqamaType")),
+            BmForms.actualDate(unquote(rs.getString("idIssueDateH"))),
+            BmForms.actualDate(unquote(rs.getString("idIssueDateG"))),
+            BmForms.actualDate(unquote(rs.getString("idExpiryDateH"))),
+            BmForms.actualDate(unquote(rs.getString("idExpiryDateG"))),
+            unquote(rs.getString("idRefName")));
 
     private final NamedParameterJdbcTemplate jdbc;
     private final BankingDateProvider bankingDate;
@@ -512,20 +515,21 @@ public class JdbcCustomerRepository implements CustomerRepository {
      */
     private RowMapper<CustomerSummary> summaryMapper(boolean arabicSearch) {
         return (rs, i) -> {
-            boolean arabicNames = arabicSearch || prefersArabic(rs.getString("preferredLang"));
-            boolean arabicShort = prefersArabic(rs.getString("preferredLang"));
-            boolean corporate = isCorporate(rs.getString("custType"));
-            String aShort = rs.getString(corporate ? "aOrgShortName" : "aShortName");
-            String eShort = rs.getString(corporate ? "eOrgShortName" : "eShortName");
+            boolean arabicNames = arabicSearch || prefersArabic(unquote(rs.getString("preferredLang")));
+            boolean arabicShort = prefersArabic(unquote(rs.getString("preferredLang")));
+            boolean corporate = isCorporate(unquote(rs.getString("custType")));
+            String aShort = unquote(rs.getString(corporate ? "aOrgShortName" : "aShortName"));
+            String eShort = unquote(rs.getString(corporate ? "eOrgShortName" : "eShortName"));
             String shortName = arabicShort ? firstNonBlank(aShort, eShort) : firstNonBlank(eShort, aShort);
             return new CustomerSummary(
-                    rs.getString("custNo"), rs.getString("idType"), rs.getString("idNo"),
-                    rs.getString("telHomeNo"), rs.getString("telHomeExt"),
-                    rs.getString(arabicNames ? "aFirstName" : "eFirstName"),
-                    rs.getString(arabicNames ? "a2ndName" : "e2ndName"),
-                    rs.getString(arabicNames ? "aLastName" : "eLastName"),
-                    shortName, rs.getString("branchCode"),
-                    rs.getString("samaMainCategory"), rs.getString("samaSubCategory"));
+                    unquote(rs.getString("custNo")), unquote(rs.getString("idType")),
+                    unquote(rs.getString("idNo")),
+                    unquote(rs.getString("telHomeNo")), unquote(rs.getString("telHomeExt")),
+                    unquote(rs.getString(arabicNames ? "aFirstName" : "eFirstName")),
+                    unquote(rs.getString(arabicNames ? "a2ndName" : "e2ndName")),
+                    unquote(rs.getString(arabicNames ? "aLastName" : "eLastName")),
+                    shortName, unquote(rs.getString("branchCode")),
+                    unquote(rs.getString("samaMainCategory")), unquote(rs.getString("samaSubCategory")));
         };
     }
 
@@ -622,7 +626,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
         return jdbc.query(OPEN_UPDATE_SQL.formatted(direction), params, (rs, i) -> {
             Map<String, String> m = new HashMap<>();
             for (String c : new String[]{"branchCode", "userId", "lastUpdateUser"}) {
-                m.put(c, rs.getString(c));
+                m.put(c, unquote(rs.getString(c)));
             }
             return m;
         }).stream().findFirst().orElse(null);
@@ -683,9 +687,12 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 (rs, i) -> {
                     Map<String, Object> k = new HashMap<>();
                     k.put("bankingDate", bankingDate.bankingDate());
-                    k.put("branchCode", rs.getString("branchCode"));
-                    k.put("userId", rs.getString("userId"));
-                    String bm = BmForms.isoToBmTimestamp(rs.getString("dateTime"));
+                    // unwrapped like every other column: these two are BOUND
+                    // into the overlay queries below, so a quoted value would
+                    // match no stidlog/staddrlog row at all.
+                    k.put("branchCode", unquote(rs.getString("branchCode")));
+                    k.put("userId", unquote(rs.getString("userId")));
+                    String bm = BmForms.isoToBmTimestamp(unquote(rs.getString("dateTime")));
                     k.put("dateTime", bm);
                     k.put("dateTimeIso", BmForms.bmToIso(bm));
                     return k;
@@ -725,7 +732,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                         Map<String, String> r = new HashMap<>();
                         for (String col : new String[] {"idType", "idNo", "idIssuedAt",
                                 "idIssueDateH", "idIssueDateG", "idExpiryDateH", "idExpiryDateG"}) {
-                            r.put(col, rs.getString(col));
+                            r.put(col, unquote(rs.getString(col)));
                         }
                         return r;
                     });
@@ -777,7 +784,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                         for (String col : new String[] {"address1", "address2", "poBox",
                                 "cityName", "zipCode", "country", "telHomeNo", "telOffNo",
                                 "mobileNo", "eMail"}) {
-                            r.put(col, rs.getString(col));
+                            r.put(col, unquote(rs.getString(col)));
                         }
                         return r;
                     })
@@ -1731,6 +1738,29 @@ public class JdbcCustomerRepository implements CustomerRepository {
 
     private static String trim(String s) {
         return s == null ? "" : s.trim();
+    }
+
+    /**
+     * A column value with the ETL's quote wrapper removed.
+     *
+     * <p>An empty character field reaches the archival views as the TWO-char
+     * string {@code ""} — a quoted-but-empty CSV field whose quotes were
+     * loaded as content rather than read as delimiters. Nothing downstream
+     * recognises it as empty: the search grid renders idType through
+     * codeLabel, which hands an unmatched code straight back, so the operator
+     * saw a pair of quote marks in the column. stcusttab.idType is ONE
+     * character wide in the workbook, so a two-quote value cannot be legacy
+     * data — this strips the wrapper the extract added, it does not touch what
+     * the legacy stored.
+     *
+     * <p>Unwraps only a value quoted END TO END, and only one level: a quote
+     * inside a name is left where it is.
+     */
+    private static String unquote(String s) {
+        String v = trim(s);
+        return v.length() >= 2 && v.charAt(0) == '"' && v.charAt(v.length() - 1) == '"'
+                ? v.substring(1, v.length() - 1).trim()
+                : v;
     }
 
     /** Name searches are prefix scans on the trailing-space-trimmed input (§1). */
