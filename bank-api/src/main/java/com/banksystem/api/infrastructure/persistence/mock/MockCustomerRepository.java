@@ -408,8 +408,20 @@ public class MockCustomerRepository implements CustomerRepository {
             "Tariq R. Al-Mutairi", "Huda K. Al-Sudairi", "Nabil W. Kassem",
             "Reem A. Al-Faisal", "Hassan D. Al-Yami", "Dana S. Al-Rashid");
 
-    private static String partyName(String custNo, int salt, boolean arabic) {
-        return DemoData.pick(custNo, salt, arabic ? ARABIC_NAMES : ENGLISH_NAMES);
+    /**
+     * One party's name, stepped by its ROW so a customer never shows the same
+     * person twice.
+     *
+     * <p>Salting per row is not enough: the pools hold twelve names and a grid
+     * draws up to three from one of them, so independent hashes collide often
+     * enough to be seen — and a heirs grid listing the same name on rows 1 and
+     * 3 under two different ID numbers reads as a data bug, which is exactly
+     * what a fixture must not teach. Rotating from a single per-customer draw
+     * makes the rows distinct by construction.
+     */
+    private static String partyName(String custNo, int salt, int row, boolean arabic) {
+        List<String> pool = arabic ? ARABIC_NAMES : ENGLISH_NAMES;
+        return pool.get((DemoData.pick(custNo, salt, pool.size()) + row) % pool.size());
     }
 
     /** Synthetic 10-digit national/iqama number, stable per party. */
@@ -485,10 +497,23 @@ public class MockCustomerRepository implements CustomerRepository {
                 "011", String.valueOf(4000000 + DemoData.pick(key, 92, 900000)), "",
                 "011", String.valueOf(4000000 + DemoData.pick(key, 93, 900000)), "",
                 "", "", "", "05" + DemoData.pick(key, 94, 90000000), "", "");
+        // The four name parts are SPLIT OUT OF THE ROW'S OWN short name, in the
+        // language that name is written in, rather than pinned. A fixed pair
+        // put "Saad Ali Al-Qahtani" on the panel behind every grid row, so the
+        // detail an operator opened contradicted the line they clicked — the
+        // same trap ownerDetail avoids by seeding both from one draw.
+        String[] parts = shortName.trim().isEmpty() ? new String[] { "" } : shortName.trim().split("\\s+");
+        boolean arabic = shortName.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF);
+        String first = parts[0];
+        String last = parts.length > 1 ? parts[parts.length - 1] : "";
+        String second = parts.length > 2 ? parts[1] : "";
+        String third = parts.length > 3 ? parts[2] : "";
         return new com.banksystem.api.domain.model.PartyDetail(
                 kind, custNo, partyNo, partyType, activeStatus, "", c.branchCode(),
-                "سعد", "علي", "", "القحطاني", shortName,
-                "Saad", "Ali", "", "Al-Qahtani", shortName,
+                arabic ? first : "", arabic ? second : "", arabic ? third : "",
+                arabic ? last : "", arabic ? shortName : "",
+                arabic ? "" : first, arabic ? "" : second, arabic ? "" : third,
+                arabic ? "" : last, arabic ? "" : shortName,
                 idType, idNo, c.city(), "1", "", "19970418", "", "20270417",
                 referenceReqdFor, proxyNo, proxyNo.isEmpty() ? "" : "1",
                 proxyIssueDateH, proxyIssueDateG, address);
@@ -505,7 +530,7 @@ public class MockCustomerRepository implements CustomerRepository {
         for (int i = 0; i < count; i++) {
             boolean proxy = i % 2 == 1;
             rows.add(new HeirEntry(String.format("%03d", i + 1), proxy ? "P" : "H",
-                    partyName(c.custNo(), 20 + i, true), "I", partyId(c.custNo(), 20 + i),
+                    partyName(c.custNo(), 20, i, true), "I", partyId(c.custNo(), 20 + i),
                     proxy ? "PRX-" + (2000 + DemoData.pick(c.custNo(), 30 + i, 900)) : "",
                     proxy ? "14290305" : "", proxy ? "20080312" : "",
                     "1", c.branchCode()));
@@ -541,7 +566,7 @@ public class MockCustomerRepository implements CustomerRepository {
             boolean arabic = i % 2 == 0;
             rows.add(new ReferenceEntry(String.format("%03d", i + 1),
                     i % 2 == 0 ? "L" : "R", i % 2 == 0 ? "N" : "M",
-                    partyName(c.custNo(), 60 + i, arabic), arabic ? "I" : "Q",
+                    partyName(c.custNo(), 60, i, arabic), arabic ? "I" : "Q",
                     partyId(c.custNo(), 60 + i), "1", c.branchCode()));
         }
         return List.copyOf(rows);
@@ -596,7 +621,7 @@ public class MockCustomerRepository implements CustomerRepository {
             remaining -= share;
             boolean arabic = i % 2 == 0;
             rows.add(new OwnerEntry(String.format("%03d", i + 1), i == 0 ? "O" : "M",
-                    partyName(c.custNo(), 70 + i, arabic), arabic ? "I" : "Q",
+                    partyName(c.custNo(), 70, i, arabic), arabic ? "I" : "Q",
                     partyId(c.custNo(), 70 + i),
                     i == 0 ? "" : c.shortName() + " Holding",
                     String.format("%03d.00", share), "1", c.branchCode()));

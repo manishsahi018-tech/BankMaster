@@ -162,7 +162,43 @@ final class DemoData {
                     "سلطان", "محمد", "علي", "العتيبي",
                     "Sultan", "Mohammed", "Ali", "Al-Otaibi",
                     "سلطان محمد علي العتيبي", "0003", "01", "01", "",
-                    "مكة المكرمة", "7788", "21955", "20200216", 2));
+                    "مكة المكرمة", "7788", "21955", "20200216", 2),
+            // The two customers below exist to make the RELATED-PARTY panels
+            // reachable. Both grids are gated on the sub category alone
+            // (partyPanelsFor, screenSet.ts) because the legacy reaches them
+            // by routing Next Page on it — so a fixture set without these two
+            // codes leaves the heirs grid, the reference grid and the party
+            // detail panel behind them unopenable in every local run, however
+            // many rows the mock generates for them.
+            //
+            // Sub category 65 → screen set A → the SAUDI profile, whose Next
+            // Page runs doHeirSearch (frmIndividualSaudi.frm:5920). The only
+            // fixture that shows Heirs / Proxy.
+            //
+            // THE NUMBER IS PART OF THE FIXTURE. heirs() takes its row count
+            // from 1 + pick(custNo, 11, 3) and makes every second row a proxy,
+            // so a number seeding 1 shows a lone heir and leaves the proxy
+            // columns — and the proxy frame on the detail panel — permanently
+            // blank. 0425110 seeds 3: heir, proxy, heir.
+            new Customer("0425110", "I", "1092338471", "6639215", "", "0555210934",
+                    "منيرة", "عبدالرحمن", "سعد", "الدوسري",
+                    "Munira", "Abdulrahman", "Saad", "Al-Dossary",
+                    "منيرة عبدالرحمن سعد الدوسري", "0127", "01", "65", "",
+                    "الرياض", "8841", "11492", "20110523", 2),
+            // Sub category 63 — "Minor Expats under expats' iqama"
+            // (globalFunctions.bas:4853) → screen set 2 → the OTHERS profile,
+            // whose Next Page runs doReferenceSearch (frmIndividualOthers.frm:
+            // 3829). References on the Saudi side is already covered by the
+            // sub-02 fixtures 0420877 / 0421905; this is the same grid reached
+            // from the other profile, which is a DIFFERENT code path. Chosen
+            // on the same rule as the heirs fixture above: references() counts
+            // 1 + pick(custNo, 13, 3), and 0426342 seeds 3 so both the legal
+            // representative and the plain reference types appear.
+            new Customer("0426342", "Q", "2377410256", "6628033", "", "0566718402",
+                    "", "", "", "",
+                    "Zainab", "Imran", "", "Siddiqui",
+                    "Zainab Imran Siddiqui", "0001", "01", "63", "",
+                    "جدة", "3390", "21411", "20190408", 1));
 
     private static final Map<String, Customer> BY_CUST_NO =
             CUSTOMERS.stream().collect(java.util.stream.Collectors.toMap(Customer::custNo, c -> c));

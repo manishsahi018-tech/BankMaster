@@ -110,11 +110,18 @@ export function profileScreenFor(
  *                                                          not the Others one)
  *   anything else                                      -> the acct-info page
  *
- * Joint holders are absent on purpose. frmIndividualJoint is in the project
- * (statdata.vbp:69) and doJointSearch exists (search.bas:701), but no form in
- * the source shows the one or calls the other — it is a renamed frmCustomer3
- * (its grid still reads frmCustomer3Caption) whose entry point was cut. Nothing
- * in the legacy reaches it, so nothing here does either.
+ * Joint holders are not one of these panels, and not because nothing reaches
+ * them: cmdJointAcc on BOTH acct-info forms calls doJointSearch and shows
+ * frmIndividualJoint (frmIndividualSaudiAcctInfo.frm:3074/3099,
+ * frmIndividualOthersAcctInfo.frm:2448/2483). That entry point is a PAGE
+ * further in and keys on a different column — the Single/Joint A/c radio,
+ * stcusttab.singleJointAcc — so it is a button that greys out rather than a
+ * sub category that routes, and it lives on IndividualSaudiAcctInfo /
+ * IndividualOthersAcctInfo here (restored in cc1d387). The frmCustomer3
+ * lineage is real but says nothing about reachability: frmIndividualJoint is
+ * a copy of frmCustomer3 down to its frmCustomer3Caption grid titles, and
+ * frmCustomer2's own cmdJointAcc still drives the frmCustomer3 original
+ * (frmCustomer2.frm:2735).
  *
  * The juristic forms have no related-party page at all: all three
  * cmdNextPage_Click handlers go straight to frmJuristicAccountInfo.
