@@ -212,12 +212,11 @@ export default function TopNav({
         <div className="flex items-center gap-2.5">
           {session.loggedIn && (
             <span className="hidden rounded-full bg-surface-muted px-3 py-1.5 text-xs font-medium text-muted sm:inline">
-              {/* The operator's id and branch code are Latin/numeric and must
-                  not be reordered by the bidi algorithm when the label beside
-                  them is Arabic. */}
+              {/* The operator's id is Latin/numeric and must not be reordered
+                  by the bidi algorithm on an Arabic screen. The branch code
+                  used to sit beside it; the screens that need it show it
+                  themselves. */}
               <span className="ltr-value inline-block">{session.userName}</span>
-              {' · '}
-              {t('Branch')} <span className="ltr-value inline-block">{session.branchCode}</span>
             </span>
           )}
           {/* The locale link sits next to the operator's name, where the legacy
