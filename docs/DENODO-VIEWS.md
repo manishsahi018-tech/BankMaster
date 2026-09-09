@@ -91,6 +91,46 @@ any `stcardtab` row written after the chosen date, will not be returned.
 `BankingDateFilterTest` scans the repository sources and fails the build if a
 statement reading one of these views loses the predicate.
 
+### The card views may be pinned separately
+
+`stcardtab` is the view that most obviously does not fit one global date, so the
+two card views have a second setting of their own, `card-banking-date`:
+
+```sql
+WHERE ... AND <alias>.BankingDate = :cardBankingDate   -- stcardtab, stcardlog
+```
+
+It is **blank by default, and blank means "use `banking-date`"** — the split
+costs nothing until it is configured. Same format rules, same validation, same
+hot reload; `BankingDateProvider.cardBankingDate()` resolves the fallback.
+
+Setting it is a trade, not a fix, and both halves are worth knowing before you
+pick a value:
+
+| Setting it forward (e.g. `2012-12-08`) | Effect |
+|---|---|
+| `stcardtab` — card grid, Card Detail, Customer Search by card no | the post-restore cards become visible |
+| `stcardlog` — Card Update History, Card Tracking History | **empty**: `stcardlog` was measured with only the 11/07/2009 snapshot |
+| customer name on Card Detail / History View Detail | **blank** for customers created after `banking-date` |
+
+That last row is the join: both statements read their card view at
+`:cardBankingDate` but keep the `stcusttab` LEFT JOIN on `:bankingDate`, so a
+card belonging to a customer who does not exist in the global snapshot still
+lists — with no name — rather than disappearing. The same applies to the card
+grid's customer header, which is a plain `stcusttab` read at `:bankingDate`.
+
+`RuntimeSettings` logs a warning naming both values whenever the two dates
+differ, so a split is visible in the ordinary application log rather than
+rediscovered on a blank history screen. If the two card views ever need to
+diverge from each other as well, the plumbing splits the same way again — one
+more key, one more `Snapshot` component, one more provider method.
+
+`BankingDateFilterTest` enforces the division both ways: a statement reading a
+card view must bind `:cardBankingDate`, and one reading any other view must bind
+`:bankingDate`. The check is exact rather than a substring test for
+`BankingDate`, because `:cardBankingDate` contains that word — a card query left
+on the global date would otherwise pass the very rule meant to catch it.
+
 ---
 
 ## DB #1 — BM archival schema (`archivalJdbc`)
@@ -124,8 +164,8 @@ statement reading one of these views loses the predicate.
 
 | View | Used by (screen) |
 |---|---|
-| `stcardtab` | Card grid, Card Detail, Customer Search (by card no) |
-| `stcardlog` | Card Update History, Card Tracking History |
+| `stcardtab` | Card grid, Card Detail, Customer Search (by card no) — reads at `card-banking-date` |
+| `stcardlog` | Card Update History, Card Tracking History — reads at `card-banking-date` |
 
 ### Signatory / transfers / bills
 

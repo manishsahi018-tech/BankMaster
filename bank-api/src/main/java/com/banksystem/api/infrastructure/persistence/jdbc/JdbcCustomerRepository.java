@@ -402,10 +402,10 @@ public class JdbcCustomerRepository implements CustomerRepository {
         return jdbc.query("""
                 SELECT COALESCE(NULLIF(TRIM(custNo), ''), SUBSTR(bmAccNo, 6, 7)) AS custNo
                 FROM   stcardtab
-                WHERE  BankingDate = :bankingDate
+                WHERE  BankingDate = :cardBankingDate
                   AND  cardNo = :cardNo
                 """,
-                Map.of("bankingDate", bankingDate.bankingDate(), "cardNo", cardNo),
+                Map.of("cardBankingDate", bankingDate.cardBankingDate(), "cardNo", cardNo),
                 (rs, i) -> rs.getString("custNo"))
                 .stream().filter(JdbcCustomerRepository::hasText).findFirst();
     }

@@ -103,11 +103,11 @@ public class JdbcCardRepository implements CardRepository {
                        s.cardStatus, s.requestStatus, s.pinRequestStatus,
                        s.coreAccNo, s.custNo
                 FROM   stcardtab s
-                WHERE  s.BankingDate = :bankingDate
+                WHERE  s.BankingDate = :cardBankingDate
                   AND  %s
                 ORDER  BY s.coreCustNo, s.cardNo
                 """.formatted(where),
-                Map.of("bankingDate", bankingDate.bankingDate(), paramName, paramValue),
+                Map.of("cardBankingDate", bankingDate.cardBankingDate(), paramName, paramValue),
                 (rs, i) -> new CardRow(new CardSummary(
                         s(rs, "cardNo"), s(rs, "nameOnTheCard"),
                         s(rs, "firstIssueDate"), s(rs, "expireDate"),
@@ -187,10 +187,11 @@ public class JdbcCardRepository implements CardRepository {
                 LEFT JOIN stcusttab c
                        ON  c.BankingDate = :bankingDate
                        AND c.custNo = s.custNo
-                WHERE  s.BankingDate = :bankingDate
+                WHERE  s.BankingDate = :cardBankingDate
                   AND  s.cardNo = :cardNo
                 """,
-                Map.of("bankingDate", bankingDate.bankingDate(), "cardNo", cardNo),
+                Map.of("cardBankingDate", bankingDate.cardBankingDate(),
+                        "bankingDate", bankingDate.bankingDate(), "cardNo", cardNo),
                 (rs, i) -> new CardDetail(
                         s(rs, "cardNo"), s(rs, "custNo"), s(rs, "custName"),
                         custCategory(s(rs, "packageAcc")), s(rs, "requestStatus"),
@@ -240,7 +241,7 @@ public class JdbcCardRepository implements CardRepository {
                 LEFT JOIN stcusttab c
                        ON  c.BankingDate = :bankingDate
                        AND c.custNo = l.custNo
-                WHERE  l.BankingDate = :bankingDate
+                WHERE  l.BankingDate = :cardBankingDate
                   AND  l.cardNo = :cardNo
                   AND  l.branchCode = :branchCode
                   AND  l.userId = :userId
@@ -248,6 +249,7 @@ public class JdbcCardRepository implements CardRepository {
                 FETCH FIRST 1 ROWS ONLY
                 """,
                 new java.util.HashMap<>(Map.of(
+                        "cardBankingDate", bankingDate.cardBankingDate(),
                         "bankingDate", bankingDate.bankingDate(),
                         "cardNo", cardNo,
                         "branchCode", branchCode,
@@ -293,11 +295,11 @@ public class JdbcCardRepository implements CardRepository {
                        l.bmUpdateStatus,
                        l.supervisorId, l.lastUpdateDateTime, l.requestType
                 FROM   stcardlog l
-                WHERE  l.BankingDate = :bankingDate
+                WHERE  l.BankingDate = :cardBankingDate
                   AND  l.cardNo = :cardNo
                 ORDER  BY l.cardNo, l.datetime_bigdata
                 """,
-                Map.of("bankingDate", bankingDate.bankingDate(), "cardNo", cardNo),
+                Map.of("cardBankingDate", bankingDate.cardBankingDate(), "cardNo", cardNo),
                 (rs, i) -> {
                     String status = s(rs, "bmUpdateStatus");
                     boolean pending = "1".equals(status) || "2".equals(status);
@@ -351,13 +353,13 @@ public class JdbcCardRepository implements CardRepository {
                        l.supervisorId, l.lastUpdateDateTime, l.processDateTime,
                        l.rejectedUserId, l.rejectedDate, l.rejectedTime, l.rejectedReason
                 FROM   stcardlog l
-                WHERE  l.BankingDate = :bankingDate
+                WHERE  l.BankingDate = :cardBankingDate
                   AND  l.cardNo = :cardNo
                   AND  l.bmUpdateStatus = '9'
                 ORDER  BY l.cardNo, l.datetime_bigdata
                 FETCH FIRST %d ROWS ONLY
                 """.formatted(MAX_TRACKING_ROWS),
-                Map.of("bankingDate", bankingDate.bankingDate(), "cardNo", cardNo),
+                Map.of("cardBankingDate", bankingDate.cardBankingDate(), "cardNo", cardNo),
                 (rs, i) -> {
                     String branchCode = s(rs, "branchCode");
                     String cardGeneratedUserId = s(rs, "cardGeneratedUserId");

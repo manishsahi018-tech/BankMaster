@@ -41,6 +41,9 @@ class RuntimeSettingsTest {
         assertThat(file).exists();
         assertThat(settings.bankingDate()).isEqualTo("2009-07-11");
         assertThat(settings.allowedUsers()).isEmpty();
+        // The template ships the card split switched OFF: the default is one
+        // date for everything, exactly as before the setting existed.
+        assertThat(settings.cardBankingDate()).isEmpty();
     }
 
     @Test
@@ -104,11 +107,63 @@ class RuntimeSettingsTest {
     }
 
     @Test
+    void blankCardBankingDateMeansTheCardViewsFollowTheGlobalDate() throws IOException {
+        Path file = dir.resolve("bank-runtime.properties");
+        write(file, "banking-date=2009-07-11\ncard-banking-date=\n", 1_000);
+
+        // Left blank the setting stays inert. RuntimeSettings reports the blank
+        // as-is; turning it into the global date is BankingDateProvider's job.
+        assertThat(watching(file).cardBankingDate()).isEmpty();
+    }
+
+    @Test
+    void picksUpTheCardDateSeparatelyFromTheGlobalOne() throws IOException {
+        Path file = dir.resolve("bank-runtime.properties");
+        write(file, "banking-date=2009-07-11\ncard-banking-date=\n", 1_000);
+        RuntimeSettings settings = watching(file);
+        assertThat(settings.cardBankingDate()).isEmpty();
+
+        // stcardtab was restored past the CSD snapshot; splitting the card views
+        // off must not disturb the date every other view is read at.
+        write(file, "banking-date=2009-07-11\ncard-banking-date=2012-12-08\n", 2_000);
+
+        assertThat(settings.cardBankingDate()).isEqualTo("2012-12-08");
+        assertThat(settings.bankingDate()).isEqualTo("2009-07-11");
+    }
+
+    @Test
+    void aBadCardDateRefusesTheWholeEditJustAsABadGlobalOneDoes() throws IOException {
+        Path file = dir.resolve("bank-runtime.properties");
+        write(file, "allowed-users=OPER1\nbanking-date=2009-07-11\n", 1_000);
+        RuntimeSettings settings = watching(file);
+
+        // The global date in this edit is perfectly good; the card date is not.
+        // A half-applied snapshot would leave the card screens empty with no
+        // error, so the candidate is discarded whole.
+        write(file, "allowed-users=OPER1,ENQ1\nbanking-date=20121208"
+                + "\ncard-banking-date=08/12/2012\n", 2_000);
+
+        assertThat(settings.cardBankingDate()).isEmpty();
+        assertThat(settings.bankingDate()).isEqualTo("2009-07-11");
+        assertThat(settings.allowedUsers()).containsExactly("OPER1");
+    }
+
+    @Test
     void fixedInstanceNeverTouchesTheFilesystem() {
         RuntimeSettings settings = RuntimeSettings.fixed("OPER1", "20090711");
 
         assertThat(settings.allowedUsers()).containsExactly("OPER1");
         assertThat(settings.bankingDate()).isEqualTo("20090711");
+        assertThat(settings.cardBankingDate()).isEmpty();
+        assertThat(dir).isEmptyDirectory();
+    }
+
+    @Test
+    void fixedInstanceCanPinTheCardViewsSeparately() {
+        RuntimeSettings settings = RuntimeSettings.fixed("OPER1", "20090711", "20121208");
+
+        assertThat(settings.bankingDate()).isEqualTo("20090711");
+        assertThat(settings.cardBankingDate()).isEqualTo("20121208");
         assertThat(dir).isEmptyDirectory();
     }
 }
