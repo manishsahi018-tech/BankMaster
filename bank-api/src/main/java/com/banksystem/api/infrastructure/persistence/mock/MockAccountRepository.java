@@ -165,7 +165,7 @@ public class MockAccountRepository implements AccountRepository {
             rows.add(new AcctUpdateHistoryEntry(c.branchCode(), user,
                     DemoData.dateTimeBack(daysAgo, 9 + i % 8, 15 + i % 40, i % 60),
                     DemoData.pick(accNo, 300 + i, 8) == 0
-                            ? "3-Rejected by the branch" : "9-Update successful",
+                            ? "3-Rejected by supervisor" : "9-Update successful",
                     String.valueOf(54000 + DemoData.pick(accNo, 400 + i, 800)),
                     DemoData.dateTimeBack(daysAgo, 11 + i % 6, 30 + i % 25, i % 60)));
         }

@@ -162,8 +162,18 @@ public class MockCustomerRepository implements CustomerRepository {
 
     // Values mirror the legacy frmIndividualSaudi screenshot for 0415741, so the
     // rebuilt screen can be compared against the original field for field.
+    /**
+     * custType is the ARCHIVAL code, not a letter: '0' is a person and
+     * anything else an organisation. That is what the legacy branches on
+     * (fillFrmCustomer's ListIndex 0/1/2, getCustName at cbothers.c:8234) and
+     * what the live read already assumes — JdbcTransferRepository's name
+     * subquery picks the personal or the org short names on
+     * {@code custType = '0'}. These fixtures carried 'P' and 'C', which no
+     * archival row holds, so every mock customer read as juristic on any
+     * screen that makes that distinction.
+     */
     private static final Map<String, CustomerProfile> PROFILES = Map.of(
-            "0415741", new CustomerProfile("0415741", "P", "01", "01", "0127", "001", "0",
+            "0415741", new CustomerProfile("0415741", "0", "01", "01", "0127", "001", "0",
                     "I", "1009326404", "القطيف", "14140128", "19930717", "14340402", "20130212",
                     "حسين", "سعيد", "عبدالوهاب", "كاظم", "كاظم حسين سعيد عبدالوهاب",
                     "Hussain", "Saeed", "Abdulwahab", "Kadem", "Kadem Hussain Saeed Abdulwahab",
@@ -186,7 +196,7 @@ public class MockCustomerRepository implements CustomerRepository {
                                     "14140114", "19930703", "14340101", "20121115", "")),
                     new OpenUpdateInfo("19980704", "0127", "MIGRATION", "MIGRATION",
                             "20060531", "0127", "54302", "52551")),
-            "0415742", new CustomerProfile("0415742", "P", "01", "02", "0001", "002", "1",
+            "0415742", new CustomerProfile("0415742", "0", "01", "02", "0001", "002", "1",
                     "Q", "1004458821", "الرياض", "14250310", "20040429", "14480515", "20261125",
                     "احمد", "خالد", "", "العتيبي", "احمد خالد العتيبي",
                     "Ahmed", "Khalid", "", "Al-Otaibi", "Ahmed K. Al-Otaibi",
@@ -215,7 +225,7 @@ public class MockCustomerRepository implements CustomerRepository {
             // populated and poBox is empty, which is how a Wasel address is
             // held. address1 carries the street/area name, NOT a packed
             // "gprs street" string — the screens read the two columns.
-            "0415743", new CustomerProfile("0415743", "P", "01", "04", "0127", "001", "1",
+            "0415743", new CustomerProfile("0415743", "0", "01", "04", "0127", "001", "1",
                     "Q", "1006677341", "الدمام", "14330519", "20120411", "14530519", "20310923",
                     "عمر", "فيصل", "", "الحربي", "عمر فيصل الحربي",
                     "Omar", "Faisal", "", "Al-Harbi", "Omar F. Al-Harbi",
@@ -236,7 +246,7 @@ public class MockCustomerRepository implements CustomerRepository {
                                     "14330519", "20120411", "14530519", "20310923", "")),
                     new OpenUpdateInfo("20120311", "0127", "54302", "52551",
                             "20240418", "0127", "54302", "52551")),
-            "0417003", new CustomerProfile("0417003", "C", "02", "01", "0127", "001", "1",
+            "0417003", new CustomerProfile("0417003", "1", "02", "01", "0127", "001", "1",
                     "C", "4030099812", "جدة", "", "", "", "",
                     "", "", "", "", "",
                     "", "", "", "", "",
