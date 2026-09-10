@@ -737,19 +737,31 @@ export default function App() {
               setError(NO_TIMESTAMP)
               return
             }
-            if (customer.mainCategoryCode !== '01') {
-              goFetch('juristic', { historyAsOf: dt, profileFrom: 'custHistory' }, async () => ({
-                profile: await api.customerProfileAsOf(customer.custNo, dt),
-              }))
-            } else if (customer.idType === 'I') {
-              goFetch('detail', { historyAsOf: dt, profileFrom: 'custHistory' }, async () => ({
-                profile: await api.customerProfileAsOf(customer.custNo, dt),
-              }))
-            } else {
-              goFetch('individualOthers', { historyAsOf: dt, profileFrom: 'custHistory' }, async () => ({
-                profile: await api.customerProfileAsOf(customer.custNo, dt),
-              }))
+            // getCustDetails (frmCustUpdateHistory.frm:345-360) takes the
+            // category pair off the SELECTED ROW — grid columns 6 and 7, the
+            // Main Cat / Sub Cat the grid already shows — not off the customer
+            // record, so a customer recategorised since the update opens the
+            // form its category was at THAT timestamp. Then the same
+            // getScreenSetNo the Enquiry route uses, and '-1' exits with a
+            // message rather than opening anything (:358).
+            const mainCat = String(row.samaMainCategory ?? '').trim()
+            const subCat = String(row.samaSubCategory ?? '').trim()
+            // Blank either side is screenSetNo '0' in the legacy, which opens
+            // the generic frmCustomer. No screen in this build ports that form.
+            if (!mainCat || !subCat) {
+              toast.warn('This update carries no customer category, so no profile screen can be opened.')
+              return
             }
+            const target = profileScreenFor(mainCat, subCat)
+            if (!target) {
+              toast.warn(
+                `No profile screen for main category ${mainCat} and sub category ${subCat}.`,
+              )
+              return
+            }
+            goFetch(target, { historyAsOf: dt, profileFrom: 'custHistory' }, async () => ({
+              profile: await api.customerProfileAsOf(customer.custNo, dt),
+            }))
           }}
           onExit={() => go('results')}
         />
