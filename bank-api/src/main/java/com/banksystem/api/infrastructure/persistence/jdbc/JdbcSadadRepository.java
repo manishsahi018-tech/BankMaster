@@ -103,7 +103,7 @@ public class JdbcSadadRepository implements SadadRepository {
                 // Legacy copies only the 8-char date half (cbsadad.c:1682 into
                 // the 8-byte transDate field); the HHMMSS time never reached the
                 // client, so truncate the 14-char transDateTime to YYYYMMDD.
-                date8(BmForms.isoToBmTimestamp(rs.getString("transDateTime"))),
+                date8(BmForms.isoToBmTimestamp(trimmed(rs.getString("transDateTime")))),
                 trimmed(rs.getString("branchCode")),
                 trimmed(rs.getString("tellerId")),
                 trimmed(rs.getString("companyId")),
@@ -120,8 +120,9 @@ public class JdbcSadadRepository implements SadadRepository {
                 trimmed(rs.getString("supervisorId"))));
     }
 
+    /** Trimmed, never-null, and unwrapped ({@link ArchivalText}). */
     private static String trimmed(String value) {
-        return value == null ? "" : value.trim();
+        return ArchivalText.unquote(value);
     }
 
     /** First 8 chars (YYYYMMDD) of the trimmed timestamp — the legacy transDate width. */

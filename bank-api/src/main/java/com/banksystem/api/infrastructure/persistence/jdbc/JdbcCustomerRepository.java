@@ -409,7 +409,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                   AND  cardNo = :cardNo
                 """,
                 Map.of("cardBankingDate", bankingDate.cardBankingDate(), "cardNo", cardNo),
-                (rs, i) -> rs.getString("custNo"))
+                (rs, i) -> unquote(rs.getString("custNo")))
                 .stream().filter(JdbcCustomerRepository::hasText).findFirst();
     }
 
@@ -560,11 +560,11 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     // while the update is still pending ('1' or '2').
                     boolean pending = "1".equals(status) || "2".equals(status);
                     return new CustUpdateHistoryEntry(
-                            rs.getString("branchCode"), rs.getString("userId"),
-                            BmForms.isoToBmTimestamp(rs.getString("dateTime")), statusLabel(status),
-                            pending ? "" : rs.getString("supervisorId"),
-                            pending ? "" : BmForms.isoToBmTimestamp(rs.getString("lastUpdateDateTime")),
-                            rs.getString("samaMainCategory"), rs.getString("samaSubCategory"));
+                            unquote(rs.getString("branchCode")), unquote(rs.getString("userId")),
+                            BmForms.isoToBmTimestamp(unquote(rs.getString("dateTime"))), statusLabel(status),
+                            pending ? "" : unquote(rs.getString("supervisorId")),
+                            pending ? "" : BmForms.isoToBmTimestamp(unquote(rs.getString("lastUpdateDateTime"))),
+                            unquote(rs.getString("samaMainCategory")), unquote(rs.getString("samaSubCategory")));
                 });
     }
 
@@ -816,13 +816,13 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 """,
                 params,
                 (rs, i) -> new String[] {
-                        rs.getString("custNo"), rs.getString("branchCode"),
-                        rs.getString("createdUserId"),
-                        BmForms.isoToBmTimestamp(rs.getString("createdDateTime")),
-                        rs.getString("signatureNature"), rs.getString("internetBankAcc"),
-                        rs.getString("custAdviceFlag"), rs.getString("updatedForSama"),
-                        rs.getString("relationshipManager"), rs.getString("generalMemo"),
-                        rs.getString("marketingMemo"), rs.getString("accFreezingGracePeriod")})
+                        unquote(rs.getString("custNo")), unquote(rs.getString("branchCode")),
+                        unquote(rs.getString("createdUserId")),
+                        BmForms.isoToBmTimestamp(unquote(rs.getString("createdDateTime"))),
+                        unquote(rs.getString("signatureNature")), unquote(rs.getString("internetBankAcc")),
+                        unquote(rs.getString("custAdviceFlag")), unquote(rs.getString("updatedForSama")),
+                        unquote(rs.getString("relationshipManager")), unquote(rs.getString("generalMemo")),
+                        unquote(rs.getString("marketingMemo")), unquote(rs.getString("accFreezingGracePeriod"))})
                 .stream().findFirst()
                 .map(c -> {
                     String[] home = homeAddress(params);
@@ -861,12 +861,12 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 """,
                 params,
                 (rs, i) -> new String[] {
-                        rs.getString("address1"), rs.getString("address2"),
-                        rs.getString("poBox"), rs.getString("zipCode"),
-                        rs.getString("cityName"), rs.getString("country"),
-                        rs.getString("telOffNo"), rs.getString("telHomeNo"),
-                        rs.getString("faxNo"), rs.getString("mobileNo"),
-                        rs.getString("pagerNo"), rs.getString("eMail")})
+                        unquote(rs.getString("address1")), unquote(rs.getString("address2")),
+                        unquote(rs.getString("poBox")), unquote(rs.getString("zipCode")),
+                        unquote(rs.getString("cityName")), unquote(rs.getString("country")),
+                        unquote(rs.getString("telOffNo")), unquote(rs.getString("telHomeNo")),
+                        unquote(rs.getString("faxNo")), unquote(rs.getString("mobileNo")),
+                        unquote(rs.getString("pagerNo")), unquote(rs.getString("eMail"))})
                 .stream().findFirst().orElse(blank);
     }
 
@@ -917,9 +917,9 @@ public class JdbcCustomerRepository implements CustomerRepository {
                             "dateTime", bmDateTime,
                             "dateTimeIso", BmForms.bmToIso(bmDateTime)),
                     (rs, i) -> new String[] {
-                            rs.getString("accNo"), rs.getString("accStatus"),
-                            rs.getString("statementFreq"), rs.getString("checkBook"),
-                            rs.getString("droppedAcc")});
+                            unquote(rs.getString("accNo")), unquote(rs.getString("accStatus")),
+                            unquote(rs.getString("statementFreq")), unquote(rs.getString("checkBook")),
+                            unquote(rs.getString("droppedAcc"))});
             for (String[] r : rows) {
                 String accNo = r[0] == null ? "" : r[0];
                 String currency = accNo.length() >= 2 ? accNo.substring(0, 2) : "";
@@ -981,12 +981,12 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 """,
                 Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
                 (rs, i) -> new HeirEntry(
-                        rs.getString("heirNo"), rs.getString("heirType"),
-                        rs.getString("shortName"), rs.getString("idType"), rs.getString("idNo"),
-                        rs.getString("proxyNo"),
-                        BmForms.actualDate(rs.getString("proxyIssueDateH")),
-                        BmForms.actualDate(rs.getString("proxyIssueDateG")),
-                        rs.getString("activeStatus"), rs.getString("branchCode")));
+                        unquote(rs.getString("heirNo")), unquote(rs.getString("heirType")),
+                        unquote(rs.getString("shortName")), unquote(rs.getString("idType")), unquote(rs.getString("idNo")),
+                        unquote(rs.getString("proxyNo")),
+                        BmForms.actualDate(unquote(rs.getString("proxyIssueDateH"))),
+                        BmForms.actualDate(unquote(rs.getString("proxyIssueDateG"))),
+                        unquote(rs.getString("activeStatus")), unquote(rs.getString("branchCode"))));
     }
 
     @Override
@@ -1004,15 +1004,15 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 """,
                 Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
                 (rs, i) -> {
-                    String shortName = prefersArabic(rs.getString("preferredLang"))
-                            ? firstNonBlank(rs.getString("aShortName"), rs.getString("eShortName"))
-                            : firstNonBlank(rs.getString("eShortName"), rs.getString("aShortName"));
+                    String shortName = prefersArabic(unquote(rs.getString("preferredLang")))
+                            ? firstNonBlank(unquote(rs.getString("aShortName")), unquote(rs.getString("eShortName")))
+                            : firstNonBlank(unquote(rs.getString("eShortName")), unquote(rs.getString("aShortName")));
                     return new JointHolderEntry(
-                            rs.getString("jointCustNo"), shortName,
-                            rs.getString("idType"), rs.getString("idNo"),
-                            rs.getString("nationality"), rs.getString("mobileNo"),
-                            BmForms.actualDate(rs.getString("jointOpenDate")),
-                            rs.getString("activeStatus"), rs.getString("branchCode"));
+                            unquote(rs.getString("jointCustNo")), shortName,
+                            unquote(rs.getString("idType")), unquote(rs.getString("idNo")),
+                            unquote(rs.getString("nationality")), unquote(rs.getString("mobileNo")),
+                            BmForms.actualDate(unquote(rs.getString("jointOpenDate"))),
+                            unquote(rs.getString("activeStatus")), unquote(rs.getString("branchCode")));
                 });
     }
 
@@ -1029,10 +1029,10 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 """,
                 Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
                 (rs, i) -> new ReferenceEntry(
-                        rs.getString("referenceNo"), rs.getString("referenceType"),
-                        rs.getString("referenceReqdFor"), rs.getString("shortName"),
-                        rs.getString("idType"), rs.getString("idNo"),
-                        rs.getString("activeStatus"), rs.getString("branchCode")));
+                        unquote(rs.getString("referenceNo")), unquote(rs.getString("referenceType")),
+                        unquote(rs.getString("referenceReqdFor")), unquote(rs.getString("shortName")),
+                        unquote(rs.getString("idType")), unquote(rs.getString("idNo")),
+                        unquote(rs.getString("activeStatus")), unquote(rs.getString("branchCode"))));
     }
 
     /**
@@ -1137,7 +1137,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
                         trim(rs.getString("jointCustNo")),
                         trim(rs.getString("branchCode")),
                         trim(rs.getString("activeStatus")),
-                        BmForms.actualDate(rs.getString("jointOpenDate")),
+                        BmForms.actualDate(unquote(rs.getString("jointOpenDate"))),
                         trim(rs.getString("aFirstName")),
                         trim(rs.getString("a2ndName")),
                         trim(rs.getString("a3rdName")),
@@ -1152,16 +1152,16 @@ public class JdbcCustomerRepository implements CustomerRepository {
                         trim(rs.getString("idNo")),
                         trim(rs.getString("idIssuedAt")),
                         trim(rs.getString("idDateType")),
-                        BmForms.actualDate(rs.getString("idIssueDateH")),
-                        BmForms.actualDate(rs.getString("idIssueDateG")),
-                        BmForms.actualDate(rs.getString("idExpiryDateH")),
-                        BmForms.actualDate(rs.getString("idExpiryDateG")),
+                        BmForms.actualDate(unquote(rs.getString("idIssueDateH"))),
+                        BmForms.actualDate(unquote(rs.getString("idIssueDateG"))),
+                        BmForms.actualDate(unquote(rs.getString("idExpiryDateH"))),
+                        BmForms.actualDate(unquote(rs.getString("idExpiryDateG"))),
                         trim(rs.getString("preferredLang")),
                         trim(rs.getString("nationality")),
                         trim(rs.getString("titleCode")),
                         trim(rs.getString("dobDateType")),
-                        BmForms.actualDate(rs.getString("dobDateH")),
-                        BmForms.actualDate(rs.getString("dobDateG")),
+                        BmForms.actualDate(unquote(rs.getString("dobDateH"))),
+                        BmForms.actualDate(unquote(rs.getString("dobDateG"))),
                         trim(rs.getString("sexCode")),
                         trim(rs.getString("vipCode")),
                         trim(rs.getString("marritalStatus")),
@@ -1264,7 +1264,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
         List<String[]> rows = jdbc.query(sql, params, (rs, i) -> new String[] {
                 trim(rs.getString("partyNo")), trim(rs.getString("partyType")),
                 trim(rs.getString("referenceReqdFor")), trim(rs.getString("activeStatus")),
-                BmForms.actualDate(rs.getString("disabledDate")), trim(rs.getString("branchCode")),
+                BmForms.actualDate(unquote(rs.getString("disabledDate"))), trim(rs.getString("branchCode")),
                 trim(rs.getString("idType")), trim(rs.getString("idNo")),
                 trim(rs.getString("aFirstName")), trim(rs.getString("aSecondName")),
                 trim(rs.getString("aThirdName")), trim(rs.getString("aLastName")),
@@ -1273,8 +1273,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 trim(rs.getString("eThirdName")), trim(rs.getString("eLastName")),
                 trim(rs.getString("eShortName")),
                 trim(rs.getString("proxyNo")), trim(rs.getString("proxyDateType")),
-                BmForms.actualDate(rs.getString("proxyIssueDateH")),
-                BmForms.actualDate(rs.getString("proxyIssueDateG"))});
+                BmForms.actualDate(unquote(rs.getString("proxyIssueDateH"))),
+                BmForms.actualDate(unquote(rs.getString("proxyIssueDateG")))});
         if (rows.isEmpty()) {
             return Optional.empty();
         }
@@ -1316,10 +1316,10 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 FETCH FIRST 1 ROWS ONLY
                 """, params, (rs, i) -> new String[] {
                         trim(rs.getString("idIssuedAt")), trim(rs.getString("idDateType")),
-                        BmForms.actualDate(rs.getString("idIssueDateH")),
-                        BmForms.actualDate(rs.getString("idIssueDateG")),
-                        BmForms.actualDate(rs.getString("idExpiryDateH")),
-                        BmForms.actualDate(rs.getString("idExpiryDateG"))});
+                        BmForms.actualDate(unquote(rs.getString("idIssueDateH"))),
+                        BmForms.actualDate(unquote(rs.getString("idIssueDateG"))),
+                        BmForms.actualDate(unquote(rs.getString("idExpiryDateH"))),
+                        BmForms.actualDate(unquote(rs.getString("idExpiryDateG")))});
         return rows.isEmpty() ? new String[] {"", "", "", "", "", ""} : rows.get(0);
     }
 
@@ -1375,10 +1375,10 @@ public class JdbcCustomerRepository implements CustomerRepository {
                 """,
                 Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padCust(custNo)),
                 (rs, i) -> new OwnerEntry(
-                        rs.getString("ownerNo"), rs.getString("ownerType"),
-                        rs.getString("shortName"), rs.getString("idType"), rs.getString("idNo"),
-                        rs.getString("parentCompanyName"), rs.getString("shareHoldingPerc"),
-                        rs.getString("ownerEnabled"), rs.getString("branchCode")));
+                        unquote(rs.getString("ownerNo")), unquote(rs.getString("ownerType")),
+                        unquote(rs.getString("shortName")), unquote(rs.getString("idType")), unquote(rs.getString("idNo")),
+                        unquote(rs.getString("parentCompanyName")), unquote(rs.getString("shareHoldingPerc")),
+                        unquote(rs.getString("ownerEnabled")), unquote(rs.getString("branchCode"))));
     }
 
     // ------------------------------------------------------------------
@@ -1487,12 +1487,13 @@ public class JdbcCustomerRepository implements CustomerRepository {
                     // Mid$(...,1,30) / Mid$(...,31,30) — so it is padded back
                     // to 60 before the cut, or a value the ETL right-trimmed
                     // would lose line 2 entirely.
-                    String[] chq = chequeNameLines(rs.getString("jointAccNameOnCheck"));
+                    String[] chq = chequeNameLines(
+                            ArchivalText.unquoteKeepingWidth(rs.getString("jointAccNameOnCheck")));
                     d.put("jointAccNameOnCheck1", chq[0]);
                     d.put("jointAccNameOnCheck2", chq[1]);
                     d.put("jointAccNameOnReports", trim(rs.getString("jointAccNameOnReports")));
-                    String[] f = acctFacilityRows(rs.getString("branchCode"),
-                            rs.getString("createdUserId"), rs.getString("createdDateTime"));
+                    String[] f = acctFacilityRows(unquote(rs.getString("branchCode")),
+                            unquote(rs.getString("createdUserId")), unquote(rs.getString("createdDateTime")));
                     d.put("currentAcFlag", f[0]);
                     d.put("currentAcCurrency", f[1]);
                     d.put("currentAcStmtFreq", f[2]);
@@ -1693,7 +1694,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
         List<String[]> cust = jdbc.query(sql, params,
                 (rs, i) -> new String[] {trim(rs.getString("samaMainCategory")),
                         trim(rs.getString("samaSubCategory")),
-                        rs.getString("documentsSupplied"),
+                        unquote(rs.getString("documentsSupplied")),
                         trim(rs.getString("documentOther"))});
         if (cust.isEmpty()) {
             return EssentialDocuments.EMPTY;
@@ -1737,30 +1738,17 @@ public class JdbcCustomerRepository implements CustomerRepository {
     }
 
     private static String trim(String s) {
-        return s == null ? "" : s.trim();
+        return ArchivalText.trim(s);
     }
 
     /**
-     * A column value with the ETL's quote wrapper removed.
-     *
-     * <p>An empty character field reaches the archival views as the TWO-char
-     * string {@code ""} — a quoted-but-empty CSV field whose quotes were
-     * loaded as content rather than read as delimiters. Nothing downstream
-     * recognises it as empty: the search grid renders idType through
-     * codeLabel, which hands an unmatched code straight back, so the operator
-     * saw a pair of quote marks in the column. stcusttab.idType is ONE
-     * character wide in the workbook, so a two-quote value cannot be legacy
-     * data — this strips the wrapper the extract added, it does not touch what
-     * the legacy stored.
-     *
-     * <p>Unwraps only a value quoted END TO END, and only one level: a quote
-     * inside a name is left where it is.
+     * A column value with the ETL's quote wrapper removed — the reason it is
+     * there, and what it does and does not touch, is in {@link ArchivalText}.
+     * The symptom here was the search grid's idType column: codeLabel hands an
+     * unmatched code straight back, so the operator saw a pair of quote marks.
      */
     private static String unquote(String s) {
-        String v = trim(s);
-        return v.length() >= 2 && v.charAt(0) == '"' && v.charAt(v.length() - 1) == '"'
-                ? v.substring(1, v.length() - 1).trim()
-                : v;
+        return ArchivalText.unquote(s);
     }
 
     /** Name searches are prefix scans on the trailing-space-trimmed input (§1). */

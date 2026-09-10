@@ -413,10 +413,10 @@ public class JdbcCardRepository implements CardRepository {
     // helpers
     // ------------------------------------------------------------------
 
-    /** Trimmed, never-null column read (Hive CHAR padding, NULLs → ""). */
+    /** Trimmed, never-null column read (Hive CHAR padding, NULLs → ""), with
+     *  the extract's quote wrapper off it ({@link ArchivalText}). */
     private static String s(ResultSet rs, String column) throws SQLException {
-        String value = rs.getString(column);
-        return value == null ? "" : value.trim();
+        return ArchivalText.unquote(rs.getString(column));
     }
 
     private static boolean notBlank(String value) {
