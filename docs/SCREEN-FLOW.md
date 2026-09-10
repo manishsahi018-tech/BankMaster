@@ -2,11 +2,6 @@
 
 How an operator moves between screens.
 
-Companion to [SCREEN-TABLE-MAP.md](SCREEN-TABLE-MAP.md) (screen → tables) and
-[SCREEN-FIELD-MAP.md](SCREEN-FIELD-MAP.md) (screen → fields).
-
----
-
 ## 1. Starting points
 
 Everything begins at the search screen.
@@ -26,9 +21,6 @@ From there, five ways out:
 | PDP Statement | Historical Statement Printing — PDP | nothing — keyed on the form |
 | Deleted Acct | Historical Statement Printing | nothing — keyed on the form |
 
-The bottom two carry no customer across and return to the search screen when
-closed.
-
 ---
 
 ## 2. Search Results
@@ -37,7 +29,7 @@ Two actions per row:
 
 ```
 Search Results
-  ├─ Enquiry ─> a profile screen   (which one: §3)
+  ├─ Enquiry ─> a profile screen  
   └─ History ─> Customer Update History
 ```
 
@@ -47,7 +39,7 @@ Search Results
 
 **Enquiry** does not open one fixed screen. The customer's **main category** and
 **sub category** decide. The same rule picks the screen on the history route
-(§9), so a customer always reaches the same form either way.
+, so a customer always reaches the same form either way.
 
 | Main | Sub category | Opens |
 |---|---|---|
@@ -58,6 +50,7 @@ Search Results
 | any | 41–44, 53–55, 67, 76–80, 82, 85, 86, 88 | **Juristic** — *Customer Profile* |
 | any | 39, 40 | **Juristic** — *Resident Juristic Customer* |
 | any | 45–52, 66 | **Juristic** — *Non-Resident Juristic Customer* |
+| either code blank | | **Customer Maintenance** — the general customer form |
 | `00` | 00, 56, 99 | nothing — these are create screens, not in this build |
 | anything else | | nothing — a message says there is no profile screen |
 
@@ -86,8 +79,8 @@ Page 1 also carries:
 
 | Button | Opens |
 |---|---|
-| Accounts | Account Information (§7) |
-| Cards | Card Management (§8) |
+| Accounts | Account Information |
+| Cards | Card Management  |
 | Heirs | Heirs / Proxy Details → Heir Details *(sub category 65)* |
 | References | Reference Details grid → Reference Details *(sub category 02 / 63)* |
 
@@ -123,7 +116,7 @@ All three headings — *Customer Profile*, *Resident Juristic Customer*,
 
 ```
 Juristic Main                       ← Back returns to Search Results
-  ├─ Accounts ─> Account Information (§7)
+  ├─ Accounts ─> Account Information 
   ├─ Owners ───> Owner / Management Details ─> Owner Details
   │
   │ Next Page                       ↑ Previous Page
@@ -134,17 +127,28 @@ Account Details  (page 2 of 2)      ← Cancel returns to Search Results
   └─ Documents ───> Documents for Sub Category
 ```
 
-**Two differences from the individual profiles:**
+---
 
-1. No Cards, Heirs or References. Owners takes their place, and is reachable
-   from both pages.
-2. Signatories open **by customer**, not by account — a juristic customer's
-   signatories span its accounts, so the grid does too, and the detail takes the
-   account from the row clicked.
+## 7. Customer Maintenance  ·  the general form
+
+A customer whose category pair is blank has nothing to pick a specialised form
+with, so both routes open the general one instead. It carries the personal
+frames and the company frames together.
+
+```
+Customer Maintenance                ← Cancel returns to Search Results
+  ├─ Account ──> Account Information
+  ├─ Card Info > Card Management
+  │
+  │ Next Page                       ↑ Previous Page
+  ▼
+Account Details                     ← the same employment, income and
+                                      ownership page the Saudi profile uses
+```
 
 ---
 
-## 7. The accounts branch
+## 8. The accounts branch
 
 Opened from a profile's **Accounts** button or from the search screen. Exit
 returns to whichever opened it; every sub-screen below returns to the grid.
@@ -156,7 +160,7 @@ Account Information  (the account grid)
   │                        ├─ SAMA History ───> SAMA Account Status History
   │                        ├─ Status History ─> Account Status History
   │                        ├─ Signatories ────> Signatory grid ─> Signatory Details
-  │                        ├─ Cards ──────────> Card Management (§8)
+  │                        ├─ Cards ──────────> Card Management 
   │                        └─ Customer Info ──> the customer profile
   │
   ├─ Cheque Book ──────> Cheque Book Requests ────> Cheque Book History
@@ -175,7 +179,7 @@ Account Information  (the account grid)
 
 ---
 
-## 8. The cards branch
+## 9. The cards branch
 
 Opened from the search screen, an individual profile's **Cards** button, or
 Account Maintenance. Exit returns to whichever opened it.
@@ -188,24 +192,22 @@ Card Management  (the card grid)
                          └─ View ─> Card Maintenance (as-of)
 ```
 
-Card Maintenance opened as-of returns to the update history, not to the grid.
-
 ---
 
-## 9. History mode
+## 10. History mode
 
 Three grids let you open a record as it stood at a chosen timestamp. The screen
 that opens is the ordinary one, read-only, with a banner showing the timestamp.
 
 | Reached from | Grid | Opens as-of |
 |---|---|---|
-| Search Results → History | Customer Update History | the profile screen from §3 |
+| Search Results → History | Customer Update History | the profile screen from |
 | Account grid → Update History | Account Update History | Account Maintenance |
 | Card grid → Update History | Card Update History | Card Maintenance |
 
 ---
 
-## 10. Where Back and Exit go
+## 11. Where Back and Exit go
 
 Return paths are remembered rather than fixed — a screen goes back to whichever
 screen opened it.

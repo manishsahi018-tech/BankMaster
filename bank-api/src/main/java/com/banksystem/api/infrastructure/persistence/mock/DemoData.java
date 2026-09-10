@@ -60,6 +60,14 @@ final class DemoData {
             int accountCount) {
 
         boolean juristic() {
+            // Blank is NOT juristic. A customer with no category at all is the
+            // frmCustomer fixture below, and it is a person: the general form
+            // shows the personal frames and the company ones together, so the
+            // fixture has to fill one of the two halves or the screen it exists
+            // to exercise renders entirely empty.
+            if (mainCategory == null || mainCategory.isBlank()) {
+                return false;
+            }
             return !"01".equals(mainCategory);
         }
 
@@ -73,12 +81,11 @@ final class DemoData {
     }
 
     /**
-     * Ten customers spanning the three profile routes EnquirySelect switches on:
-     * main category 01 + idType "I" opens the editable Saudi profile, 01 with a
-     * non-"I" idType the read-only Others profile, anything else the juristic
-     * one. The first three keep their original numbers because the profile
-     * fixtures, the verify skill's navigation map and the screenshots all
-     * reference them.
+     * Customers spanning every profile route getScreenSetNo can answer with:
+     * the Saudi profile, the Others profile, the three juristic variants, and
+     * the general customer form a blank category pair opens. The first three
+     * keep their original numbers because the profile fixtures, the verify
+     * skill's navigation map and the screenshots all reference them.
      */
     static final List<Customer> CUSTOMERS = List.of(
             new Customer("0415741", "I", "1009326404", "6642791", "", "0555877547",
@@ -198,7 +205,18 @@ final class DemoData {
                     "", "", "", "",
                     "Zainab", "Imran", "", "Siddiqui",
                     "Zainab Imran Siddiqui", "0001", "01", "63", "",
-                    "جدة", "3390", "21411", "20190408", 1));
+                    "جدة", "3390", "21411", "20190408", 1),
+            // NO CATEGORY — the only fixture that reaches frmCustomer, the
+            // general customer form (screen set '0'). getScreenSetNo is asked
+            // only when both codes carry a value; blank either side is '0',
+            // and every other fixture here carries a pair, which left that
+            // form unopenable in a local run. Both routes into a profile land
+            // on it, so this also covers the history route's copy of the rule.
+            new Customer("0427004", "I", "1077553311", "6634472", "", "0559043128",
+                    "طارق", "ناصر", "فهد", "الشمري",
+                    "Tariq", "Nasser", "Fahd", "Al-Shammari",
+                    "طارق ناصر فهد الشمري", "0127", "", "", "",
+                    "الرياض", "5512", "11564", "20150927", 2));
 
     private static final Map<String, Customer> BY_CUST_NO =
             CUSTOMERS.stream().collect(java.util.stream.Collectors.toMap(Customer::custNo, c -> c));

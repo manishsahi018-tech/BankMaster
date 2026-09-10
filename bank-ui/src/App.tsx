@@ -44,6 +44,7 @@ import SignatoryGrid from './screens/SignatoryGrid.tsx'
 import SignatoryDetail from './screens/SignatoryDetail.tsx'
 import JuristicMain from './screens/JuristicMain.tsx'
 import JuristicAccountInfo from './screens/JuristicAccountInfo.tsx'
+import CustomerGeneric from './screens/CustomerGeneric.tsx'
 import IndividualOthers from './screens/IndividualOthers.tsx'
 import IndividualOthersAcctInfo from './screens/IndividualOthersAcctInfo.tsx'
 import IndividualOthersPage2 from './screens/IndividualOthersPage2.tsx'
@@ -414,8 +415,11 @@ export default function App() {
         <IndividualSaudi
           profile={screen.profile}
           historyAsOf={screen.historyAsOf}
+          // `from` is reset rather than left to default: go/goFetch MERGE into
+          // the previous screen state, so an earlier Accounts visit would leave
+          // its own `from` behind and send page 2's Previous Page there.
           onNextPage={() =>
-            goFetch('detail2', {}, async () => ({
+            goFetch('detail2', { from: 'detail' }, async () => ({
               acctInfo: await api.customerAcctInfo(customer!.custNo),
             }))
           }
@@ -514,6 +518,36 @@ export default function App() {
             }))
           }
           onCancel={() => go(screen.profileFrom ?? 'results')}
+        />
+      )}
+
+      {screen.name === 'customer' && screen.profile && (
+        <CustomerGeneric
+          profile={screen.profile}
+          historyAsOf={screen.historyAsOf}
+          onAccounts={() =>
+            goFetch('accounts', { from: 'customer' }, async () => {
+              const _r = await api.accounts(customer!.custNo)
+              return { accountRows: _r.rows, paging: { accountRows: { page: 0, hasMore: _r.hasMore } } }
+            })
+          }
+          onCards={() =>
+            goFetch('cards', { cardsFrom: 'customer' }, async () => ({
+              cardsResult: await api.searchCards({ custNo: customer!.custNo }),
+              cardsQuery: { custNo: customer!.custNo },
+              paging: { cardsResult: { page: 0, hasMore: false } },
+            }))
+          }
+          // cmdNextPage loads frmCustomer2, whose frames — education,
+          // profession, position, monthly income, segmentation, ownership —
+          // are the ones the acct-info page already renders from the same
+          // payload, so it opens that page rather than a second copy of it.
+          onNextPage={() =>
+            goFetch('detail2', { from: 'customer' }, async () => ({
+              acctInfo: await api.customerAcctInfo(customer!.custNo),
+            }))
+          }
+          onBack={() => go(screen.profileFrom ?? 'results')}
         />
       )}
 
@@ -627,7 +661,10 @@ export default function App() {
           customer={customer}
           acctInfo={screen.acctInfo}
           historyAsOf={screen.historyAsOf}
-          onPrevPage={() => go('detail')}
+          // frmCustomer reaches this page too (its cmdNextPage loads
+          // frmCustomer2, the same employment / income / ownership frames), so
+          // Previous Page returns to whichever profile opened it.
+          onPrevPage={() => go(screen.from ?? 'detail')}
           onJointAcc={() =>
             goFetch('jointHolders', { partyFrom: 'detail2' }, async () => {
               const _r = await api.jointHolders(customer!.custNo)
@@ -746,12 +783,8 @@ export default function App() {
             // message rather than opening anything (:358).
             const mainCat = String(row.samaMainCategory ?? '').trim()
             const subCat = String(row.samaSubCategory ?? '').trim()
-            // Blank either side is screenSetNo '0' in the legacy, which opens
-            // the generic frmCustomer. No screen in this build ports that form.
-            if (!mainCat || !subCat) {
-              toast.warn('This update carries no customer category, so no profile screen can be opened.')
-              return
-            }
+            // A blank either side is screen set '0' — the general customer
+            // form — which profileScreenFor resolves like any other set.
             const target = profileScreenFor(mainCat, subCat)
             if (!target) {
               toast.warn(

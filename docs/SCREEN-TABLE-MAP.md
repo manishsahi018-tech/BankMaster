@@ -1,10 +1,3 @@
-# Screen → Title → Source Tables
-
-One row for every file in `bank-ui/src/screens` (46). "Title" is the heading the
-screen shows; "Tables" are the archival views the API reads to fill it. Code /
-lookup tables used only for dropdown labels are listed once at the bottom rather
-than repeated on every row.
-
 ## Sign-on & search
 
 | # | Screen | Title on screen | Tables |
@@ -24,72 +17,73 @@ than repeated on every row.
 | 8 | IndividualOthersAcctInfo | Account Details | `stcusttab`, `staddrtab`, `stidtab` — history mode adds `stacclog` |
 | 9 | JuristicMain | Customer Profile / Resident Juristic Customer / Non-Resident Juristic Customer *(3 variants, one file)* | `stcusttab`, `stidtab`, `staddrtab` |
 | 10 | JuristicAccountInfo | Account Details | `stcusttab`, `staddrtab`, `stacclog`, `stidtab` |
-| 11 | CustUpdateHistory | Customer Update History | `stcustlog` |
-| 12 | EssentialDocuments | Documents for Sub Category | `stctltabDC`, `stcusttab`, `stcustlog` |
-| 13 | profilePageFields | *(no title — shared field blocks reused by rows 4–10)* | *(none of its own)* |
+| 11 | CustomerGeneric | Customer Maintenance | `stcusttab`, `stidtab`, `staddrtab` — history mode: `stcustlog`, `stidlog`, `staddrlog` |
+| 12 | CustUpdateHistory | Customer Update History | `stcustlog` |
+| 13 | EssentialDocuments | Documents for Sub Category | `stctltabDC`, `stcusttab`, `stcustlog` |
+| 14 | profilePageFields | *(no title — shared field blocks reused by rows 4–10)* | *(none of its own)* |
 
 ## Related parties
 
 | # | Screen | Title on screen | Tables |
 |---|---|---|---|
-| 14 | JointHolders | Joint Account Holders | `stjointtab` |
-| 15 | JointHolderDetail | Joint Holder Details | `stjointtab`, `stidtab`, `staddrtab` |
-| 16 | Owners | Owner / Management Details | `stowntab` |
-| 17 | OwnerDetail | Owner Details | `stowntab`, `stidtab`, `staddrtab` |
-| 18 | References | Reference / Legal Representative Details | `stcreftab` |
-| 19 | HeirsProxy | Heirs / Proxy Details | `stheirtab` |
-| 20 | PartyDetail | Heir Details / Reference Details | `stheirtab` or `stcreftab`, plus `stidtab`, `staddrtab` |
-| 21 | SignatoryGrid | Signatory Details | `stsigntab` |
-| 22 | SignatoryDetail | Signatory Details | `stsigntab`, `stidtab` |
+| 15 | JointHolders | Joint Account Holders | `stjointtab` |
+| 16 | JointHolderDetail | Joint Holder Details | `stjointtab`, `stidtab`, `staddrtab` |
+| 17 | Owners | Owner / Management Details | `stowntab` |
+| 18 | OwnerDetail | Owner Details | `stowntab`, `stidtab`, `staddrtab` |
+| 19 | References | Reference / Legal Representative Details | `stcreftab` |
+| 20 | HeirsProxy | Heirs / Proxy Details | `stheirtab` |
+| 21 | PartyDetail | Heir Details / Reference Details | `stheirtab` or `stcreftab`, plus `stidtab`, `staddrtab` |
+| 22 | SignatoryGrid | Signatory Details | `stsigntab` |
+| 23 | SignatoryDetail | Signatory Details | `stsigntab`, `stidtab` |
 
 ## Accounts
 
 | # | Screen | Title on screen | Tables |
 |---|---|---|---|
-| 23 | AccountInfo | Account Information | `gld0data` — plus `stctltabBD`, `stusrbrn` for the balance-enquiry restriction |
-| 24 | AccountMaintenance | Account Maintenance | `gld0data`, `stacclog`, `stcusttab`, `stctltabMM`, `stctltabXC` |
-| 25 | AcctUpdateHistory | Account Update History | `stacclog` |
-| 26 | AcctStatusHistory | Account Status History | `stacclog` |
-| 27 | SamaStatusHistory | SAMA Account Status History | `stacclog` *(the SAMA columns of it, not `stsamaacc`)* |
-| 28 | BlockedAmountBreakup | Breakup of Blocked Amount | `gld0data`, `aad0data`, `bkd0data`, `ccarrblk`, `staccblk` |
+| 24 | AccountInfo | Account Information | `gld0data` — plus `stctltabBD`, `stusrbrn` for the balance-enquiry restriction |
+| 25 | AccountMaintenance | Account Maintenance | `gld0data`, `stacclog`, `stcusttab`, `stctltabMM`, `stctltabXC` |
+| 26 | AcctUpdateHistory | Account Update History | `stacclog` |
+| 27 | AcctStatusHistory | Account Status History | `stacclog` |
+| 28 | SamaStatusHistory | SAMA Account Status History | `stacclog` *(the SAMA columns of it, not `stsamaacc`)* |
+| 29 | BlockedAmountBreakup | Breakup of Blocked Amount | `gld0data`, `aad0data`, `bkd0data`, `ccarrblk`, `staccblk` |
 
 ## Cheques & standing orders
 
 | # | Screen | Title on screen | Tables |
 |---|---|---|---|
-| 29 | ChequeBookGrid | Cheque Book Requests | `stchqtab` |
-| 30 | ChequeBookHistory | Cheque Book History | `stchqtab` |
-| 31 | StopChequeGrid | Stop Cheque Information | `pyd0data` |
-| 32 | StopChequeDetail | Stop Cheque Details | `pyd0data`, `ststchqlog` |
-| 33 | StandingOrderGrid | Standing Orders | `sod0data` |
-| 34 | StandingOrderDetail | Standing Order Detail | `sod0data`, `stsodlog`, `gld0data`, `crd0data`, `stcusttab` |
+| 30 | ChequeBookGrid | Cheque Book Requests | `stchqtab` |
+| 31 | ChequeBookHistory | Cheque Book History | `stchqtab` |
+| 32 | StopChequeGrid | Stop Cheque Information | `pyd0data` |
+| 33 | StopChequeDetail | Stop Cheque Details | `pyd0data`, `ststchqlog` |
+| 34 | StandingOrderGrid | Standing Orders | `sod0data` |
+| 35 | StandingOrderDetail | Standing Order Detail | `sod0data`, `stsodlog`, `gld0data`, `crd0data`, `stcusttab` |
 
 ## Cards
 
 | # | Screen | Title on screen | Tables |
 |---|---|---|---|
-| 35 | CardGrid | Card Management | `stcardtab`, `stcusttab` |
-| 36 | CardDetail | Card Maintenance | `stcardtab`, `stcusttab`, `stcardlog` |
-| 37 | CardUpdateHistory | Card Update History | `stcardlog` |
-| 38 | CardHistory | Card / Pin History | `stcardlog` |
+| 36 | CardGrid | Card Management | `stcardtab`, `stcusttab` |
+| 37 | CardDetail | Card Maintenance | `stcardtab`, `stcusttab`, `stcardlog` |
+| 38 | CardUpdateHistory | Card Update History | `stcardlog` |
+| 39 | CardHistory | Card / Pin History | `stcardlog` |
 
 ## Transactions & transfers
 
 | # | Screen | Title on screen | Tables |
 |---|---|---|---|
-| 39 | TransferEnquiry | Transfer Enquiry | `rid0data` |
-| 40 | TransferDetail | Transfer Details | `rid0data`, `stcusttab` *(name, `crd0data` as fallback)*, `stswiftlog` |
-| 41 | TransactionEnquiry | BM Transaction Enquiry | `thd0data` |
-| 42 | TransactionDetail | Bankmaster Transaction Detail | `thd0data`, `stcusttab` *(name, `crd0data` as fallback)* |
-| 43 | TransactionInquiry | Transaction Enquiry *(online / gateway)* | `crd0data`, `gld0data`, `thd0data`, `stctltabXC`, `stctltabBD` |
+| 40 | TransferEnquiry | Transfer Enquiry | `rid0data` |
+| 41 | TransferDetail | Transfer Details | `rid0data`, `stcusttab` *(name, `crd0data` as fallback)*, `stswiftlog` |
+| 42 | TransactionEnquiry | BM Transaction Enquiry | `thd0data` |
+| 43 | TransactionDetail | Bankmaster Transaction Detail | `thd0data`, `stcusttab` *(name, `crd0data` as fallback)* |
+| 44 | TransactionInquiry | Transaction Enquiry *(online / gateway)* | `crd0data`, `gld0data`, `thd0data`, `stctltabXC`, `stctltabBD` |
 
 ## Statements
 
 | # | Screen | Title on screen | Tables |
 |---|---|---|---|
-| 44 | OnDemandStatement | OnLine Statement Printing | `crd0data`, `gld0data`, `thd0data`, `stctltabXC` |
-| 45 | HistoricalStatement | Historical Statement Printing | `STMT_HDR`, `STMT_TXN` *(statement DB)* |
-| 46 | PdpStatement | Historical Statement Printing — PDP | `PDP_STMT_HDR`, `PDP_STMT_TXN` *(statement DB)* |
+| 45 | OnDemandStatement | OnLine Statement Printing | `crd0data`, `gld0data`, `thd0data`, `stctltabXC` |
+| 46 | HistoricalStatement | Historical Statement Printing | `BM_TMT_HEADER`, `BM_STMT_TXN` *(statement DB)* |
+| 47 | PdpStatement | Historical Statement Printing — PDP | `PDP_STMT_HEADER`, `PDP_STMT_TXN` *(statement DB)* |
 
 ## Shared lookups
 
@@ -98,6 +92,3 @@ label on the screens above:
 
 `stctltab`, `stctltabNA`, `stctltabSS`, `stctltabBD`, `stctltabXC`, `stctltabMM`,
 `stctltabDC`, `rid0data`, `brcode`
-
-Branch access control — which branches a user may enquire on — reads `stusrbrn`
-and `stctltabBD`.

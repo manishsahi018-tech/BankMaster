@@ -73,13 +73,22 @@ variants use the org-name and CR/licence columns of that same list.
 | `staddrtab` | address1, address2, poBox, zipCode, cityName, country, telOffNo, telHomeNo, faxNo, mobileNo, pagerNo, eMail | custNo + addressType `'01'` + addressNo `'0000'` |
 | `stacclog` | accNo, accStatus, statementFreq, checkBook, droppedAcc | branchCode + userId + datetime |
 
-## 11. CustUpdateHistory
+## 11. CustomerGeneric  (Customer Maintenance)
+
+The general customer form, opened when the category pair is blank. Reads exactly
+what screens 4 and 6 read — `stcusttab` for the profile, `stidtab` for the ID
+row, `staddrtab` for the address — and renders the union of the personal and
+company fields, since no category says which kind of customer this is.
+
+---
+
+## 12. CustUpdateHistory
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stcustlog` | branchCode, userId, dateTime (`datetime_bigdata`), bmUpdateStatus, supervisorId, lastUpdateDateTime, samaMainCategory, samaSubCategory | custNo |
 
-## 12. EssentialDocuments
+## 13. EssentialDocuments
 
 | Table | Fields | Keyed on |
 |---|---|---|
@@ -87,31 +96,31 @@ variants use the org-name and CR/licence columns of that same list.
 | `stcustlog` | same four, for the as-of view | custNo + datetime |
 | `stctltabDC` | documnetNo1 … documnetNo20 — the required-document list for the category | samaMainCategory + samaSubCategory |
 
-## 13. profilePageFields
+## 14. profilePageFields
 
 Shared field blocks reused by screens 4–10. No query of its own.
 
 ---
 
-## 14. JointHolders
+## 15. JointHolders
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stjointtab` | jointCustNo, aShortName, eShortName, preferredLang, idType, idNo, nationality, mobileNo, jointOpenDate, activeStatus, branchCode | custNo |
 
-## 15. JointHolderDetail
+## 16. JointHolderDetail
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stjointtab` | jointCustNo, branchCode, activeStatus, jointOpenDate, aFirstName, a2ndName, a3rdName, aLastName, aShortName, eFirstName, e2ndName, e3rdName, eLastName, eShortName, idType, idNo, idIssuedAt, idDateType, idIssueDateH/G, idExpiryDateH/G, preferredLang, nationality, titleCode, dobDateType, dobDateH/G, sexCode, vipCode, marritalStatus, noOfDependents, residentStatus, businessType, address1, address2, poBox, cityName, zipCode, country, addressType, gprsNo, unitNo, telOffAreaCode/No/Ext, telHomeAreaCode/No/Ext, faxAreaCode/No/Ext, mobileNo, pagerNo, eMail, educationCode, professionCode, positionCode, monthlyIncome, ownerShip, segmenation, employerName, department, employerPoBox, employerCity, employerZipCode | custNo + jointCustNo |
 
-## 16. Owners
+## 17. Owners
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stowntab` | ownerNo, ownerType, idType, idNo, parentCompanyName, shareHoldingPerc, ownerEnabled, branchCode, shortName (`aShortName` else `eShortName`) | custNo |
 
-## 17. OwnerDetail
+## 18. OwnerDetail
 
 | Table | Fields | Keyed on |
 |---|---|---|
@@ -119,34 +128,34 @@ Shared field blocks reused by screens 4–10. No query of its own.
 | `stidtab` | idIssuedAt, idDateType, idIssueDateH/G, idExpiryDateH/G | custNo + idCategory + idType + idNo |
 | `staddrtab` | addressType, address1, address2, poBox, cityName, zipCode, country, addrType, unitNo, telOffAreaCode/No/Ext, telHomeAreaCode/No/Ext, faxAreaCode/No/Ext, mobileNo, pagerNo, eMail | custNo + addressNo = ownerNo |
 
-## 18. References
+## 19. References
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stcreftab` | referenceNo, referenceType, referenceReqdFor, idType, idNo, activeStatus, branchCode, shortName (`aShortName` else `eShortName`) | custNo |
 
-## 19. HeirsProxy
+## 20. HeirsProxy
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stheirtab` | heirNo, heirType, idType, idNo, proxyNo, proxyIssueDateH/G, activeStatus, branchCode, shortName (`aShortName` else `eShortName`) | custNo |
 
-## 20. PartyDetail  (Heir Details / Reference Details)
+## 21. PartyDetail  (Heir Details / Reference Details)
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stheirtab` *(heir)* | heirNo, heirType, activeStatus, disabledDate, branchCode, idType, idNo, aFirstName, aSecondName, aThirdName, aLastName, aShortName, eFirstName, eSecondName, eThirdName, eLastName, eShortName, proxyNo, proxyDateType, proxyIssueDateH/G | custNo + heirNo |
 | `stcreftab` *(reference)* | referenceNo, referenceType, referenceReqdFor, activeStatus, disabledDate, branchCode, idType, idNo, and the same eight name columns *(proxy columns come back blank)* | custNo + referenceNo |
 | `stidtab` | idIssuedAt, idDateType, idIssueDateH/G, idExpiryDateH/G | custNo + idCategory + idType + idNo |
-| `staddrtab` | as screen 17 | custNo + addressNo = the party number |
+| `staddrtab` | as screen 18 | custNo + addressNo = the party number |
 
-## 21. SignatoryGrid
+## 22. SignatoryGrid
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stsigntab` | accNo, signatoryNo, idType, idNo, branchCode, signatoryShortName (`aShortName` else `eShortName`) | `SUBSTR(accNo,6,7)` = custNo, or accNo |
 
-## 22. SignatoryDetail
+## 23. SignatoryDetail
 
 | Table | Fields | Keyed on |
 |---|---|---|
@@ -155,7 +164,7 @@ Shared field blocks reused by screens 4–10. No query of its own.
 
 ---
 
-## 23. AccountInfo
+## 24. AccountInfo
 
 | Table | Fields | Keyed on |
 |---|---|---|
@@ -163,7 +172,7 @@ Shared field blocks reused by screens 4–10. No query of its own.
 | `stctltabBD` | balEnqRestrictedFlag | branchCode |
 | `stusrbrn` | noOfBranchesDefined, Branchcode1…Branchcode5 | userId |
 
-## 24. AccountMaintenance
+## 25. AccountMaintenance
 
 | Table | Fields | Keyed on |
 |---|---|---|
@@ -181,25 +190,25 @@ supervisorComments, acctDesc, userId, supervisorId, dateTime,
 lastUpdateDateTime, bmUpdateStatus — keyed on accNo + datetime, with the same
 `stcusttab` / `stctltabXC` / `stctltabMM` name lookups.
 
-## 25. AcctUpdateHistory
+## 26. AcctUpdateHistory
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stacclog` | branchCode, userId, dateTime (`datetime_bigdata`), bmUpdateStatus, supervisorId, lastUpdateDateTime | accNo |
 
-## 26. AcctStatusHistory
+## 27. AcctStatusHistory
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stacclog` | dateTime, userId, supervisorId, lastUpdateDateTime, branchCode, fromStatus, toStatus, accStatusChangeReason | accNo + statusChanged `'1'` + bmUpdateStatus `'9'` |
 
-## 27. SamaStatusHistory
+## 28. SamaStatusHistory
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stacclog` | dateTime, userId, supervisorId, lastUpdateDateTime, branchCode, fromSamaAccStatus, toSamaAccStatus *(no reason column on this type)* | accNo + samaAccStatusChanged `'1'` + bmUpdateStatus `'9'` |
 
-## 28. BlockedAmountBreakup
+## 29. BlockedAmountBreakup
 
 | Table | Fields | Keyed on |
 |---|---|---|
@@ -212,38 +221,38 @@ lastUpdateDateTime, bmUpdateStatus — keyed on accNo + datetime, with the same
 
 ---
 
-## 29. ChequeBookGrid
+## 30. ChequeBookGrid
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stchqtab` | deliveryBranchCode, custBranchCode, requestUserId, branchCode, chequeType, booksRequested, requestDateTime, requestStatus, chequeNoFrom, chequeNoTo | accNo |
 
-## 30. ChequeBookHistory
+## 31. ChequeBookHistory
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stchqtab` | requestUserId, requestDateTime, producedDate/Time/UserId, recdByBranchDate/Time/UserId, issuedToCustDate/Time/UserId, rejectedDate/Time/UserId, rejectedReason, branchCode | accNo + request date |
 
-## 31. StopChequeGrid
+## 32. StopChequeGrid
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `pyd0data` | chequeNo, amount, dateStop, payeeName, chequeFrom | accNo + recType `'CH'` |
 
-## 32. StopChequeDetail
+## 33. StopChequeDetail
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `pyd0data` | chequeNo, amount, dateStop, payeeName, chequeFrom | accNo + chequeNo + recType `'CH'` |
 | `ststchqlog` | stopChqUserId (`userId` of the latest `lastUpdateBmDate`) | accNo + first 8 of chequeNo |
 
-## 33. StandingOrderGrid
+## 34. StandingOrderGrid
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `sod0data` | sodNo, paymentType, paymentAmt, payAccNo, orderType, paymentFrequency | accNo |
 
-## 34. StandingOrderDetail
+## 35. StandingOrderDetail
 
 | Table | Fields | Keyed on |
 |---|---|---|
@@ -254,14 +263,14 @@ lastUpdateDateTime, bmUpdateStatus — keyed on accNo + datetime, with the same
 
 ---
 
-## 35. CardGrid
+## 36. CardGrid
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stcardtab` | cardNo, nameOnTheCard, firstIssueDate, expireDate, cardStatus, requestStatus, pinRequestStatus, coreAccNo, custNo | custNo / accNo / cardNo |
 | `stcusttab` | custNo, shortName, address1, poBox, cityName, zipCode, branchCode, custType, preferredLang — the header band | custNo |
 
-## 36. CardDetail
+## 37. CardDetail
 
 | Table | Fields | Keyed on |
 |---|---|---|
@@ -269,13 +278,13 @@ lastUpdateDateTime, bmUpdateStatus — keyed on accNo + datetime, with the same
 | `stcusttab` | custName (`aShortName` else `eShortName`), packageAcc | custNo |
 | `stcardlog` *(as-of mode)* | cardNo, custNo, requestStatus, customerBranch, cardType, nameOnTheCard, bmAccNo, coreAccNo, newOrUpdate | cardNo + branchCode + userId + datetime |
 
-## 37. CardUpdateHistory
+## 38. CardUpdateHistory
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `stcardlog` | branchCode, userId, dateTime, bmUpdateStatus, supervisorId, lastUpdateDateTime, requestType | cardNo |
 
-## 38. CardHistory  (Card / Pin History)
+## 39. CardHistory  (Card / Pin History)
 
 | Table | Fields | Keyed on |
 |---|---|---|
@@ -283,13 +292,13 @@ lastUpdateDateTime, bmUpdateStatus — keyed on accNo + datetime, with the same
 
 ---
 
-## 39. TransferEnquiry
+## 40. TransferEnquiry
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `rid0data` | transRef, issueDate, valueDate, drAccNo, transCurrCode, netAmt, payCurrCode, payAmt, statusFlag | crAccNo + issueDate between from/to |
 
-## 40. TransferDetail
+## 41. TransferDetail
 
 | Table | Fields | Keyed on |
 |---|---|---|
@@ -298,20 +307,20 @@ lastUpdateDateTime, bmUpdateStatus — keyed on accNo + datetime, with the same
 | `crd0data` | shortName — fallback when the customer is not in `stcusttab` | custNo |
 | `stswiftlog` | pending-update probe (bmUpdateStatus `1`/`2`) | transRefNo + issueDate |
 
-## 41. TransactionEnquiry  (BM)
+## 42. TransactionEnquiry  (BM)
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `thd0data` | transRef, postDate, valueDate, userId, transAmt, transCounter, transType | accNo + postDate between from/to |
 
-## 42. TransactionDetail
+## 43. TransactionDetail
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `thd0data` | accNo, transRef, postDate, valueDate, transAmt, transType, userId, supervisorId, statmentFlag, narrative1, narrative2, narrative3 | accNo + transRef |
-| `stcusttab` / `crd0data` | custName, as screen 40 | `SUBSTR(accNo,6,7)` |
+| `stcusttab` / `crd0data` | custName, as screen 41 | `SUBSTR(accNo,6,7)` |
 
-## 43. TransactionInquiry  (online / gateway)
+## 44. TransactionInquiry  (online / gateway)
 
 | Table | Fields | Keyed on |
 |---|---|---|
@@ -321,20 +330,20 @@ lastUpdateDateTime, bmUpdateStatus — keyed on accNo + datetime, with the same
 | `stctltabXC` | decimalPlace | currCode |
 | `thd0data` | userId, postDate, valueDate, transType, transAmt, narrative1, narrative2, narrative3, transRef, supervisorId, transCounter, statmentFlag | accNo + transCounter > pointer |
 
-## 44. OnDemandStatement
+## 45. OnDemandStatement
 
-Same reads as screen 43 (`crd0data`, `gld0data`, `stctltabBD`, `stctltabXC`,
+Same reads as screen 44 (`crd0data`, `gld0data`, `stctltabBD`, `stctltabXC`,
 `thd0data`) — the statement is the transaction list plus the customer and
 balance header.
 
-## 45. HistoricalStatement  (BM archive, statement DB)
+## 46. HistoricalStatement  (BM archive, statement DB)
 
 | Table | Fields | Keyed on |
 |---|---|---|
 | `STMT_HDR` | ACCT_NUM, STMT_DATE, BRANCH_CODE, BRANCH_NAME, ACCT_TYPE, CUST_ADR1…CUST_ADR4, CRNCY, LANG_CODE, FILE_NAME, STMT_NUM, CUST_NAME, IBAN, REF_NUM | ACCT_NUM + STMT_DATE in range |
 | `STMT_TXN` | ACCT_NUM, STMT_DATE, STMT_NUM, TXN_ORDER, TXN_BRANCH_CODE, TXN_DATE, VALUE_DATE, NARRATIVE1…NARRATIVE4, CR_AMT, DR_AMT, RUN_BAL, RUN_BAL_TYPE | ACCT_NUM + STMT_DATE in range |
 
-## 46. PdpStatement
+## 47. PdpStatement
 
 | Table | Fields | Keyed on |
 |---|---|---|
