@@ -347,11 +347,16 @@ export default function App() {
               else if (accNo) headerCustNo = accNo.padEnd(14).slice(5, 12)
               else {
                 // An unknown card is FAILURE at the isRead(ISEQUAL) on
-                // stcardtab (:5684-5692) — checkCustNo is never reached, so
-                // don't fall through to it with a blank (all-zero) custNo.
+                // stcardtab (:5684-5692), and a card whose bmAccNo[5..11] is
+                // blank is the else branch at :5710-5716 — checkCustNo is
+                // never reached either way, so don't fall through to it with
+                // a blank (all-zero) custNo.
                 const card = await api.searchCards({ cardNo: cardNo! })
-                if (!card.custNo.trim()) {
+                if (card.rows.length === 0) {
                   throw new Error('Invalid Card Number..Please Check')
+                }
+                if (!card.custNo.trim()) {
+                  throw new Error('Invalid Customer Number..Please Check')
                 }
                 headerCustNo = card.custNo.padStart(7, '0')
               }
