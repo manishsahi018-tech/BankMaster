@@ -342,11 +342,19 @@ export default function App() {
             goFetch('accounts', { from: 'search' }, async () => {
               // The header customer: typed (:5630), the 7 chars embedded at
               // accNo[5..11] (:5653), or the card's owner (:5673+).
-              const headerCustNo = custNo
-                ? custNo.padStart(7, '0')
-                : accNo
-                  ? accNo.padEnd(14).slice(5, 12)
-                  : (await api.searchCards({ cardNo: cardNo! })).custNo.padStart(7, '0')
+              let headerCustNo: string
+              if (custNo) headerCustNo = custNo.padStart(7, '0')
+              else if (accNo) headerCustNo = accNo.padEnd(14).slice(5, 12)
+              else {
+                // An unknown card is FAILURE at the isRead(ISEQUAL) on
+                // stcardtab (:5684-5692) — checkCustNo is never reached, so
+                // don't fall through to it with a blank (all-zero) custNo.
+                const card = await api.searchCards({ cardNo: cardNo! })
+                if (!card.custNo.trim()) {
+                  throw new Error('Invalid Card Number..Please Check')
+                }
+                headerCustNo = card.custNo.padStart(7, '0')
+              }
 
               // checkCustNo gate (:5631-5643, :5654-5667): an unknown customer
               // is "Invalid Customer Number..Please Check" and FAILURE — the C
