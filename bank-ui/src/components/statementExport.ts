@@ -6,7 +6,7 @@ import type {
 } from '../api.ts'
 import type { Border, Row, RowCell, Sheet, Style } from '../xlsx.ts'
 import { excelDate, excelNumber } from '../xlsx.ts'
-import { cutIntoSheets, paginateStatements, rowCost, ROW_PADDING } from './statementPages.ts'
+import { cutIntoSheets, LINES_PER_SHEET, paginateStatements, rowCost, ROW_PADDING } from './statementPages.ts'
 import { currencyLabel, monthLabel } from './StatementCard.tsx'
 import { bankLogoPng, BANK_LOGO_PNG_HEIGHT, BANK_LOGO_PNG_WIDTH } from './bankLogoPng.ts'
 import { formatPdpAccount, todayYyyymmdd } from '../schema/helpers.ts'
@@ -489,6 +489,8 @@ export interface OnlineRow {
 export function onlineStatementSheet(
   page: OnlineStatementPage,
   rows: OnlineRow[],
+  /** The account the statement was asked for — the gateway page does not carry it. */
+  accountNumber: string,
   documentName: string,
   /**
    * The OPERATOR's locale, unlike the archived sheets'. This statement is
@@ -506,6 +508,7 @@ export function onlineStatementSheet(
     rows,
     (r) => rowCost([r.txn.narrative1, r.txn.narrative2, r.txn.narrative3]),
     {
+      budget: LINES_PER_SHEET - 1, // the account number row in every header
       firstSheetReserve: 1 + ROW_PADDING, // brought forward
       lastSheetReserve: 2 * (1 + ROW_PADDING) + 1, // two totals rows and the rule
     },
@@ -558,6 +561,18 @@ export function onlineStatementSheet(
     )
     build.logoAt(headingRow)
 
+    build.push(
+      [
+        { value: '', style: BLOCK },
+        { value: build.tr('Account Number'), style: { ...LABEL, valign: 'center' } },
+        {
+          value: accountNumber,
+          span: 5,
+          style: { size: 9, bold: true, color: INK, fill: HEADER_FILL },
+        },
+      ],
+      14,
+    )
     build.push(
       [
         { value: '', style: BLOCK },

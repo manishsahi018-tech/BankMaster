@@ -34,7 +34,7 @@ import type { HistoricalStatement as Statement, HistoricalStatementLine as Line 
  * number on every sheet after it, where a sheet that runs short costs white
  * space nobody notices.
  */
-const LINES_PER_SHEET = 40
+export const LINES_PER_SHEET = 40
 
 /** Characters of narrative that fit one line of the column at print size. */
 const NARRATIVE_CHARS = 38

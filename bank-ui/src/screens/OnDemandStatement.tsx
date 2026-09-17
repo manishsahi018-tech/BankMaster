@@ -19,7 +19,7 @@ import {
 } from '../gateway.ts'
 
 import { getLocale, t } from '../i18n/index.ts'
-import { cutIntoSheets, rowCost, ROW_PADDING } from '../components/statementPages.ts'
+import { cutIntoSheets, LINES_PER_SHEET, rowCost, ROW_PADDING } from '../components/statementPages.ts'
 // Mirrors legacy frmInputform (OnlineStmt.frm, "OnLine Statement Printing") —
 // the frmAccount cmdStatement button, authority ~60/~61/~62.
 //
@@ -238,6 +238,9 @@ export default function OnDemandStatement({
     rows ?? [],
     (r) => rowCost([r.txn.narrative1, r.txn.narrative2, r.txn.narrative3]),
     {
+      // Every sheet's header is a line taller than the one the budget was
+      // measured against: the account number row under the title.
+      budget: LINES_PER_SHEET - 1,
       firstSheetReserve: 1 + ROW_PADDING,            // brought forward
       lastSheetReserve: 2 * (1 + ROW_PADDING) + 1,   // two totals rows + the rule above them
     },
@@ -269,7 +272,7 @@ export default function OnDemandStatement({
         // The operator's locale, not an archived LANG_CODE: this statement is
         // produced now, for the person on the screen, and the screen it came
         // off was in their language.
-        onlineStatementSheet(page, rows!, documentName, getLocale()),
+        onlineStatementSheet(page, rows!, account.accountNumber, documentName, getLocale()),
       )
       toast.success(t('Statement downloaded — {txns} transactions.', { txns: rows!.length }))
     } catch (e: unknown) {
@@ -418,7 +421,7 @@ export default function OnDemandStatement({
                       {/* The mark rides in the heading row, not above it: this
                           card is a fixed-height sheet box and the rows were cut
                           to fill it, so header height taken here comes off the
-                          last transaction on every sheet. The row is three
+                          last transaction on every sheet. The row is four
                           lines tall and the mark is not, so it takes none. */}
                       <div className="flex items-start gap-3">
                         <BankLogo className="mt-0.5 h-6 w-auto shrink-0" />
@@ -434,6 +437,17 @@ export default function OnDemandStatement({
                               </span>
                             )}
                           </h2>
+                          {/* The account, first thing under the title, as the
+                              legacy's "A/C No" line led its report header
+                              (OnlineStmt.frm:769). The form above names it too,
+                              but the form does not print, and a sheet with no
+                              account number on it is a statement of nothing. */}
+                          <p className="mt-0.5 text-sm text-ink">
+                            <span className="text-xs uppercase tracking-wider text-muted-soft">
+                              {t('Account Number')}
+                            </span>{' '}
+                            <span dir="ltr" className="font-medium tabular-nums">{account.accountNumber}</span>
+                          </p>
                           <p className="mt-0.5 text-sm text-muted">
                             {page.branchName} · {formatGatewayDate(page.fromDate)} to{' '}
                             {formatGatewayDate(page.toDate)}
