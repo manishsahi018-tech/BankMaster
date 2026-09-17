@@ -156,7 +156,7 @@ const AR_EXTRA: Record<string, string> = {
   // the tables we extracted, so they are translated here.
   'main category should be selected first before selecting sub category':
     'يجب اختيار التصنيف الرئيسي قبل اختيار التصنيف الفرعي',
-  'invalid search criteria..please review': 'معايير بحث غير صالحة.. الرجاء المراجعة',
+  'invalid search criteria': 'معايير بحث غير صالحة.',
   'please enter at least one search criterion before searching':
     'الرجاء إدخال معيار بحث واحد على الأقل',
   'utility bill enquiry needs a customer number or account number':
@@ -166,7 +166,7 @@ const AR_EXTRA: Record<string, string> = {
 
   // ---- Account grid (frmAccount) ------------------------------------------
   'no accounts found for this customer': 'لا توجد حسابات لهذا العميل.',
-  'empty row selected — please select an account': 'لم يتم اختيار سجل — الرجاء اختيار حساب.',
+  'please select an account': 'الرجاء اختيار حساب.',
   'not authorized to access the account details of enquiry restricted branch':
     'غير مصرح لك بالاطلاع على تفاصيل حسابات فرع مقيّد الاستفسار',
 
@@ -337,26 +337,22 @@ const AR_EXTRA: Record<string, string> = {
   'fetch transfers': 'جلب الحوالات',
   'fetch transactions first': 'اجلب الحركات أولاً',
   'enter a date range and fetch': 'أدخل نطاق التاريخ ثم نفّذ.',
-  'empty row selected — please select a standing order':
-    'لم يتم اختيار سجل — الرجاء اختيار أمر ثابت.',
-  'empty row selected — please select a transaction':
-    'لم يتم اختيار سجل — الرجاء اختيار حركة.',
-  'empty row selected — please select a transfer':
-    'لم يتم اختيار سجل — الرجاء اختيار حوالة.',
-  'account number cannot be empty..please enter': 'رقم الحساب لا يمكن أن يكون فارغاً.. الرجاء الإدخال',
-  'branch code should be 4 characters..please enter it again':
-    'رمز الفرع يجب أن يكون 4 خانات.. الرجاء إعادة الإدخال',
+  'please select a standing order': 'الرجاء اختيار أمر ثابت.',
+  'please select a transaction': 'الرجاء اختيار حركة.',
+  'please select a transfer': 'الرجاء اختيار حوالة.',
+  'please enter an account number': 'الرجاء إدخال رقم الحساب.',
+  'branch code must be 4 characters': 'رمز الفرع يجب أن يكون 4 خانات.',
   'from date is blank or incomplete from date': 'تاريخ البداية فارغ أو غير مكتمل',
   'start date is blank or incomplete': 'تاريخ البداية فارغ أو غير مكتمل',
-  'from year cannot be blank...please enter it': 'سنة البداية لا يمكن أن تكون فارغة... الرجاء الإدخال',
+  'please enter the from year': 'الرجاء إدخال سنة البداية.',
   'start month': 'شهر البداية',
   'start year': 'سنة البداية',
   '14 digits': '14 رقماً',
   '7 digits': '7 أرقام',
   // PDP's ACCT_NUM is wider than BM's — 19, not 14.
   '19 digits': '19 رقماً',
-  'customer number or account number cannot be spaces...please enter one of them':
-    'رقم العميل أو رقم الحساب لا يمكن أن يكون فارغاً... الرجاء إدخال أحدهما',
+  'please enter a customer number or an account number':
+    'الرجاء إدخال رقم العميل أو رقم الحساب.',
   'enter either a customer number or an account number, not both':
     'أدخل رقم العميل أو رقم الحساب، وليس كليهما',
   'clear the account number to search by customer':
@@ -396,11 +392,9 @@ const AR_EXTRA: Record<string, string> = {
   'statement extracted successfully': 'تم إصدار كشف الحساب بنجاح',
   'no report found for this account for a given period':
     'لا يوجد كشف لهذا الحساب خلال الفترة المحددة',
-  'account number cannot be spaces...please enter it':
-    'رقم الحساب لا يمكن أن يكون فارغاً... الرجاء الإدخال',
-  'from month cannot be blank..please enter it': 'شهر البداية لا يمكن أن يكون فارغاً.. الرجاء الإدخال',
-  'to date cannot be blank...please enter it': 'تاريخ النهاية لا يمكن أن يكون فارغاً... الرجاء الإدخال',
-  'to month cannot be blank..please enter it': 'شهر النهاية لا يمكن أن يكون فارغاً.. الرجاء الإدخال',
+  'please enter the from month': 'الرجاء إدخال شهر البداية.',
+  'please enter the to year': 'الرجاء إدخال سنة النهاية.',
+  'please enter the to month': 'الرجاء إدخال شهر النهاية.',
   'from date cannot be later than to date': 'تاريخ البداية لا يمكن أن يكون بعد تاريخ النهاية',
   'enter a valid date': 'الرجاء إدخال تاريخ صحيح',
 
@@ -410,7 +404,7 @@ const AR_EXTRA: Record<string, string> = {
   // output as a text file, so nothing on the form was ever labelled.
   // The success toast IS the legacy's, lifted out of the numbered error
   // string '9027-analysis successfully completed'.
-  'analysis successfully completed': 'انتهى التحليل بنجاح',
+  'analysis completed successfully': 'انتهى التحليل بنجاح',
   'run analysis first': 'الرجاء تنفيذ التحليل أولاً',
   'bankmaster statement analysis': 'تحليل كشف حساب BankMaster',
   // The analysis report (docs/analyse.c). Its labels are ours to translate:
@@ -748,6 +742,29 @@ const AR_EXTRA: Record<string, string> = {
   // "every type" and captioned neither that nor the RR reversals filter the
   // server accepts, so both strings are ours.
   'all types': 'كل الأنواع',
+  // ---- Validation and gateway messages, reworded from the legacy's
+  // "..Please check" style into plain sentences. One string per error,
+  // shared by the UI checks and the API's BadRequestException bodies.
+  'invalid card number': 'رقم البطاقة غير صحيح.',
+  'invalid customer number': 'رقم العميل غير صحيح.',
+  'invalid merchant number': 'رقم البائع غير صحيح.',
+  'please select a customer': 'الرجاء اختيار عميل.',
+  'please select a card': 'الرجاء اختيار بطاقة.',
+  'please select a cheque': 'الرجاء اختيار شيك.',
+  'please select a request': 'الرجاء اختيار طلب.',
+  'please select a joint holder': 'الرجاء اختيار شريك في الحساب.',
+  'please select an heir': 'الرجاء اختيار وريث.',
+  'please select an owner': 'الرجاء اختيار مالك.',
+  'please select a reference': 'الرجاء اختيار مرجع.',
+  'please select a signatory': 'الرجاء اختيار مفوض بالتوقيع.',
+  'please select an entry': 'الرجاء اختيار سجل.',
+  'please select a system (bm or pdp)': 'الرجاء اختيار النظام (BM أو PDP).',
+  'request rejected. check the account number and dates': 'تم رفض الطلب. تأكد من رقم الحساب والتواريخ.',
+  'the main account number is incorrect': 'رقم الحساب الرئيسي غير صحيح.',
+  'the contra account number is incorrect': 'رقم الحساب المقابل غير صحيح.',
+  'this account is restricted': 'هذا الحساب مقيّد.',
+  'communication error. please try again': 'خطأ في الاتصال. الرجاء المحاولة مرة أخرى.',
+
   reversals: 'العمليات العكسية',
   reversal: 'عملية عكسية',
 }

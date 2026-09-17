@@ -97,21 +97,21 @@ const LAST_ARCHIVED_MONTH = '07'
 // in frmHistStmt.frm — the errXxx(UserLang) string table is not in the source
 // dump, so those comments are the only record of the wording.
 const MSG = {
-  branchCode: 'Branch Code should be 4 characters..Please enter it again',
-  emptyAccount: 'Account number cannot be spaces...Please enter it...',
-  fromYear: 'From year cannot be blank...please enter it ..',
-  fromMonth: 'From month cannot be blank..please enter it...',
-  toYear: 'To Date cannot be blank...please enter it ..',
-  toMonth: 'To month cannot be blank..please enter it...',
+  branchCode: 'Branch code must be 4 characters.',
+  emptyAccount: 'Please enter an account number.',
+  fromYear: 'Please enter the from year.',
+  fromMonth: 'Please enter the from month.',
+  toYear: 'Please enter the to year.',
+  toMonth: 'Please enter the to month.',
   // errNoReportFound (:1414) — the legacy's outcome when every month's index
   // came back without the account.
   noReport: 'No report found for this account for a given period',
   // The status-bar text on success (:1409).
-  extracted: 'Statement extracted successfully.....',
+  extracted: 'Statement extracted successfully.',
   // errAnalysisSuccess (:532) — the status-bar text AND the MsgBox the legacy
   // raised when analyse.exe returned. Both said the same thing, so one toast
   // carries it.
-  analysisDone: 'Analysis successfully completed..',
+  analysisDone: 'Analysis completed successfully.',
 } as const
 
 const digitsOnly = (value: string) => value.replace(/\D/g, '')

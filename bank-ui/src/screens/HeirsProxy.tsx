@@ -55,7 +55,7 @@ export default function HeirsProxy({
             kind: 'primary',
             onClick: ({ row, notify }) => {
               if (!row) {
-                notify('warn', 'Empty row selected — please select a heir.')
+                notify('warn', 'Please select an heir.')
                 return
               }
               onEnquiry(row)

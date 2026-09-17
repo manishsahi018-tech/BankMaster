@@ -353,22 +353,22 @@ export default function App() {
                 // a blank (all-zero) custNo.
                 const card = await api.searchCards({ cardNo: cardNo! })
                 if (card.rows.length === 0) {
-                  throw new Error('Invalid Card Number..Please Check')
+                  throw new Error('Invalid card number.')
                 }
                 if (!card.custNo.trim()) {
-                  throw new Error('Invalid Customer Number..Please Check')
+                  throw new Error('Invalid customer number.')
                 }
                 headerCustNo = card.custNo.padStart(7, '0')
               }
 
               // checkCustNo gate (:5631-5643, :5654-5667): an unknown customer
-              // is "Invalid Customer Number..Please Check" and FAILURE — the C
+              // is "Invalid customer number." and FAILURE — the C
               // never opens the grid, and App's `customer &&` guard would
               // otherwise blank the page. A too-short account number lands here
               // too, exactly as it does in the C (accNo[5..11] = spaces).
               const cust = await api.searchCustomers({ custNo: headerCustNo })
               if (!cust.rows[0]) {
-                throw new Error('Invalid Customer Number..Please Check')
+                throw new Error('Invalid customer number.')
               }
 
               // accNo  -> index 1 + isRead(ISEQUAL): THAT account only, and an

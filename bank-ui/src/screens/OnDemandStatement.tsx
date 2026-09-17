@@ -53,7 +53,7 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0
 
 // Legacy message text, from the inline comments beside each MsgBox.
 const MSG = {
-  emptyAccount: 'Account Number cannot be empty..Please enter',
+  emptyAccount: 'Please enter an account number.',
   invalidFromDate: 'From Date is blank or Incomplete From Date',
   invalidToDate: 'To_Date is blank or Incomplete To Date',
 } as const

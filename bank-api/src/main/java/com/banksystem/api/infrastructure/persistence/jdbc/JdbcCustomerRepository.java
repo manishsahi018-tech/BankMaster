@@ -317,7 +317,7 @@ public class JdbcCustomerRepository implements CustomerRepository {
             // check" and returns FAILURE (cbbranch.c:1574-1586).
             String cust = resolveCardCustomer(c.cardNo().trim())
                     .orElseThrow(() -> new BadRequestException(
-                            "Invalid card number entered.. Please check"));
+                            "Invalid card number."));
             return searchEquals("custNo", padCust(cust), false);
         }
         String idOrCr = hasText(c.idNo()) ? c.idNo() : c.crNo();

@@ -55,7 +55,7 @@ export default function Owners({
             kind: 'primary',
             onClick: ({ row, notify }) => {
               if (!row) {
-                notify('warn', 'Empty row selected — please select an owner.')
+                notify('warn', 'Please select an owner.')
                 return
               }
               onEnquiry(row)

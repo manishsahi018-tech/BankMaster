@@ -64,7 +64,7 @@ export default function JointHolders({
               kind: 'primary',
               onClick: ({ row, notify }) => {
                 if (!row) {
-                  notify('warn', 'Empty row selected — please select a joint holder.')
+                  notify('warn', 'Please select a joint holder.')
                   return
                 }
                 onEnquiry(row)

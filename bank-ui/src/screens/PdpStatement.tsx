@@ -82,17 +82,17 @@ const LAST_ARCHIVED_MONTH = '07'
 const ACCOUNT_LENGTH = 19
 
 const MSG = {
-  branchCode: 'Branch Code should be 4 characters..Please enter it again',
-  fromYear: 'From year cannot be blank...please enter it ..',
-  fromMonth: 'From month cannot be blank..please enter it...',
-  toYear: 'To Date cannot be blank...please enter it ..',
-  toMonth: 'To month cannot be blank..please enter it...',
+  branchCode: 'Branch code must be 4 characters.',
+  fromYear: 'Please enter the from year.',
+  fromMonth: 'Please enter the from month.',
+  toYear: 'Please enter the to year.',
+  toMonth: 'Please enter the to month.',
   // New — this screen's own inputs. Worded like the ones above them.
   custOrAccount:
-    'Customer number or account number cannot be spaces...Please enter one of them...',
+    'Please enter a customer number or an account number.',
   bothKeyed: 'Enter either a customer number or an account number, not both',
   noReport: 'No report found for this account for a given period',
-  extracted: 'Statement extracted successfully.....',
+  extracted: 'Statement extracted successfully.',
 } as const
 
 const digitsOnly = (value: string) => value.replace(/\D/g, '')

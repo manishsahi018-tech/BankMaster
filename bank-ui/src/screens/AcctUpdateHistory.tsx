@@ -62,7 +62,7 @@ export default function AcctUpdateHistory({
             kind: 'primary',
             onClick: ({ row, notify }) => {
               if (!row) {
-                notify('warn', 'Empty row selected — please select an entry.')
+                notify('warn', 'Please select an entry.')
                 return
               }
               onViewDetail(row)

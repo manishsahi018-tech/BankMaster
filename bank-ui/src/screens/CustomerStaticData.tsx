@@ -326,7 +326,7 @@ export default function CustomerStaticData({
       // txtPhoneExt alone, so the C falls off the end of the chain.
       setError(
         Object.values(form).some((v) => v.trim() !== '')
-          ? 'Invalid Search Criteria..Please review'
+          ? 'Invalid search criteria.'
           : 'Please enter at least one search criterion before searching.',
       )
       return

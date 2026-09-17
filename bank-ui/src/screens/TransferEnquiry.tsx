@@ -134,7 +134,7 @@ export default function TransferEnquiry({
                 // that reads as a missing transfer rather than a missing key.
                 const ref = row?.transRef == null ? '' : String(row.transRef).trim()
                 if (!row || ref === '') {
-                  notify('warn', 'Empty row selected — please select a transfer.')
+                  notify('warn', 'Please select a transfer.')
                   return
                 }
                 api

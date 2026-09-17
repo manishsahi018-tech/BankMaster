@@ -88,7 +88,7 @@ class HistoricalStatementBranchRuleTest {
         assertThatThrownBy(() -> service.historicalStatements("01008041574100", "12", "200901",
                 "200906", "BM", false, caller))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("Branch Code should be 4 characters");
+                .hasMessageContaining("Branch code must be 4 characters");
     }
 
     @Test

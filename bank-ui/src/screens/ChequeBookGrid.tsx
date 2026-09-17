@@ -76,7 +76,7 @@ export default function ChequeBookGrid({
             label: 'History',
             onClick: ({ row, notify }) => {
               if (!row) {
-                notify('warn', 'Empty row selected — please select a request.')
+                notify('warn', 'Please select a request.')
                 return
               }
               onHistory(row)

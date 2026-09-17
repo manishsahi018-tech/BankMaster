@@ -71,7 +71,7 @@ export default function StandingOrderGrid({
             kind: 'primary',
             onClick: ({ row, notify }) => {
               if (!row) {
-                notify('warn', 'Empty row selected — please select a standing order.')
+                notify('warn', 'Please select a standing order.')
                 return
               }
               onEnquiry(row)

@@ -47,7 +47,7 @@ class PdpStatementValidationTest {
     void neitherIdentifierIsRefused() {
         assertThatThrownBy(() -> generate("", ""))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("Please enter one of them");
+                .hasMessageContaining("customer number or an account number");
         verify(statements, never())
                 .pdpStatements(anyString(), anyString(), anyString(), anyString(), anyString());
     }
@@ -88,7 +88,7 @@ class PdpStatementValidationTest {
         // until an identifier is keyed there is nothing to check it against.
         assertThatThrownBy(() -> service.pdpStatements("12", "", "", "200901", "200906", caller))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("Please enter one of them");
+                .hasMessageContaining("customer number or an account number");
     }
 
     @Test
@@ -98,7 +98,7 @@ class PdpStatementValidationTest {
         assertThatThrownBy(() ->
                 service.pdpStatements("12", "0001234", "", "200901", "200906", caller))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("Branch Code should be 4 characters");
+                .hasMessageContaining("Branch code must be 4 characters");
     }
 
     @Test

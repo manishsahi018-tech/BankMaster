@@ -28,7 +28,7 @@ public class OnlineEnquiryService {
     private static final String RESTRICTED_STMT_BRANCH = "0176";
 
     // Legacy message text, from the inline comments beside each MsgBox.
-    private static final String ERR_EMPTY_ACC = "Account Number cannot be empty..Please enter";
+    private static final String ERR_EMPTY_ACC = "Please enter an account number.";
     private static final String ERR_FROM_DATE = "From Date is blank or Incomplete From Date";
     private static final String ERR_TO_DATE = "To_Date is blank or Incomplete To Date";
     private static final String ERR_STAFF_ACC_STMT =
@@ -120,11 +120,11 @@ public class OnlineEnquiryService {
             return;
         }
         throw new BadRequestException(switch (status) {
-            case "03" -> "Incorrect Message sent..Check the Account Number and Dates";
-            case "05" -> "Given Main Account is incorrect...Please Check";
-            case "06" -> "Given contra Account is incorrect..Please Check";
-            case "08" -> "Restricted Account.. Please Check..";
-            case "12" -> "Communication Error occured..Try Again..";
+            case "03" -> "Request rejected. Check the account number and dates.";
+            case "05" -> "The main account number is incorrect.";
+            case "06" -> "The contra account number is incorrect.";
+            case "08" -> "This account is restricted.";
+            case "12" -> "Communication error. Please try again.";
             default -> "Error " + status + " occurred during communication";
         });
     }

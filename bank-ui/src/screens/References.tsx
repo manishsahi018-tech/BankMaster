@@ -53,7 +53,7 @@ export default function References({
             kind: 'primary',
             onClick: ({ row, notify }) => {
               if (!row) {
-                notify('warn', 'Empty row selected — please select a reference.')
+                notify('warn', 'Please select a reference.')
                 return
               }
               onEnquiry(row)

@@ -41,10 +41,10 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0
 const MSG = {
   // errSpaceAccNo — the legacy really does say "Account Number" on the merchant
   // number field; it reuses the account message rather than a merchant one.
-  emptyMerchantNo: 'Account Number cannot be empty..Please enter',
+  emptyMerchantNo: 'Please enter an account number.',
   invalidFromDate: 'From Date is blank or Incomplete From Date',
   invalidToDate: 'To_Date is blank or Incomplete To Date',
-  invalidMerchantNo: 'Invalid Merchant no.. Please check and correct....',
+  invalidMerchantNo: 'Invalid merchant number.',
   noStatement: 'No report found for this merchant for the given period',
 } as const
 

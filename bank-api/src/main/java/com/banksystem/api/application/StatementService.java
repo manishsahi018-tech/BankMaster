@@ -40,15 +40,15 @@ public class StatementService {
      * dump, so those comments are the only record of the wording.
      */
     private static final String ERR_BRANCH_CODE =
-            "Branch Code should be 4 characters..Please enter it again";
+            "Branch code must be 4 characters.";
     private static final String ERR_ACCOUNT =
-            "Account number cannot be spaces...Please enter it...";
+            "Please enter an account number.";
     private static final String ERR_FROM_YEAR =
-            "From year cannot be blank...please enter it ..";
+            "Please enter the from year.";
     private static final String ERR_FROM_MONTH =
-            "From month cannot be blank..please enter it...";
-    private static final String ERR_TO_YEAR = "To Date cannot be blank...please enter it ..";
-    private static final String ERR_TO_MONTH = "To month cannot be blank..please enter it...";
+            "Please enter the from month.";
+    private static final String ERR_TO_YEAR = "Please enter the to year.";
+    private static final String ERR_TO_MONTH = "Please enter the to month.";
     private static final String ERR_STAFF_BRANCH =
             "Not authorized to print the statement for the staff branch";
 
@@ -57,7 +57,7 @@ public class StatementService {
      * Worded like the ones that are, because it appears beside them.
      */
     private static final String ERR_CUST_OR_ACCOUNT =
-            "Customer number or account number cannot be spaces...Please enter one of them...";
+            "Please enter a customer number or an account number.";
 
     /**
      * The two identifiers are EXCLUSIVE. The screen disables one as soon as the
@@ -71,7 +71,7 @@ public class StatementService {
      * Not a legacy message — the System selector is new, so there is no MsgBox
      * to transcribe. Worded the same way as the ones that are.
      */
-    private static final String ERR_SYSTEM = "System must be BM or PDP..please select it...";
+    private static final String ERR_SYSTEM = "Please select a system (BM or PDP).";
 
     /**
      * errHistStmtNotAllowed (globalVaribles.bas:7358), verbatim — the legacy

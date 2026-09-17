@@ -255,7 +255,7 @@ export default function TransactionEnquiry({
                 // carries nothing to look one up by.
                 const ref = row?.transRef == null ? '' : String(row.transRef).trim()
                 if (!row || ref === '') {
-                  notify('warn', 'Empty row selected — please select a transaction.')
+                  notify('warn', 'Please select a transaction.')
                   return
                 }
                 api

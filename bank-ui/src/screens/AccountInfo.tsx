@@ -69,7 +69,7 @@ export default function AccountInfo({
 }) {
   const needRow = (fn: (row: any, notify: Notify) => void) => ({ row, notify }: GridButtonContext) => {
     if (!row) {
-      notify('warn', 'Empty row selected — please select an account.')
+      notify('warn', 'Please select an account.')
       return
     }
     // Every legacy row action re-checks the balance-enquiry restriction before
