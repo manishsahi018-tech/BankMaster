@@ -281,11 +281,11 @@ export default function TransactionInquiry({
         <p className="mt-4 text-xs text-muted">
           {byNumber
             ? t(
-                'Starting from transaction {trans} — the start date is ignored, and no running balance is carried (the legacy zeroes it for a mid-stream start).',
+                'Starting from transaction {trans} — the start date is ignored, and no running balance is carried for a mid-stream start.',
                 { trans: form.startTrans },
               )
             : t(
-                'Starting from the date above. The gateway supplies its own end date — the legacy sends none, because the branch PC clock could not be trusted.',
+                'Starting from the date above. The gateway supplies its own end date.',
               )}
         </p>
 

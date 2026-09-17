@@ -61,7 +61,7 @@ export default function BlockedAmountBreakup({ breakup, onExit }: { breakup: Bre
   const reason = missing.length
     ? `${missing.length === 1 ? 'This source is' : 'These sources are'} unavailable: ${missing.join(', ')}.`
     : breakup.truncated
-      ? `The list stops at the legacy cap of 31 rows, so later blocks are not shown.`
+      ? `The list stops at 31 rows, so later blocks are not shown.`
       : `The rows shown do not account for it; the cause is not recorded.`
 
   return (
@@ -88,7 +88,7 @@ export default function BlockedAmountBreakup({ breakup, onExit }: { breakup: Bre
               {reason}
             </p>
             {breakup.truncated && missing.length > 0 && (
-              <p className="mt-0.5">{t('The list also stops at the legacy cap of 31 rows.')}</p>
+              <p className="mt-0.5">{t('The list also stops at 31 rows.')}</p>
             )}
           </div>
         </div>

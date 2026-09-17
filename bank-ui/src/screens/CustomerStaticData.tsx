@@ -398,7 +398,7 @@ export default function CustomerStaticData({
 
         <SectionCard
           title="Customer Lookup"
-          description="Search by one identifier — entering an identifier clears the other criteria, as in the legacy system."
+          description="Search by one identifier — entering an identifier clears the other criteria."
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Customer No" htmlFor="customerNo">
@@ -479,7 +479,7 @@ export default function CustomerStaticData({
                   id="mobile"
                 dir="ltr"
                   maxLength={MAX_LEN.mobile}
-                  placeholder="+254 7XX XXX XXX"
+                  placeholder={t('Mobile number')}
                   value={form.mobile}
                   onChange={set('mobile')}
                 />
