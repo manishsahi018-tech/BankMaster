@@ -128,7 +128,9 @@ public class MockCustomerRepository implements CustomerRepository {
     /**
      * Name search is a case-insensitive prefix match over both scripts, which
      * is close enough to the legacy's partial-key ISGTEQ scan for a demo and
-     * lets an operator type "al" and see the Al-Otaibis.
+     * lets an operator type "al" and see the Al-Otaibis. The archival
+     * repository folds case too (JdbcCustomerRepository#namePrefix); it still
+     * differs here in searching one script, the one the input is written in.
      */
     private static boolean matchesName(CustomerSummary r, CustomerSearchCriteria c) {
         DemoData.Customer cust = DemoData.customer(r.custNo());

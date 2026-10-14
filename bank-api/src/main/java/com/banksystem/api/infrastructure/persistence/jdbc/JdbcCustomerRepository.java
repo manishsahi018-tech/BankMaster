@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -438,19 +439,17 @@ public class JdbcCustomerRepository implements CustomerRepository {
         boolean arabic = isArabic(first);
         String fCol = arabic ? "aFirstName" : "eFirstName";
         StringBuilder sql = new StringBuilder(SEARCH_COLUMNS)
-                .append("  AND  ").append(fCol).append(" LIKE CONCAT(:firstName, '%')\n");
+                .append(namePrefix(fCol, "firstName"));
         Map<String, Object> params = new HashMap<>();
         params.put("firstName", first);
         // Legacy continue-filters: second/last name prefixes, same language
         // columns as the index branch.
         if (hasText(c.secondName())) {
-            sql.append("  AND  ").append(arabic ? "a2ndName" : "e2ndName")
-                    .append(" LIKE CONCAT(:secondName, '%')\n");
+            sql.append(namePrefix(arabic ? "a2ndName" : "e2ndName", "secondName"));
             params.put("secondName", trimName(c.secondName()));
         }
         if (hasText(c.lastName())) {
-            sql.append("  AND  ").append(arabic ? "aLastName" : "eLastName")
-                    .append(" LIKE CONCAT(:lastName, '%')\n");
+            sql.append(namePrefix(arabic ? "aLastName" : "eLastName", "lastName"));
             params.put("lastName", trimName(c.lastName()));
         }
         sql.append("ORDER  BY ").append(fCol).append(", custNo\n");
@@ -462,12 +461,11 @@ public class JdbcCustomerRepository implements CustomerRepository {
         boolean arabic = isArabic(second);
         String sCol = arabic ? "a2ndName" : "e2ndName";
         StringBuilder sql = new StringBuilder(SEARCH_COLUMNS)
-                .append("  AND  ").append(sCol).append(" LIKE CONCAT(:secondName, '%')\n");
+                .append(namePrefix(sCol, "secondName"));
         Map<String, Object> params = new HashMap<>();
         params.put("secondName", second);
         if (hasText(c.lastName())) {
-            sql.append("  AND  ").append(arabic ? "aLastName" : "eLastName")
-                    .append(" LIKE CONCAT(:lastName, '%')\n");
+            sql.append(namePrefix(arabic ? "aLastName" : "eLastName", "lastName"));
             params.put("lastName", trimName(c.lastName()));
         }
         sql.append("ORDER  BY ").append(sCol).append(", custNo\n");
@@ -478,10 +476,8 @@ public class JdbcCustomerRepository implements CustomerRepository {
         String last = trimName(c.lastName());
         boolean arabic = isArabic(last);
         String lCol = arabic ? "aLastName" : "eLastName";
-        return scan(SEARCH_COLUMNS + """
-                  AND  %s LIKE CONCAT(:lastName, '%%')
-                ORDER  BY %s, custNo
-                """.formatted(lCol, lCol),
+        return scan(SEARCH_COLUMNS + namePrefix(lCol, "lastName")
+                + "ORDER  BY %s, custNo\n".formatted(lCol),
                 Map.of("lastName", last),
                 summaryMapper(arabic));
     }
@@ -1751,9 +1747,32 @@ public class JdbcCustomerRepository implements CustomerRepository {
         return ArchivalText.unquote(s);
     }
 
-    /** Name searches are prefix scans on the trailing-space-trimmed input (§1). */
+    /**
+     * A name prefix filter, matched without regard to case.
+     *
+     * <p>The archival names are stored the way the branch typed them —
+     * docs/Screens/Picture3.png shows "Hussain Saeed Abdulwahab Kadem" — and
+     * the view's LIKE compares byte for byte, so an operator who typed
+     * "hussain" got nothing back while "Hussain" worked. Both sides are
+     * upshifted here; {@link #trimName} upshifts the bind value.
+     *
+     * <p>This is a deliberate deviation: the legacy was case-sensitive too
+     * (search.bas:47 sends the name unfolded, and cbbranch.c:1780/1797 breaks
+     * the scan on a raw strncmp), and its operators simply learned the stored
+     * spelling. UPPER() also costs the column any index seek — the scan clock
+     * in {@link #scan} still flags a result it could not finish.
+     */
+    private static String namePrefix(String column, String param) {
+        return "  AND  UPPER(%s) LIKE CONCAT(:%s, '%%')\n".formatted(column, param);
+    }
+
+    /**
+     * Name searches are prefix scans on the trailing-space-trimmed input (§1),
+     * upshifted to meet the UPPER() column in {@link #namePrefix}. Arabic is
+     * unaffected by the fold, and so is {@link #isArabic}'s first-code-point test.
+     */
     private static String trimName(String s) {
-        return s == null ? "" : s.stripTrailing();
+        return s == null ? "" : s.stripTrailing().toUpperCase(Locale.ROOT);
     }
 
     /** Legacy Arabic-vs-English index choice: first character code > 127. */
