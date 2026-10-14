@@ -45,7 +45,7 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
-# ---- Claude: personal local settings (skills are kept) ----
+# ---- Editor/tooling local settings (shared skills are kept) ----
 .claude/settings.local.json
 
 # ---- Source snapshots taken by hand before a risky checkout ----

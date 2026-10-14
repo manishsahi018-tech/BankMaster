@@ -171,7 +171,7 @@ switch, not something to leave on.
 The rest of the endpoints, specified in QUERY-SPECS.md Part 2. That part calls
 them the "tier-1 missing screens" because none of them existed when it was
 written; all of them are built now — every row below is reachable in bank-ui
-(see the navigation map in `.claude/skills/verify/SKILL.md`). They are listed
+(see the navigation map in the verify skill). They are listed
 apart from the table above only because they answer to no single cbrouter
 service code, so the spec section is the reference instead:
 
