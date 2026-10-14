@@ -1,7 +1,7 @@
 package com.banksystem.api.domain.auth;
 
 /**
- * Shared-key password cipher (AES-256-CBC; {@code Base64(IV ‖ ciphertext)}). The
+ * Shared-key password cipher (AES-256-GCM; {@code Base64(IV ‖ ciphertext ‖ tag)}). The
  * bank-ui SPA derives the same key from the same passphrase and encrypts the
  * password before it leaves the browser, so the plaintext never crosses the
  * network; the login use case decrypts it here because an AD bind needs the
