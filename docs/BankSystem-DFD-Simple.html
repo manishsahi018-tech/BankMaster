@@ -1,0 +1,135 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BankSystem Flow Overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#F3F6F7; --paper:#FFFFFF; --ink:#16252E; --muted:#56686F; --rule:#D3DDE1;
+  --proc:#E3EFF3; --proc-line:#1D6A84; --store:#FBF3E4; --store-line:#A56A12;
+  --ent-line:#16252E; --flow:#3E5560; --dim:#9AA8AE; --halo:#FFFFFF;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0F171B; --paper:#152026; --ink:#E3ECEF; --muted:#93A5AC; --rule:#2A3A41;
+    --proc:#16323D; --proc-line:#5CB4D1; --store:#2E2514; --store-line:#E0A64E;
+    --ent-line:#C9D6DB; --flow:#A9BCC3; --dim:#5B6B71; --halo:#152026;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0F171B; --paper:#152026; --ink:#E3ECEF; --muted:#93A5AC; --rule:#2A3A41;
+  --proc:#16323D; --proc-line:#5CB4D1; --store:#2E2514; --store-line:#E0A64E;
+  --ent-line:#C9D6DB; --flow:#A9BCC3; --dim:#5B6B71; --halo:#152026;
+}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;padding-inline:16px;padding-block:32px 64px}
+.wrap{max-width:1180px;margin:0 auto;display:grid;gap:40px}
+header{display:grid;gap:8px;max-width:72ch}
+.eyebrow{font:500 12px/1 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--proc-line)}
+h1{font-size:30px;line-height:1.2;margin:0;font-weight:600;text-wrap:balance}
+h2{font-size:20px;margin:0;font-weight:600;text-wrap:balance}
+h3{font-size:15px;margin:0;font-weight:600}
+p{margin:0}
+.lede{color:var(--muted)}
+section{display:grid;gap:14px}
+.sechead{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.lvl{font:500 12px/1 "IBM Plex Mono",monospace;padding:5px 8px;border:1px solid var(--proc-line);color:var(--proc-line);border-radius:4px}
+.note{color:var(--muted);max-width:80ch}
+.sheet{background:var(--paper);border:1px solid var(--rule);border-radius:8px;overflow-x:auto;padding:16px}
+.sheet svg{display:block;max-width:none;height:auto}
+@media (min-width:1100px){.sheet svg{max-width:100%}}
+.legend{display:flex;flex-wrap:wrap;gap:10px 22px;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+.sw{display:inline-block;width:26px;height:16px}
+.sw.p{background:var(--proc);border:1.5px solid var(--proc-line);border-radius:4px}
+.sw.e{background:var(--paper);border:1.5px solid var(--ent-line);box-shadow:3px 3px 0 var(--rule)}
+.sw.s{background:var(--store);border:1.5px solid var(--store-line);border-right:none}
+.sw.f{height:0;border-top:1.5px solid var(--flow);width:26px}
+.sw.d{height:0;border-top:1.5px dashed var(--flow);width:26px}
+.sw.b{height:0;border-top:4px solid var(--flow);width:26px;opacity:.55}
+/* svg */
+.ent{fill:var(--paper);stroke:var(--ent-line);stroke-width:1.5}
+.ent-sh{fill:var(--rule)}
+.proc{fill:var(--proc);stroke:var(--proc-line);stroke-width:1.5}
+.pdiv{stroke:var(--proc-line);stroke-width:1}
+.dim .proc{stroke:var(--dim);stroke-dasharray:6 4}
+.dim .pdiv{stroke:var(--dim)}
+.dim .pname,.dim .pid{fill:var(--muted)}
+.store-bg{fill:var(--store)}
+.store{fill:none;stroke:var(--store-line);stroke-width:1.5}
+.flow{fill:none;stroke:var(--flow);stroke-width:1.4}
+.flow.dash{stroke-dasharray:5 4}
+.bus{stroke:var(--flow);stroke-width:4;opacity:.55;stroke-linecap:round}
+.ahd{fill:var(--flow)}
+svg text{font-family:"IBM Plex Sans",system-ui,sans-serif}
+.pid,.eid,.sid{font:500 12px "IBM Plex Mono",monospace}
+.pid{fill:var(--proc-line)} .eid{fill:var(--muted)} .sid{fill:var(--store-line)}
+.pname,.ename,.sname{font-size:14.5px;font-weight:600;fill:var(--ink)}
+.sub{font-size:12px;fill:var(--muted)}
+.flbl{font-size:12px;fill:var(--ink);paint-order:stroke;stroke:var(--halo);stroke-width:4px;stroke-linejoin:round}
+/* tables */
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:8px;background:var(--paper)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:640px}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--rule)}
+th{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:500}
+tr:last-child td{border-bottom:none}
+td code,.mono{font:13px "IBM Plex Mono",monospace}
+td:first-child{font:500 13px "IBM Plex Mono",monospace;white-space:nowrap;color:var(--proc-line)}
+.cols{display:grid;gap:40px}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">BankSystem enquiry app · data flow</div>
+    <h1>How data moves through BankSystem</h1>
+    <p class="lede">A simple view of the read-only enquiry app: who uses it, what it does, and where its data comes from.</p>
+  </header>
+
+  <div class="legend" aria-label="Legend">
+    <span><i class="sw e"></i>External entity</span>
+    <span><i class="sw p"></i>Process</span>
+    <span><i class="sw s"></i>Data store</span>
+    <span><i class="sw f"></i>Data flow</span>
+  </div>
+
+  <section id="level0">
+    <div class="sechead"><span class="lvl">Level 0</span><h2>Context diagram</h2></div>
+    <p class="note">The app only reads data. It never writes to Denodo or the statement archive.</p>
+    <div class="sheet"><svg viewBox="0 0 1040 460" width="1040" role="img" aria-label="Level 0 context diagram" xmlns="http://www.w3.org/2000/svg"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ahd"/></marker><marker id="ahs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ahd"/></marker></defs><rect x="45" y="195" width="170" height="90" class="ent-sh"/><rect x="40" y="190" width="170" height="90" class="ent"/><text x="50" y="206" class="eid" text-anchor="start">E1</text><text x="125.0" y="236.5" class="ename" text-anchor="middle">Branch operator</text><text x="125.0" y="253.5" class="sub" text-anchor="middle">web browser</text><g class="p"><rect x="390" y="150" width="230" height="170" rx="10" class="proc"/><line x1="390" y1="172" x2="620" y2="172" class="pdiv"/><text x="505.0" y="165.5" class="pid" text-anchor="middle">0</text><text x="505.0" y="233.5" class="pname" text-anchor="middle">BankSystem</text><text x="505.0" y="250.5" class="pname" text-anchor="middle">Enquiry App</text><text x="505.0" y="267.5" class="sub" text-anchor="middle">read-only</text></g><rect x="805" y="45" width="200" height="70" class="ent-sh"/><rect x="800" y="40" width="200" height="70" class="ent"/><text x="810" y="56" class="eid" text-anchor="start">E2</text><text x="900.0" y="84.0" class="ename" text-anchor="middle">Active Directory</text><rect x="805" y="205" width="200" height="70" class="ent-sh"/><rect x="800" y="200" width="200" height="70" class="ent"/><text x="810" y="216" class="eid" text-anchor="start">E3</text><text x="900.0" y="236.5" class="ename" text-anchor="middle">Denodo</text><text x="900.0" y="253.5" class="sub" text-anchor="middle">archival data</text><rect x="805" y="365" width="200" height="70" class="ent-sh"/><rect x="800" y="360" width="200" height="70" class="ent"/><text x="810" y="376" class="eid" text-anchor="start">E4</text><text x="900.0" y="396.5" class="ename" text-anchor="middle">Statement archive</text><text x="900.0" y="413.5" class="sub" text-anchor="middle">Oracle</text><path d="M210 220 L390 220" class="flow" marker-end="url(#ah)"/><text x="300" y="210" class="flbl" text-anchor="middle">login, enquiry request</text><path d="M390 250 L210 250" class="flow" marker-end="url(#ah)"/><text x="300" y="270" class="flbl" text-anchor="middle">enquiry results</text><path d="M620 180 L700 180 L700 75 L800 75" class="flow" marker-end="url(#ah)" marker-start="url(#ahs)"/><text x="708" y="120" class="flbl" text-anchor="start">login check</text><path d="M800 235 L620 235" class="flow" marker-end="url(#ah)"/><text x="710" y="215" class="flbl" text-anchor="middle">customer, account,</text><text x="710" y="229" class="flbl" text-anchor="middle">card data</text><path d="M800 395 L700 395 L700 290 L620 290" class="flow" marker-end="url(#ah)"/><text x="708" y="350" class="flbl" text-anchor="start">statements</text></svg></div>
+  </section>
+
+  <section id="level1">
+    <div class="sechead"><span class="lvl">Level 1</span><h2>Main processes</h2></div>
+    <p class="note">The operator logs in once and gets a token. Every request after that carries the token, which 2.0 checks before the enquiry runs.</p>
+    <div class="sheet"><svg viewBox="0 0 1100 540" width="1100" role="img" aria-label="Level 1 data flow diagram" xmlns="http://www.w3.org/2000/svg"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ahd"/></marker><marker id="ahs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ahd"/></marker></defs><rect x="35" y="260" width="150" height="90" class="ent-sh"/><rect x="30" y="255" width="150" height="90" class="ent"/><text x="40" y="271" class="eid" text-anchor="start">E1</text><text x="105.0" y="300.5" class="ename" text-anchor="middle">Branch</text><text x="105.0" y="317.5" class="ename" text-anchor="middle">operator</text><g class="p"><rect x="280" y="40" width="200" height="90" rx="10" class="proc"/><line x1="280" y1="62" x2="480" y2="62" class="pdiv"/><text x="380.0" y="55.5" class="pid" text-anchor="middle">1.0</text><text x="380.0" y="99.5" class="pname" text-anchor="middle">Log in</text></g><rect x="280" y="165" width="200" height="44" class="store-bg"/><path d="M480 165H280V209H480" class="store"/><line x1="324" y1="165" x2="324" y2="209" class="store"/><text x="302" y="192.0" class="sid" text-anchor="middle">D3</text><text x="402.0" y="191.5" class="sname" text-anchor="middle">Settings file</text><g class="p"><rect x="280" y="255" width="200" height="90" rx="10" class="proc"/><line x1="280" y1="277" x2="480" y2="277" class="pdiv"/><text x="380.0" y="270.5" class="pid" text-anchor="middle">2.0</text><text x="380.0" y="314.5" class="pname" text-anchor="middle">Check token</text></g><rect x="280" y="430" width="200" height="44" class="store-bg"/><path d="M480 430H280V474H480" class="store"/><line x1="324" y1="430" x2="324" y2="474" class="store"/><text x="302" y="457.0" class="sid" text-anchor="middle">D4</text><text x="402.0" y="456.5" class="sname" text-anchor="middle">Logs</text><rect x="885" y="50" width="190" height="70" class="ent-sh"/><rect x="880" y="45" width="190" height="70" class="ent"/><text x="890" y="61" class="eid" text-anchor="start">E2</text><text x="975.0" y="89.0" class="ename" text-anchor="middle">Active Directory</text><g class="p"><rect x="580" y="170" width="200" height="70" rx="10" class="proc"/><line x1="580" y1="192" x2="780" y2="192" class="pdiv"/><text x="680.0" y="185.5" class="pid" text-anchor="middle">3.0</text><text x="680.0" y="219.5" class="pname" text-anchor="middle">Customer enquiry</text></g><g class="p"><rect x="580" y="265" width="200" height="70" rx="10" class="proc"/><line x1="580" y1="287" x2="780" y2="287" class="pdiv"/><text x="680.0" y="280.5" class="pid" text-anchor="middle">4.0</text><text x="680.0" y="314.5" class="pname" text-anchor="middle">Account enquiry</text></g><g class="p"><rect x="580" y="360" width="200" height="70" rx="10" class="proc"/><line x1="580" y1="382" x2="780" y2="382" class="pdiv"/><text x="680.0" y="375.5" class="pid" text-anchor="middle">5.0</text><text x="680.0" y="409.5" class="pname" text-anchor="middle">Card enquiry</text></g><g class="p"><rect x="580" y="455" width="200" height="70" rx="10" class="proc"/><line x1="580" y1="477" x2="780" y2="477" class="pdiv"/><text x="680.0" y="470.5" class="pid" text-anchor="middle">6.0</text><text x="680.0" y="504.5" class="pname" text-anchor="middle">Statements</text></g><rect x="880" y="170" width="190" height="260" class="store-bg"/><path d="M1070 170H880V430H1070" class="store"/><line x1="924" y1="170" x2="924" y2="430" class="store"/><text x="902" y="305.0" class="sid" text-anchor="middle">D1</text><text x="997.0" y="297.0" class="sname" text-anchor="middle">Denodo</text><text x="997.0" y="314.0" class="sub" text-anchor="middle">archival data</text><rect x="880" y="465" width="190" height="50" class="store-bg"/><path d="M1070 465H880V515H1070" class="store"/><line x1="924" y1="465" x2="924" y2="515" class="store"/><text x="902" y="495.0" class="sid" text-anchor="middle">D2</text><text x="997.0" y="486.0" class="sname" text-anchor="middle">Statement</text><text x="997.0" y="503.0" class="sname" text-anchor="middle">archive</text><path d="M75 255 L75 70 L280 70" class="flow" marker-end="url(#ah)"/><text x="85" y="50" class="flbl" text-anchor="start">user ID +</text><text x="85" y="64" class="flbl" text-anchor="start">password</text><path d="M280 110 L135 110 L135 255" class="flow" marker-end="url(#ah)"/><text x="145" y="150" class="flbl" text-anchor="start">token</text><path d="M480 70 L880 70" class="flow" marker-end="url(#ah)"/><text x="680" y="62" class="flbl" text-anchor="middle">check password</text><path d="M880 100 L480 100" class="flow" marker-end="url(#ah)"/><text x="680" y="117" class="flbl" text-anchor="middle">OK / refused</text><path d="M380 165 L380 130" class="flow" marker-end="url(#ah)"/><text x="372" y="155" class="flbl" text-anchor="end">allowed users</text><path d="M975 170 L975 145 L450 145 L450 130" class="flow" marker-end="url(#ah)"/><text x="700" y="140" class="flbl" text-anchor="middle">operator profile</text><path d="M180 285 L280 285" class="flow" marker-end="url(#ah)"/><text x="230" y="277" class="flbl" text-anchor="middle">request</text><path d="M280 320 L180 320" class="flow" marker-end="url(#ah)"/><text x="230" y="337" class="flbl" text-anchor="middle">results</text><line x1="530" y1="205" x2="530" y2="490" class="bus"/><path d="M480 300 L530 300" class="flow" marker-end="url(#ah)" marker-start="url(#ahs)"/><path d="M530 205 L580 205" class="flow" marker-end="url(#ah)" marker-start="url(#ahs)"/><path d="M530 300 L580 300" class="flow" marker-end="url(#ah)" marker-start="url(#ahs)"/><path d="M530 395 L580 395" class="flow" marker-end="url(#ah)" marker-start="url(#ahs)"/><path d="M530 490 L580 490" class="flow" marker-end="url(#ah)" marker-start="url(#ahs)"/><path d="M880 205 L780 205" class="flow" marker-end="url(#ah)"/><path d="M880 300 L780 300" class="flow" marker-end="url(#ah)"/><path d="M880 395 L780 395" class="flow" marker-end="url(#ah)"/><text x="830" y="197" class="flbl" text-anchor="middle">records</text><path d="M880 505 L780 505" class="flow" marker-end="url(#ah)"/><text x="830" y="498" class="flbl" text-anchor="middle">statements</text><path d="M380 345 L380 430" class="flow" marker-end="url(#ah)"/><text x="388" y="392" class="flbl" text-anchor="start">activity + errors</text></svg></div>
+  </section>
+
+  <section>
+    <h2>Processes</h2>
+    <div class="tw"><table>
+      <thead><tr><th>ID</th><th>Process</th><th>What it does</th><th>Reads from</th></tr></thead>
+      <tbody>
+        <tr><td>1.0</td><td>Log in</td><td>Checks the password with Active Directory and the allowed-users list, then issues a token.</td><td>E2, D3, D1</td></tr>
+        <tr><td>2.0</td><td>Check token</td><td>Validates the token on every request and renews it while the operator is active.</td><td>None</td></tr>
+        <tr><td>3.0</td><td>Customer enquiry</td><td>Customer search, profile, related parties, documents and history.</td><td>D1</td></tr>
+        <tr><td>4.0</td><td>Account enquiry</td><td>Accounts, cheque books, standing orders, transfers, transactions and SADAD.</td><td>D1</td></tr>
+        <tr><td>5.0</td><td>Card enquiry</td><td>Cards, card details and card history.</td><td>D1</td></tr>
+        <tr><td>6.0</td><td>Statements</td><td>Historical and PDP statements.</td><td>D2</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Data stores</h2>
+    <div class="tw"><table>
+      <thead><tr><th>ID</th><th>Name</th><th>What it holds</th></tr></thead>
+      <tbody>
+        <tr><td>D1</td><td>Denodo</td><td>Archival customer, account and card data, plus operator profiles.</td></tr>
+        <tr><td>D2</td><td>Statement archive</td><td>Archived statements (Oracle).</td></tr>
+        <tr><td>D3</td><td>Settings file</td><td>Allowed users and the banking date.</td></tr>
+        <tr><td>D4</td><td>Logs</td><td>Application activity and error references.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+</div>
+</html>
