@@ -8,11 +8,14 @@ import com.banksystem.api.domain.model.LoginResult;
 import com.banksystem.api.domain.model.SessionInfo;
 import com.banksystem.api.domain.repository.UserProfileRepository;
 import com.banksystem.api.domain.repository.UserProfileRepository.UserProfile;
-import com.banksystem.api.infrastructure.runtimeconfig.RuntimeSettings;
 import java.time.LocalDate;
 import java.time.chrono.HijrahDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Locale;
 import java.util.Set;
+import java.util.TreeSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,13 +32,15 @@ import org.springframework.stereotype.Service;
  *   <li><b>Directory bind</b> — AUTHENTICATED proceeds; REJECTED is final (never
  *       falls back); UNAVAILABLE may fall back to the local ladder when policy
  *       allows it. This is the LoanOriginationSystem three-state pattern.</li>
- *   <li><b>Allow-list</b> — the userId must appear in the comma-separated
- *       {@code allowed-users} of the runtime configuration file (see
- *       {@link RuntimeSettings}). A directory-authenticated user who is not on the
- *       list is refused with "User is not allowed to access the application." An
- *       empty list means "allow all" (dev convenience) and logs a warning. The list
- *       is read on EVERY login, so adding or removing a user takes effect on their
- *       next attempt — the application is not restarted.</li>
+ *   <li><b>AD group</b> — when {@code bank.ldap.required-groups} names one or
+ *       more groups (comma-separated), a directory-authenticated user must be a
+ *       direct member of at least one of them; otherwise the login is refused with
+ *       "User is not allowed to access the application." Who may log in is
+ *       therefore managed entirely in Active Directory — adding or removing a user
+ *       from the group takes effect on their next login, with no change here.
+ *       A BLANK setting turns the check off: every user AD authenticates is let in.
+ *       The check applies only to the directory path; the local fallback ladder
+ *       has no group information (and is off by default when AD is enabled).</li>
  * </ol>
  *
  * <p><b>Authority (interim):</b> per the porting brief, every authenticated user
@@ -56,7 +61,7 @@ public class AuthService {
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
     /** Legacy: password older than 30 days is expired (cblogin.c:405). Fallback path only. */
     private static final long MAX_PASSWORD_AGE_DAYS = 30;
-    /** Non-000 status for the allow-list refusal; the UI shows the message verbatim. */
+    /** Non-000 status for the AD-group refusal; the UI shows the message verbatim. */
     private static final String STATUS_NOT_ALLOWED = "106";
 
     private final UserProfileRepository profiles;
@@ -64,7 +69,8 @@ public class AuthService {
     private final DirectoryAuthenticator directory;
     private final String adminAuthority;
     private final String adminBranch;
-    private final RuntimeSettings settings;
+    /** Group CNs, any one of which admits a directory user. EMPTY = no group check. */
+    private final Set<String> requiredGroups;
 
     public AuthService(
             UserProfileRepository profiles,
@@ -75,13 +81,22 @@ public class AuthService {
             @Value("${bank.auth.admin-authority:"
                     + "~00~01~02~04~06~32~41~42~43~45~50~60~61~62~81~86~87~94~}") String adminAuthority,
             @Value("${bank.auth.admin-branch:0001}") String adminBranch,
-            RuntimeSettings settings) {
+            @Value("${bank.ldap.required-groups:}") String requiredGroupsCsv) {
         this.profiles = profiles;
         this.cipher = cipher;
         this.directory = directory;
         this.adminAuthority = adminAuthority;
         this.adminBranch = adminBranch;
-        this.settings = settings;
+        this.requiredGroups = parseGroups(requiredGroupsCsv);
+        if (directory.isEnabled()) {
+            if (requiredGroups.isEmpty()) {
+                log.warn("[Login] bank.ldap.required-groups is BLANK — no AD group check: every "
+                        + "user Active Directory authenticates is allowed in.");
+            } else {
+                log.info("[Login] AD group check ON — a user must be a direct member of one of {}.",
+                        requiredGroups);
+            }
+        }
     }
 
     /**
@@ -92,7 +107,7 @@ public class AuthService {
      */
     public LoginResult login(String rawUserId, String encryptedPassword, String homeBranch) {
         // The id is used EXACTLY as the operator typed it — the AD bind, the
-        // allow-list, the stuser/stusrbrn lookups and the JWT subject all get
+        // stuser/stusrbrn lookups and the JWT subject all get
         // that same string. Nothing upcases it; the lookups that must tolerate
         // a different stored case compare case-insensitively instead.
         String userId = DirectoryUsername.bare(rawUserId);
@@ -120,13 +135,13 @@ public class AuthService {
             return auth.failure;
         }
 
-        // 2) Allow-list gate — authenticated, but is this user permitted in?
-        // Read per login, not captured at startup: the list is editable while the
-        // application runs (RuntimeSettings), so this sees the file as it is now.
-        Set<String> allowedUsers = settings.allowedUsers();
-        if (!allowedUsers.isEmpty() && !allowedUsers.contains(userId)) {
-            log.info("[Login] {} authenticated but is not in allowed-users ({}) — denied.",
-                    userId, settings.source());
+        // 2) AD group gate — authenticated, but is this user permitted in? Only
+        // the directory path carries groups; a blank setting means no check.
+        if (auth.viaDirectory && !requiredGroups.isEmpty()
+                && auth.groups.stream().noneMatch(requiredGroups::contains)) {
+            log.info("[Login] {} authenticated against Active Directory but is not a direct "
+                    + "member of any of {} (member of {}) — denied.",
+                    userId, requiredGroups, auth.groups);
             return LoginResult.failure(STATUS_NOT_ALLOWED, "User is not allowed to access the application.");
         }
 
@@ -143,7 +158,7 @@ public class AuthService {
                 case AUTHENTICATED -> {
                     log.info("[Login] {} authenticated against Active Directory (name='{}').",
                             userId, dir.displayName());
-                    return AuthResult.ok(null, dir.displayName());
+                    return AuthResult.directory(dir.displayName(), dir.groups());
                 }
                 case REJECTED -> {
                     // Authoritative refusal — never fall back to the local store.
@@ -193,7 +208,41 @@ public class AuthService {
         if (!isSystemUser(user) && isPasswordExpired(user.lastChangeDate())) {
             return AuthResult.fail(LoginResult.failure("107", "Your password has expired. Please change it"));
         }
-        return AuthResult.ok(user, ""); // local path: name comes from the profile
+        return AuthResult.local(user); // local path: name comes from the profile
+    }
+
+    /**
+     * {@code required-groups} as a case-insensitive set of group CNs. Each entry
+     * may be the bare name ({@code BankMaster-Users}) or the full DN copied from
+     * AD ({@code CN=BankMaster-Users,OU=Groups,DC=anb,DC=com,DC=sa}); a DN is
+     * reduced to its CN, because that is the form Spring reports memberships in.
+     */
+    static Set<String> parseGroups(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return Set.of();
+        }
+        Set<String> groups = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        // Names are comma-separated. A full DN contains commas itself, so DNs are
+        // separated with ';' instead ("CN=A,OU=G,DC=x;CN=B,OU=G,DC=x"); a single
+        // DN needs no separator at all.
+        String[] entries = csv.contains(";") || csv.contains("=") ? csv.split(";") : csv.split(",");
+        Arrays.stream(entries)
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(AuthService::commonName)
+                .filter(s -> !s.isEmpty())
+                .forEach(groups::add);
+        return Collections.unmodifiableSet(groups);
+    }
+
+    /** {@code CN=Name,OU=...} &rarr; {@code Name}; anything else is returned as-is. */
+    private static String commonName(String entry) {
+        if (!entry.toUpperCase(Locale.ROOT).startsWith("CN=")) {
+            return entry;
+        }
+        String rest = entry.substring(3);
+        int comma = rest.indexOf(',');
+        return (comma < 0 ? rest : rest.substring(0, comma)).trim();
     }
 
     /** Authority code ~99 marks system/installation users, exempt from expiry (cblogin.c:389). */
@@ -244,16 +293,23 @@ public class AuthService {
     }
 
     /**
-     * Internal carrier: on success, the resolved (possibly null) profile plus the
-     * AD display name (blank on the local path); otherwise a failure to return.
+     * Internal carrier. On success: which path authenticated the user, the local
+     * profile (local path only), and the AD display name and groups (directory
+     * path only). Otherwise a failure to return.
      */
-    private record AuthResult(UserProfile profile, String displayName, LoginResult failure) {
-        static AuthResult ok(UserProfile profile, String displayName) {
-            return new AuthResult(profile, displayName == null ? "" : displayName, null);
+    private record AuthResult(boolean viaDirectory, UserProfile profile, String displayName,
+            Set<String> groups, LoginResult failure) {
+        static AuthResult directory(String displayName, Set<String> groups) {
+            return new AuthResult(true, null, displayName == null ? "" : displayName,
+                    groups == null ? Set.of() : groups, null);
+        }
+
+        static AuthResult local(UserProfile profile) {
+            return new AuthResult(false, profile, "", Set.of(), null);
         }
 
         static AuthResult fail(LoginResult failure) {
-            return new AuthResult(null, "", failure);
+            return new AuthResult(false, null, "", Set.of(), failure);
         }
     }
 }

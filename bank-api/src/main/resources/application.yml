@@ -66,7 +66,7 @@ logging:
 
 # Authentication (ported from the LoanOriginationSystem auth slice): the SPA
 # sends the password AES-encrypted; the API verifies it via an Active Directory
-# bind (bank.ldap.*), then gates on the allow-list below, then issues an HS256
+# bind (bank.ldap.*), then gates on the AD group (bank.ldap.required-groups), then issues an HS256
 # JWT the UI sends as a Bearer token on every /api call (validated by Spring
 # Security's resource server — see SecurityConfig).
 bank:
@@ -95,9 +95,6 @@ bank:
     admin-authority: ${BANK_ADMIN_AUTHORITY:~00~01~02~04~06~32~41~42~43~45~50~60~61~62~81~86~87~94~}
     # Branch stamped on the session when no local profile supplies one (LDAP path).
     admin-branch: ${BANK_ADMIN_BRANCH:0001}
-    # NOTE: allowed-users is NOT here. It lives in the runtime configuration file
-    # (bank.runtime-config.file below) so the list can be changed while the
-    # application is running.
   ldap:
     # Active Directory bind authentication. OFF by default so machines with no
     # domain (local dev) keep working on the local fallback ladder. Switch on per
@@ -112,9 +109,20 @@ bank:
     # Search root. Blank = take the DC=... part of the ADsPath, or let Spring
     # derive it from the domain when the URL carries no path.
     root-dn: ${BANK_LDAP_ROOT_DN:}
-    # Allow the local fallback ladder when the directory is UNREACHABLE. A
-    # directory that answers "wrong password" is always final regardless of this.
-    fallback-to-local-users: ${BANK_LDAP_FALLBACK:true}
+    # Who may log in. Comma-separated AD group names (the CN, e.g.
+    # BankMaster-Users); a user must be a DIRECT member of at least one of them.
+    # A full DN copied from AD also works - separate several DNs with ';'
+    # because a DN contains commas itself. Membership is managed in AD: adding
+    # or removing a user from the group applies on their next login, nothing to
+    # change here. Nested groups are NOT followed (memberOf is direct only).
+    #
+    # BLANK = NO GROUP CHECK: every user AD authenticates is let in.
+    required-groups: ${BANK_LDAP_REQUIRED_GROUPS:}
+    # Allow the local fallback ladder when the directory is UNREACHABLE. OFF by
+    # default: that ladder has no AD groups, so it would bypass required-groups.
+    # A directory that answers "wrong password" is always final regardless of
+    # this. (Machines with LDAP disabled use the local ladder anyway.)
+    fallback-to-local-users: ${BANK_LDAP_FALLBACK:false}
   # SQL audit log — every /api hit and the queries that ran behind it, written
   # to a file of its own (never to the console, never mixed with the app log).
   # An entry per API call: the request line, then each statement with its SQL
@@ -143,14 +151,6 @@ bank:
     # Rolls at this size to bank-api-sql.log.1, .2, … keeping max-history of them.
     max-size-mb: ${BANK_SQL_LOG_MAX_MB:50}
     max-history: ${BANK_SQL_LOG_HISTORY:3}
-  # ------------------------------------------------------------------------
-  # RUNTIME CONFIGURATION FILE — the settings an operator may change WITHOUT
-  # restarting the API. Everything else in this file is startup configuration.
-  #
-  # Currently two settings live there:
-  #     allowed-users   who may log in
-  #     banking-date    the archival restore snapshot every query filters on
-  #
     # Also print a SUMMARY of each entry to stdout, as the application log does:
     # the request line, one line per statement (connection, rows, time) and the
     # status line. The SQL text and its bound values are never printed there;
@@ -159,10 +159,17 @@ bank:
     # and survives a pod restart only if that path is a persistent volume.
     # Set BANK_SQL_LOG_CONSOLE=false to keep even the summary off the console.
     console: ${BANK_SQL_LOG_CONSOLE:true}
+  # ------------------------------------------------------------------------
+  # RUNTIME CONFIGURATION FILE — the settings an operator may change WITHOUT
+  # restarting the API. Everything else in this file is startup configuration.
+  #
+  # Currently two settings live there:
+  #     banking-date        the archival restore snapshot every query filters on
+  #     card-banking-date   the snapshot for the two card views (blank = same)
+  #
   # It is a plain properties file next to the jar (created with a documented
   # template on first start). Edit and save it and the change is picked up
-  # within poll-millis: the next login sees the new allow-list, the next query
-  # binds the new BankingDate. A file that fails to parse is REJECTED and the
+  # within poll-millis: the next query binds the new BankingDate. A file that fails to parse is REJECTED and the
   # previously loaded values stay in force — see RuntimeSettings.
   # ------------------------------------------------------------------------
   runtime-config:

@@ -40,68 +40,62 @@ class RuntimeSettingsTest {
 
         assertThat(file).exists();
         assertThat(settings.bankingDate()).isEqualTo("2009-07-11");
-        assertThat(settings.allowedUsers()).isEmpty();
+        // The retired login allow-list is no longer in the template.
+        assertThat(file).content().doesNotContain("allowed-users");
         // The template ships the card split switched OFF: the default is one
         // date for everything, exactly as before the setting existed.
         assertThat(settings.cardBankingDate()).isEmpty();
     }
 
     @Test
-    void picksUpBothSettingsWhenTheFileIsSavedAgain() throws IOException {
+    void picksUpTheDateWhenTheFileIsSavedAgain() throws IOException {
         Path file = dir.resolve("bank-runtime.properties");
-        write(file, "allowed-users=OPER1\nbanking-date=2009-07-11\n", 1_000);
+        write(file, "banking-date=2009-07-11\n", 1_000);
         RuntimeSettings settings = watching(file);
-        assertThat(settings.allowedUsers()).containsExactly("OPER1");
+        assertThat(settings.bankingDate()).isEqualTo("2009-07-11");
 
-        write(file, "allowed-users=OPER1,ENQ1\nbanking-date=20121208\n", 2_000);
+        write(file, "banking-date=20121208\n", 2_000);
 
-        assertThat(settings.allowedUsers()).containsExactlyInAnyOrder("OPER1", "ENQ1");
         assertThat(settings.bankingDate()).isEqualTo("20121208");
     }
 
+    /** An old file that still carries the retired allow-list loads normally. */
     @Test
-    void membershipIgnoresCaseSoTheOperatorsIdIsNeverTransformed() throws IOException {
+    void aLeftoverAllowListLineIsIgnored() throws IOException {
         Path file = dir.resolve("bank-runtime.properties");
-        write(file, "allowed-users= OPER1 , enq1 \n", 1_000);
+        write(file, "allowed-users=OPER1\nbanking-date=2009-07-11\n", 1_000);
 
-        // Set.contains, not AssertJ's element comparison: the case-tolerance IS
-        // the set's comparator, and that is what the login gate calls.
-        java.util.Set<String> allowed = watching(file).allowedUsers();
-        assertThat(allowed.contains("oper1")).isTrue();
-        assertThat(allowed.contains("Enq1")).isTrue();
-        assertThat(allowed.contains("ghost")).isFalse();
+        assertThat(watching(file).bankingDate()).isEqualTo("2009-07-11");
     }
 
     @Test
     void keepsTheLoadedValuesWhenAnEditIsUnusable() throws IOException {
         Path file = dir.resolve("bank-runtime.properties");
-        write(file, "allowed-users=OPER1\nbanking-date=2009-07-11\n", 1_000);
+        write(file, "banking-date=2009-07-11\n", 1_000);
         RuntimeSettings settings = watching(file);
 
         // 11/07/2009 is neither form the views can hold — binding it would return
         // no rows on every screen, so the whole edit is refused, not half-applied.
-        write(file, "allowed-users=OPER1,ENQ1\nbanking-date=11/07/2009\n", 2_000);
+        write(file, "banking-date=11/07/2009\n", 2_000);
 
         assertThat(settings.bankingDate()).isEqualTo("2009-07-11");
-        assertThat(settings.allowedUsers()).containsExactly("OPER1");
     }
 
     @Test
     void keepsTheLoadedValuesWhenTheFileIsDeleted() throws IOException {
         Path file = dir.resolve("bank-runtime.properties");
-        write(file, "allowed-users=OPER1\nbanking-date=2009-07-11\n", 1_000);
+        write(file, "banking-date=2009-07-11\n", 1_000);
         RuntimeSettings settings = watching(file);
 
         Files.delete(file);
 
-        assertThat(settings.allowedUsers()).containsExactly("OPER1");
         assertThat(settings.bankingDate()).isEqualTo("2009-07-11");
     }
 
     @Test
     void blankBankingDateIsAllowedAndMeansResolveItFromTheDatabase() throws IOException {
         Path file = dir.resolve("bank-runtime.properties");
-        write(file, "allowed-users=OPER1\nbanking-date=\n", 1_000);
+        write(file, "banking-date=\n", 1_000);
 
         assertThat(watching(file).bankingDate()).isEmpty();
     }
@@ -134,25 +128,23 @@ class RuntimeSettingsTest {
     @Test
     void aBadCardDateRefusesTheWholeEditJustAsABadGlobalOneDoes() throws IOException {
         Path file = dir.resolve("bank-runtime.properties");
-        write(file, "allowed-users=OPER1\nbanking-date=2009-07-11\n", 1_000);
+        write(file, "banking-date=2009-07-11\n", 1_000);
         RuntimeSettings settings = watching(file);
 
         // The global date in this edit is perfectly good; the card date is not.
         // A half-applied snapshot would leave the card screens empty with no
         // error, so the candidate is discarded whole.
-        write(file, "allowed-users=OPER1,ENQ1\nbanking-date=20121208"
+        write(file, "banking-date=20121208"
                 + "\ncard-banking-date=08/12/2012\n", 2_000);
 
         assertThat(settings.cardBankingDate()).isEmpty();
         assertThat(settings.bankingDate()).isEqualTo("2009-07-11");
-        assertThat(settings.allowedUsers()).containsExactly("OPER1");
     }
 
     @Test
     void fixedInstanceNeverTouchesTheFilesystem() {
-        RuntimeSettings settings = RuntimeSettings.fixed("OPER1", "20090711");
+        RuntimeSettings settings = RuntimeSettings.fixed("20090711");
 
-        assertThat(settings.allowedUsers()).containsExactly("OPER1");
         assertThat(settings.bankingDate()).isEqualTo("20090711");
         assertThat(settings.cardBankingDate()).isEmpty();
         assertThat(dir).isEmptyDirectory();
@@ -160,7 +152,7 @@ class RuntimeSettingsTest {
 
     @Test
     void fixedInstanceCanPinTheCardViewsSeparately() {
-        RuntimeSettings settings = RuntimeSettings.fixed("OPER1", "20090711", "20121208");
+        RuntimeSettings settings = RuntimeSettings.fixed("20090711", "20121208");
 
         assertThat(settings.bankingDate()).isEqualTo("20090711");
         assertThat(settings.cardBankingDate()).isEqualTo("20121208");

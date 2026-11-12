@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Legacy service 00 logon (cblogin.c / staticData.frm cmdOk_Click) — the
- * logon rules live in AuthService (LDAP bind + allow-list); this is only the HTTP
+ * logon rules live in AuthService (LDAP bind + AD group check); this is only the HTTP
  * adapter. The password arrives AES-encrypted from the SPA. On success it issues
  * a JWT the UI sends as a Bearer token on every subsequent /api call.
  */

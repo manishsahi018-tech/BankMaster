@@ -29,7 +29,7 @@ class BankingDateProviderTest {
 
     private BankingDateProvider provider(String bankingDate, String cardBankingDate) {
         return new BankingDateProvider(
-                jdbc, RuntimeSettings.fixed("OPER1", bankingDate, cardBankingDate));
+                jdbc, RuntimeSettings.fixed(bankingDate, cardBankingDate));
     }
 
     @Test

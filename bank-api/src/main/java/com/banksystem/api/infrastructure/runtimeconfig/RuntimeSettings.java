@@ -5,11 +5,7 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.Properties;
-import java.util.Set;
-import java.util.TreeSet;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,15 +15,15 @@ import org.springframework.stereotype.Component;
 
 /**
  * The settings an operator may change <b>while the application is
- * running</b> — {@code allowed-users}, {@code banking-date} and
- * {@code card-banking-date}.
+ * running</b> — {@code banking-date} and {@code card-banking-date}. (Who may
+ * log in is no longer here: it is decided by Active Directory group membership,
+ * {@code bank.ldap.required-groups} — see {@code AuthService}.)
  *
  * <p>They do not live in {@code application.yml} (baked into the jar, read once
  * at startup) but in a plain properties file NEXT TO THE JAR, named by
  * {@code bank.runtime-config.file} and defaulting to
  * {@code bank-runtime.properties} in the working directory the API was started
- * from. Edit that file and save it: the next login sees the new allow-list and
- * the next query binds the new BankingDate. Nothing is restarted, no endpoint
+ * from. Edit that file and save it: the next query binds the new BankingDate. Nothing is restarted, no endpoint
  * is called, no session is dropped.
  *
  * <p><b>How the reload works.</b> Every read checks the file's
@@ -45,19 +41,23 @@ import org.springframework.stereotype.Component;
  * so the next save — presumably the correction — is what gets picked up.
  *
  * <p>Every accepted change is logged as {@code old -> new}, so the audit trail
- * of who was let in on which snapshot is in the ordinary application log.
+ * of which snapshot was read when is in the ordinary application log.
  *
  * <p>If the file is absent at startup it is created with the documented
  * template below; if it cannot be created (read-only directory) the API still
- * starts on empty values — an empty allow-list means "allow all" and a blank
- * banking-date falls back to {@code MAX(BankingDate)}, both loudly logged.
+ * starts on empty values — a blank banking-date falls back to
+ * {@code MAX(BankingDate)}, loudly logged.
  */
 @Component
 public class RuntimeSettings {
 
     private static final Logger log = LoggerFactory.getLogger(RuntimeSettings.class);
 
-    static final String KEY_ALLOWED_USERS = "allowed-users";
+    /**
+     * The retired login allow-list. Not read any more; a file that still sets it
+     * gets a warning, so nobody believes the list is still guarding the login.
+     */
+    static final String RETIRED_KEY_ALLOWED_USERS = "allowed-users";
     static final String KEY_BANKING_DATE = "banking-date";
 
     /**
@@ -97,16 +97,6 @@ public class RuntimeSettings {
             # credentials, JWT, ports) is startup configuration and still needs a
             # restart to change.
 
-            # Comma-separated user IDs allowed to log in. A user who authenticates
-            # against Active Directory but is not listed here is refused with
-            # "User is not allowed to access the application."
-            #
-            # LEAVING THIS BLANK ALLOWS EVERY AUTHENTICATED USER IN. That is a dev
-            # convenience only - fill it in before any real deployment.
-            #
-            #   allowed-users=DEVUSER,OPER1,ENQ1
-            allowed-users=
-
             # The archival BankingDate every query filters on - one restore
             # snapshot for the whole application.
             #
@@ -136,7 +126,7 @@ public class RuntimeSettings {
     private final Path file;
     private final long pollNanos;
 
-    private volatile Snapshot snapshot = new Snapshot(Set.of(), "", "");
+    private volatile Snapshot snapshot = new Snapshot("", "");
     /** Fingerprint of the file contents currently loaded (or last rejected). */
     private volatile long loadedStamp = Long.MIN_VALUE;
     private volatile long nextCheckAt;
@@ -154,12 +144,9 @@ public class RuntimeSettings {
         // below already states the values it produced.
         reloadIfChanged(false);
         this.nextCheckAt = System.nanoTime() + pollNanos;
-        log.info("[runtime-config] {} — allowed-users={}, banking-date='{}', "
-                + "card-banking-date={}. "
+        log.info("[runtime-config] {} — banking-date='{}', card-banking-date={}. "
                 + "Edit that file while the app runs; changes apply within {} ms.",
-                file, describe(snapshot.allowedUsers()), snapshot.bankingDate(),
-                describeCardDate(snapshot), pollMillis);
-        warnIfAllowAll(snapshot);
+                file, snapshot.bankingDate(), describeCardDate(snapshot), pollMillis);
         warnIfCardDateSplit(snapshot);
     }
 
@@ -173,28 +160,18 @@ public class RuntimeSettings {
      * A file-less instance holding the given values for the life of the object —
      * for tests, which must not depend on a file in the working directory.
      */
-    public static RuntimeSettings fixed(String allowedUsersCsv, String bankingDate) {
-        return fixed(allowedUsersCsv, bankingDate, "");
+    public static RuntimeSettings fixed(String bankingDate) {
+        return fixed(bankingDate, "");
     }
 
     /**
-     * As {@link #fixed(String, String)} with the card views pinned separately;
-     * a blank {@code cardBankingDate} means "use {@code bankingDate}".
+     * As {@link #fixed(String)} with the card views pinned separately; a blank
+     * {@code cardBankingDate} means "use {@code bankingDate}".
      */
-    public static RuntimeSettings fixed(
-            String allowedUsersCsv, String bankingDate, String cardBankingDate) {
+    public static RuntimeSettings fixed(String bankingDate, String cardBankingDate) {
         return new RuntimeSettings(new Snapshot(
-                parseAllowedUsers(allowedUsersCsv),
                 bankingDate == null ? "" : bankingDate.trim(),
                 cardBankingDate == null ? "" : cardBankingDate.trim()));
-    }
-
-    /**
-     * User IDs permitted to log in, compared case-insensitively. EMPTY means the
-     * gate is open — every authenticated user is allowed (and it has been logged).
-     */
-    public Set<String> allowedUsers() {
-        return current().allowedUsers();
     }
 
     /**
@@ -248,10 +225,8 @@ public class RuntimeSettings {
 
         if (stamp == NO_FILE) {
             log.error("[runtime-config] {} is gone — keeping the values loaded before it "
-                    + "disappeared (allowed-users={}, banking-date='{}', "
-                    + "card-banking-date={}). Restore the file.",
-                    file, describe(snapshot.allowedUsers()), snapshot.bankingDate(),
-                    describeCardDate(snapshot));
+                    + "disappeared (banking-date='{}', card-banking-date={}). Restore the file.",
+                    file, snapshot.bankingDate(), describeCardDate(snapshot));
             return;
         }
 
@@ -262,12 +237,12 @@ public class RuntimeSettings {
                 props.load(reader);
             }
             candidate = parse(props);
+            warnIfAllowListStillSet(props);
         } catch (IOException | RuntimeException e) {
             log.error("[runtime-config] {} was changed but could not be applied ({}). "
-                    + "KEEPING the previous values: allowed-users={}, banking-date='{}', "
+                    + "KEEPING the previous values: banking-date='{}', "
                     + "card-banking-date={}. Fix the file and save it again.",
-                    file, e.getMessage(), describe(snapshot.allowedUsers()),
-                    snapshot.bankingDate(), describeCardDate(snapshot));
+                    file, e.getMessage(), snapshot.bankingDate(), describeCardDate(snapshot));
             return;
         }
 
@@ -288,16 +263,10 @@ public class RuntimeSettings {
                     describeCardDate(previous), describeCardDate(candidate));
             warnIfCardDateSplit(candidate);
         }
-        if (!previous.allowedUsers().equals(candidate.allowedUsers())) {
-            log.info("[runtime-config] allowed-users: {} -> {}",
-                    describe(previous.allowedUsers()), describe(candidate.allowedUsers()));
-            warnIfAllowAll(candidate);
-        }
     }
 
     private static Snapshot parse(Properties props) {
         return new Snapshot(
-                parseAllowedUsers(props.getProperty(KEY_ALLOWED_USERS, "")),
                 validDate(props, KEY_BANKING_DATE),
                 validDate(props, KEY_CARD_BANKING_DATE));
     }
@@ -316,20 +285,18 @@ public class RuntimeSettings {
         return date;
     }
 
-    private static Set<String> parseAllowedUsers(String csv) {
-        if (csv == null || csv.isBlank()) {
-            return Set.of();
+    /**
+     * An old file (or an old deploy/ copy) may still carry {@code allowed-users}.
+     * It does nothing now, and an operator editing it must be told so rather than
+     * believe they just locked someone out.
+     */
+    private void warnIfAllowListStillSet(Properties props) {
+        if (props.containsKey(RETIRED_KEY_ALLOWED_USERS)) {
+            log.warn("[runtime-config] {} still sets '{}'. It is IGNORED: who may log in is "
+                    + "now decided by Active Directory group membership "
+                    + "(bank.ldap.required-groups). Delete the line.",
+                    file, RETIRED_KEY_ALLOWED_USERS);
         }
-        // CASE_INSENSITIVE_ORDER, not an upcased set: the operator's id is never
-        // transformed, so the membership test is what tolerates the case instead.
-        Set<String> users = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        Arrays.stream(csv.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .forEach(users::add);
-        // Collections.unmodifiableSet, not Set.copyOf: copyOf hashes, which would
-        // lose CASE_INSENSITIVE_ORDER and with it the case-tolerant membership test.
-        return Collections.unmodifiableSet(users);
     }
 
     /** last-modified and size folded together — enough to notice any save. */
@@ -357,20 +324,9 @@ public class RuntimeSettings {
             log.info("[runtime-config] created {} with the default values.", file);
         } catch (IOException e) {
             log.error("[runtime-config] could not create {} ({}). The application starts with "
-                    + "NO allow-list and no fixed banking date; create the file by hand.",
+                    + "no fixed banking date; create the file by hand.",
                     file, e.toString());
         }
-    }
-
-    private static void warnIfAllowAll(Snapshot snapshot) {
-        if (snapshot.allowedUsers().isEmpty()) {
-            log.warn("[runtime-config] allowed-users is EMPTY — ALL directory-authenticated "
-                    + "users are allowed in. Set the list before any real deployment.");
-        }
-    }
-
-    private static String describe(Set<String> users) {
-        return users.isEmpty() ? "<empty: allow all>" : users.toString();
     }
 
     private static String describeCardDate(Snapshot snapshot) {
@@ -395,6 +351,5 @@ public class RuntimeSettings {
     }
 
     /** One consistent set of values; replaced wholesale, never mutated. */
-    private record Snapshot(
-            Set<String> allowedUsers, String bankingDate, String cardBankingDate) {}
+    private record Snapshot(String bankingDate, String cardBankingDate) {}
 }

@@ -9,9 +9,9 @@ import com.banksystem.api.domain.model.LoginResult;
 import com.banksystem.api.domain.repository.UserProfileRepository;
 import com.banksystem.api.domain.repository.UserProfileRepository.UserProfile;
 import com.banksystem.api.infrastructure.auth.AesPasswordCipher;
-import com.banksystem.api.infrastructure.runtimeconfig.RuntimeSettings;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -52,11 +52,9 @@ class AuthServiceTest {
             "NEW1", user("NEW1", "~32~", "", "0", "Passw0rd", ""),
             "OLD1", user("OLD1", "~32~", "", "1", "Passw0rd", "20200101")); // >30 days -> expired
 
-    // Empty allowed-users => allow all, so these tests exercise the credential
-    // ladder without the allow-list gate interfering.
+    // No required group, so these tests exercise the credential ladder alone.
     private final AuthService auth = new AuthService(
-            new StubRepo(users), cipher, NO_DIRECTORY, "~ADMIN~", "0001",
-            RuntimeSettings.fixed("", ""));
+            new StubRepo(users), cipher, NO_DIRECTORY, "~ADMIN~", "0001", "");
 
     @Test
     void validLoginReturns000WithSession() {
@@ -77,14 +75,103 @@ class AuthServiceTest {
         assertThat(r.session().userId()).isEqualTo("oper1");
     }
 
-    /** The allow-list matches regardless of the case the operator typed. */
+    // ---- AD group check -------------------------------------------------
+
     @Test
-    void allowListMatchesAnyCase() {
+    void directoryUserInTheRequiredGroupLogsIn() {
+        AuthService gated = withDirectory("BankMaster-Users", "Domain Admins", "BankMaster-Users");
+        LoginResult r = gated.login("alice", cipher.encrypt("pw"), "");
+        assertThat(r.status()).isEqualTo("000");
+        assertThat(r.session().userName()).isEqualTo("Alice A");
+    }
+
+    @Test
+    void directoryUserOutsideTheRequiredGroupIsRefusedWith106() {
+        AuthService gated = withDirectory("BankMaster-Users", "Finance");
+        LoginResult r = gated.login("alice", cipher.encrypt("pw"), "");
+        assertThat(r.status()).isEqualTo("106");
+        assertThat(r.message()).isEqualTo("User is not allowed to access the application.");
+        assertThat(r.session()).isNull();
+    }
+
+    @Test
+    void directoryUserWithNoGroupsAtAllIsRefused() {
+        assertThat(withDirectory("BankMaster-Users").login("alice", cipher.encrypt("pw"), "").status())
+                .isEqualTo("106");
+    }
+
+    /** AD group names are case-insensitive, so the check is too. */
+    @Test
+    void groupMatchIgnoresCase() {
+        assertThat(withDirectory("bankmaster-users", "BANKMASTER-USERS")
+                .login("alice", cipher.encrypt("pw"), "").status()).isEqualTo("000");
+    }
+
+    /** Membership in ANY one of several configured groups is enough. */
+    @Test
+    void anyOneOfSeveralRequiredGroupsIsEnough() {
+        assertThat(withDirectory("Ops, BankMaster-Enquiry", "BankMaster-Enquiry")
+                .login("alice", cipher.encrypt("pw"), "").status()).isEqualTo("000");
+    }
+
+    /** Blank setting = no group check: every AD-authenticated user gets in. */
+    @Test
+    void blankRequiredGroupsLetsEveryDirectoryUserIn() {
+        assertThat(withDirectory("  ").login("alice", cipher.encrypt("pw"), "").status())
+                .isEqualTo("000");
+    }
+
+    @Test
+    void requiredGroupsAcceptNamesOrFullDistinguishedNames() {
+        assertThat(AuthService.parseGroups(" A , b ,,")).containsExactlyInAnyOrder("A", "b");
+        assertThat(AuthService.parseGroups("CN=BankMaster-Users,OU=Groups,DC=anb,DC=com"))
+                .containsExactly("BankMaster-Users");
+        assertThat(AuthService.parseGroups("CN=A,OU=G,DC=x; CN=B,OU=G,DC=x"))
+                .containsExactlyInAnyOrder("A", "B");
+        assertThat(AuthService.parseGroups("")).isEmpty();
+        assertThat(AuthService.parseGroups(null)).isEmpty();
+    }
+
+    /** A directory that answers "wrong password" is final, group check or not. */
+    @Test
+    void directoryRejectionIsStill103() {
+        AuthService gated = new AuthService(new StubRepo(users), cipher,
+                directory(DirectoryAuthResult.REJECTED), "~ADMIN~", "0001", "BankMaster-Users");
+        assertThat(gated.login("alice", cipher.encrypt("pw"), "").status()).isEqualTo("103");
+    }
+
+    /** The group check is for AD users; the local ladder (LDAP off) has no groups. */
+    @Test
+    void localLadderIsNotGroupChecked() {
         AuthService gated = new AuthService(
-                new StubRepo(users), cipher, NO_DIRECTORY, "~ADMIN~", "0001",
-                RuntimeSettings.fixed("OPER1", ""));
-        assertThat(gated.login("oper1", cipher.encrypt("Passw0rd"), "").status()).isEqualTo("000");
-        assertThat(gated.login("ghost", cipher.encrypt("Passw0rd"), "").status()).isNotEqualTo("000");
+                new StubRepo(users), cipher, NO_DIRECTORY, "~ADMIN~", "0001", "BankMaster-Users");
+        assertThat(gated.login("OPER1", cipher.encrypt("Passw0rd"), "").status()).isEqualTo("000");
+    }
+
+    private AuthService withDirectory(String requiredGroups, String... userGroups) {
+        return new AuthService(new StubRepo(users), cipher,
+                directory(DirectoryAuthResult.authenticated("Alice A", List.of(userGroups))),
+                "~ADMIN~", "0001", requiredGroups);
+    }
+
+    /** An enabled directory that answers every bind with {@code answer}. */
+    private static DirectoryAuthenticator directory(DirectoryAuthResult answer) {
+        return new DirectoryAuthenticator() {
+            @Override
+            public boolean isEnabled() {
+                return true;
+            }
+
+            @Override
+            public DirectoryAuthResult authenticate(String username, String password) {
+                return answer;
+            }
+
+            @Override
+            public boolean allowLocalFallbackWhenUnavailable() {
+                return false;
+            }
+        };
     }
 
     @Test

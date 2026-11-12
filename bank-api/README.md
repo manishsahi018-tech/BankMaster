@@ -51,17 +51,27 @@ hardcoded or committed.
         --spring.profiles.active=denodo
    ```
 
-   The restore snapshot and the login allow-list are **not** environment
-   variables: they live in `bank-runtime.properties` next to the jar, created
-   with a documented template on first start.
+   **Who may log in** is decided by Active Directory group membership. With
+   `BANK_LDAP_ENABLED=true` (plus `BANK_LDAP_URL` / `BANK_LDAP_DOMAIN`), set
+   `BANK_LDAP_REQUIRED_GROUPS` to the group's name (its CN, comma-separated for
+   several); a user must be a **direct** member of one of them, otherwise the
+   login is refused with "User is not allowed to access the application."
+   Users are added and removed in AD — nothing changes here. **Blank means no
+   group check**: every user AD authenticates is let in. When AD is
+   unreachable the login is refused (`BANK_LDAP_FALLBACK=false` by default),
+   because the local fallback has no groups to check.
+
+   The restore snapshot is **not** an environment variable: it lives in
+   `bank-runtime.properties` next to the jar, created with a documented
+   template on first start.
 
    ```properties
-   allowed-users=DEVUSER,OPER1,ENQ1   # blank = allow every authenticated user
    banking-date=2009-07-11            # blank = MAX(BankingDate) from stcusttab
    ```
 
-   Edit and save that file **while the API is running** — the next login sees
-   the new list and the next query binds the new date, within a second. Nothing
+   Edit and save that file **while the API is running** — the next query binds
+   the new date, within a second. (A leftover `allowed-users=` line is ignored
+   and logged as a warning.) Nothing
    else moved out of `application.yml`: database URLs, credentials, JWT settings
    and ports are startup configuration and still need a restart. A file that
    fails to parse (or a `banking-date` that is neither `yyyy-MM-dd` nor
@@ -142,6 +152,10 @@ query still gets its two lines, which is how you tell "no SQL was issued" from
 "the SQL returned nothing".
 
 Rolls at `BANK_SQL_LOG_MAX_MB` (50) keeping `BANK_SQL_LOG_HISTORY` (3) files.
+`BANK_SQL_LOG_CONSOLE=false` keeps even the summary off the console; the file
+is written either way. On OpenShift the console copy is what the platform log
+collector forwards (e.g. to Splunk). The file under `/app/logs` is kept across a
+pod restart only if that path is a persistent volume, not an emptyDir.
 Mechanism: `infrastructure/sqllog` — a servlet filter opens the entry,
 `SqlLoggingDataSource` proxies the datasource underneath the table prefixer.
 Only the `denodo` profile has a database, so on mock you get the request lines
@@ -152,10 +166,6 @@ an enabled log contains real customer, account and ID numbers: keep it off
 shared paths and delete it when the diagnosis is done. It is a diagnostic
 switch, not something to leave on.
 
-`BANK_SQL_LOG_CONSOLE=false` keeps even the summary off the console; the file
-is written either way. On OpenShift the console copy is what the platform log
-collector forwards (e.g. to Splunk). The file under `/app/logs` is kept across a
-pod restart only if that path is a persistent volume, not an emptyDir.
 ## Endpoint ↔ legacy service-code map
 
 | Endpoint | Legacy service (cbrouter.c) | Legacy module | Data source |
