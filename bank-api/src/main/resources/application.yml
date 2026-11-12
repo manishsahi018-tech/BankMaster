@@ -123,10 +123,10 @@ bank:
   # Studio and run, the row count and the elapsed time.
   #
   #   2026-08-19 14:22:01.412 [r-7f] >>>> GET /api/customers/0123456 user=DEVUSER
-  #   2026-08-19 14:22:01.502 [r-7f] SQL #1 · archival · 1 row · 84 ms
+  #   2026-08-19 14:22:01.502 [r-7f] SQL #1 | archival | 1 row | 84 ms
   #       SELECT c.custNo, c.name1 FROM bv_impala_stg_bankmaster_stcusttab c
   #       WHERE c.custNo = '0123456' AND c.BankingDate = '2009-07-11'
-  #   2026-08-19 14:22:01.560 [r-7f] <<<< 200 · 1 query · 148 ms
+  #   2026-08-19 14:22:01.560 [r-7f] <<<< 200 | 1 query | 148 ms
   #
   # OFF by default: no proxy is installed and no file is created. Turn it on for
   # a diagnostic run with BANK_SQL_LOG=true (it applies to the denodo profile —
@@ -151,6 +151,14 @@ bank:
   #     allowed-users   who may log in
   #     banking-date    the archival restore snapshot every query filters on
   #
+    # Also print a SUMMARY of each entry to stdout, as the application log does:
+    # the request line, one line per statement (connection, rows, time) and the
+    # status line. The SQL text and its bound values are never printed there;
+    # they are in the file only. On OpenShift stdout is what the platform log
+    # collector forwards (Splunk); the file under /app/logs is the full record
+    # and survives a pod restart only if that path is a persistent volume.
+    # Set BANK_SQL_LOG_CONSOLE=false to keep even the summary off the console.
+    console: ${BANK_SQL_LOG_CONSOLE:true}
   # It is a plain properties file next to the jar (created with a documented
   # template on first start). Edit and save it and the change is picked up
   # within poll-millis: the next login sees the new allow-list, the next query

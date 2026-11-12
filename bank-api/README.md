@@ -105,8 +105,11 @@ gracefully), and the SADAD live bill gateway.
 ## SQL audit log (which queries ran behind an API call)
 
 Off by default. Switched on, every `/api/**` call and each statement it issued
-is appended to a file of its own — never to the console, never mixed into the
-application log:
+is appended to a file of its own (never mixed into the application log). A
+summary is also printed to the console (stdout), the way the application log
+reaches both the console and `bank-api.log`: the `>>>>` request line, the
+`SQL #n` line (connection, rows, time) and the `<<<<` status line. The SQL text
+and its values are written to the file only, never to the console:
 
 ```bash
 export BANK_SQL_LOG=true
@@ -117,10 +120,10 @@ java -Dloader.path=drivers -jar bank-api-0.1.0-SNAPSHOT.jar --spring.profiles.ac
 
 ```
 2026-08-19 14:22:01.412 [r-7f] >>>> GET /api/customers/0123456/profile user=DEVUSER
-2026-08-19 14:22:01.502 [r-7f] SQL #1 · archival · 1 row · 84 ms
+2026-08-19 14:22:01.502 [r-7f] SQL #1 | archival | 1 row | 84 ms
     SELECT c.custNo, c.name1 FROM bv_impala_stg_bankmaster_stcusttab c
     WHERE c.custNo = '0123456' AND c.BankingDate = '2009-07-11'
-2026-08-19 14:22:01.560 [r-7f] <<<< 200 · 1 query · 148 ms
+2026-08-19 14:22:01.560 [r-7f] <<<< 200 | 1 query | 148 ms
 ```
 
 The SQL is what the JDBC driver received — Denodo view prefixes already
@@ -149,6 +152,10 @@ an enabled log contains real customer, account and ID numbers: keep it off
 shared paths and delete it when the diagnosis is done. It is a diagnostic
 switch, not something to leave on.
 
+`BANK_SQL_LOG_CONSOLE=false` keeps even the summary off the console; the file
+is written either way. On OpenShift the console copy is what the platform log
+collector forwards (e.g. to Splunk). The file under `/app/logs` is kept across a
+pod restart only if that path is a persistent volume, not an emptyDir.
 ## Endpoint ↔ legacy service-code map
 
 | Endpoint | Legacy service (cbrouter.c) | Legacy module | Data source |

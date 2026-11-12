@@ -2,6 +2,7 @@ package com.banksystem.api.infrastructure.sqllog;
 
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -42,6 +44,15 @@ import org.springframework.stereotype.Component;
  * whole switch. Enabled, bound parameter values are written in the CLEAR, so
  * the file holds real customer and account numbers: it is bank data, and wants
  * the same handling as a database extract.
+ *
+ * <p>When {@code bank.sql-log.console=true} (the default) a summary also goes
+ * to stdout, the way the application log reaches both the console and
+ * {@code bank-api.log}: the request line, one line per statement (connection,
+ * outcome, time) and the closing status line. The SQL text and its bound values
+ * are NOT printed there; they stay in the file only, so the console stream
+ * (forwarded off the box on OpenShift) never carries the queries. The two
+ * outputs fail independently: a file that cannot be written does not silence
+ * the console.
  */
 @Component
 public class SqlLogWriter {
@@ -71,6 +82,8 @@ public class SqlLogWriter {
     private final Path file;
     private final long maxBytes;
     private final int maxHistory;
+    /** Second copy of every block, or null when console output is off. */
+    private final PrintStream console;
     private final AtomicInteger sequence = new AtomicInteger();
 
     private Writer out;
@@ -78,17 +91,31 @@ public class SqlLogWriter {
     /** Set after an I/O failure so a broken path degrades to silence, not a storm. */
     private boolean broken;
 
+    @Autowired
     public SqlLogWriter(
             @Value("${bank.sql-log.enabled:false}") boolean enabled,
             @Value("${bank.sql-log.file:logs/bank-api-sql.log}") String file,
             @Value("${bank.sql-log.max-size-mb:50}") int maxSizeMb,
-            @Value("${bank.sql-log.max-history:3}") int maxHistory) {
+            @Value("${bank.sql-log.max-history:3}") int maxHistory,
+            @Value("${bank.sql-log.console:true}") boolean console) {
+        this(enabled, file, maxSizeMb, maxHistory, console ? System.out : null);
+    }
+
+    /** File only — what the tests that inspect the file use. */
+    SqlLogWriter(boolean enabled, String file, int maxSizeMb, int maxHistory) {
+        this(enabled, file, maxSizeMb, maxHistory, (PrintStream) null);
+    }
+
+    /** @param console where the stdout copy goes; null for file only. */
+    SqlLogWriter(boolean enabled, String file, int maxSizeMb, int maxHistory, PrintStream console) {
         this.enabled = enabled;
         this.file = Paths.get(file).toAbsolutePath();
         this.maxBytes = Math.max(1, maxSizeMb) * 1024L * 1024L;
         this.maxHistory = Math.max(0, maxHistory);
+        this.console = console;
         if (enabled) {
-            log.info("SQL audit log enabled -> {} (bound parameter values are written in the clear)", this.file);
+            log.info("SQL audit log enabled -> {}{} (bound parameter values are written in the clear)",
+                    this.file, console != null ? " + console" : "");
         }
     }
 
@@ -120,11 +147,12 @@ public class SqlLogWriter {
         StringBuilder b = new StringBuilder();
         header(b, r);
         b.append(stamp()).append(" [").append(r.id).append("] <<<< ")
-                .append(status).append(" · ")
-                .append(r.queries).append(r.queries == 1 ? " query · " : " queries · ")
+                .append(status).append(" | ")
+                .append(r.queries).append(r.queries == 1 ? " query | " : " queries | ")
                 .append(millis).append(" ms")
                 .append(System.lineSeparator());
-        write(b.toString());
+        String block = b.toString();
+        write(block, block);
     }
 
     /**
@@ -154,9 +182,11 @@ public class SqlLogWriter {
         if (n > 0) {
             b.append(" #").append(n);
         }
-        b.append(" · ").append(db).append(" · ").append(outcome)
-                .append(" · ").append(millis).append(" ms")
+        b.append(" | ").append(db).append(" | ").append(outcome)
+                .append(" | ").append(millis).append(" ms")
                 .append(System.lineSeparator());
+        // The console stops here: the SQL and its values below are file-only.
+        String consoleBlock = b.toString();
         Inlined resolved = inline(sql, args);
         for (String line : resolved.sql().strip().split("\\R")) {
             b.append("    ").append(line.stripTrailing()).append(System.lineSeparator());
@@ -171,7 +201,7 @@ public class SqlLogWriter {
             }
             b.append(System.lineSeparator());
         }
-        write(b.toString());
+        write(b.toString(), consoleBlock);
     }
 
     /**
@@ -291,10 +321,23 @@ public class SqlLogWriter {
         return LocalDateTime.now().format(TS);
     }
 
-    private synchronized void write(String block) {
+    /**
+     * @param block        what goes to the file
+     * @param consoleBlock what goes to stdout — the same block minus any SQL text
+     */
+    private synchronized void write(String block, String consoleBlock) {
         // Guarded here as well as at every caller: disabled must mean no file at
         // all, whoever calls in.
-        if (!enabled || broken) {
+        if (!enabled) {
+            return;
+        }
+        if (console != null) {
+            // Under the same monitor as the file write, so the console shows
+            // whole blocks too, never two requests' lines interleaved.
+            console.print(consoleBlock);
+            console.flush();
+        }
+        if (broken) {
             return;
         }
         try {
@@ -310,7 +353,8 @@ public class SqlLogWriter {
         } catch (IOException e) {
             broken = true;
             closeQuietly();
-            log.warn("SQL audit log disabled: cannot write {} ({})", file, e.toString());
+            log.warn("SQL audit log file disabled: cannot write {} ({}){}", file, e.toString(),
+                    console != null ? " — console output continues" : "");
         }
     }
 
