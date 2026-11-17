@@ -270,7 +270,8 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
                             .addValue("bankingDate", bankingDate.bankingDate()),
                     (rs, i) -> new Customer(
                             scrub(rs.getString("shortName")),
-                            scrub(pad(rs.getString("address1"), 30) + str(rs.getString("address2"))),
+                            scrub(pad(trim(rs.getString("address1")), 30)
+                                    + trim(rs.getString("address2"))),
                             "1".equals(trim(rs.getString("language"))) ? "1" : "0"));
         } catch (DataAccessException e) {
             log.warn("crd0data is not readable ({}); refusing the online enquiry for {}",
@@ -584,7 +585,8 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
             char ch = value.charAt(i);
             sb.append(ch < 0x20 ? ' ' : ch);
         }
-        return sb.toString().trim();
+        // The extract's quote wrapper comes off here too (ArchivalText).
+        return ArchivalText.unquote(sb.toString());
     }
 
     private static String str(String value) {
@@ -592,7 +594,7 @@ public class JdbcOnlineEnquiryRepository implements OnlineEnquiryRepository {
     }
 
     private static String trim(String value) {
-        return value == null ? "" : value.trim();
+        return ArchivalText.unquote(value);
     }
 
     private static boolean isBlank(String value) {

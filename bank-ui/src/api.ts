@@ -102,7 +102,7 @@ export interface LoginResult {
  *
  * The split is by status, not by blanket suppression, because a 4xx body is
  * usually a BUSINESS message that the legacy showed in a MsgBox and that we
- * ported deliberately — "Invalid Customer Number..Please Check", "Account
+ * ported deliberately — "Invalid customer number.", "Account
  * Number cannot be empty..Please enter". Hiding those would make the app less
  * usable than the VB6 original, so they are shown verbatim.
  *

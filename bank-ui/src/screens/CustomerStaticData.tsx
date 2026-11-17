@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { Field, TextInput, Select, SectionCard } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
-import { hasAuthority, isMerchantOnly, session } from '../session.ts'
+import { ENQUIRY_RESTRICTIONS_ENABLED, hasAuthority, isMerchantOnly, session } from '../session.ts'
 import { stcusttab, staccopencard, stcardtab } from '../schema/index.ts'
 import { maskCardNo, maxLen } from '../schema/helpers.ts'
 import type { SearchCriteria } from '../types.ts'
@@ -42,6 +42,14 @@ const SHOW_DORMANT_FACILITIES = false
 // who cannot do deleted-account statements. The dormant facilities beside them
 // remain behind SHOW_DORMANT_FACILITIES.
 const SHOW_ENQUIRIES_SERVICES = true
+
+// Merchant Statement is off the search screen. The button is the ONLY way into
+// frmMerchantStmt's port — App.tsx routes 'merchant' from nowhere else — so
+// this takes the screen out of reach rather than just tidying the row. Kept as
+// a flag rather than deleted for that reason: the screen, its ~81 gate and its
+// validation are all still there and working, and flipping this to true is the
+// whole of putting it back.
+const SHOW_MERCHANT_STATEMENT = false
 
 const secondaryBtn =
   'rounded-lg border border-edge-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft ' +
@@ -137,7 +145,12 @@ export default function CustomerStaticData({
   const canOpenAccounts = hasLookupIdentifier && (hasAuthority('~6') || hasAuthority('~32'))
   const canOpenAtmCards = hasLookupIdentifier && hasAuthority('~4')
   const enquiryOnlyUser = hasAuthority('~99')
-  const canSearchCustomer = !enquiryOnlyUser && !isMerchantOnly()
+  // With ENQUIRY_RESTRICTIONS_ENABLED off, customer search is open to every
+  // logged-in operator. The legacy gate — which shut the Search button for a
+  // ~99 installation user and for a merchant-only (~81 alone) operator — is
+  // kept on the right so turning the switch back on restores it.
+  const canSearchCustomer =
+    !ENQUIRY_RESTRICTIONS_ENABLED || (!enquiryOnlyUser && !isMerchantOnly())
 
   // Digits-only fields. The legacy rejects non-numerics on keypress with
   // errOnlyNumeralsAllowed — txtCustomerNo, txtCardNumber, txtMobileNo,
@@ -313,7 +326,7 @@ export default function CustomerStaticData({
       // txtPhoneExt alone, so the C falls off the end of the chain.
       setError(
         Object.values(form).some((v) => v.trim() !== '')
-          ? 'Invalid Search Criteria..Please review'
+          ? 'Invalid search criteria.'
           : 'Please enter at least one search criterion before searching.',
       )
       return
@@ -385,7 +398,7 @@ export default function CustomerStaticData({
 
         <SectionCard
           title="Customer Lookup"
-          description="Search by one identifier — entering an identifier clears the other criteria, as in the legacy system."
+          description="Search by one identifier — entering an identifier clears the other criteria."
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Customer No" htmlFor="customerNo">
@@ -466,7 +479,7 @@ export default function CustomerStaticData({
                   id="mobile"
                 dir="ltr"
                   maxLength={MAX_LEN.mobile}
-                  placeholder="+254 7XX XXX XXX"
+                  placeholder={t('Mobile number')}
                   value={form.mobile}
                   onChange={set('mobile')}
                 />
@@ -718,19 +731,21 @@ export default function CustomerStaticData({
                     customer context — the merchant number is keyed on the
                     statement form itself — so it belongs with the errands, not
                     with Customer / Account / ATM Cards. */}
-                <button
-                  type="button"
-                  disabled={!hasAuthority('~81')}
-                  onClick={() => onMerchant?.()}
-                  title={
-                    hasAuthority('~81')
-                      ? 'Merchant statement facilities'
-                      : 'Requires merchant statement authority (~81)'
-                  }
-                  className={secondaryBtn}
-                >
-                  {t('Merchant Statement')}
-                </button>
+                {SHOW_MERCHANT_STATEMENT && (
+                  <button
+                    type="button"
+                    disabled={!hasAuthority('~81')}
+                    onClick={() => onMerchant?.()}
+                    title={
+                      hasAuthority('~81')
+                        ? 'Merchant statement facilities'
+                        : 'Requires merchant statement authority (~81)'
+                    }
+                    className={secondaryBtn}
+                  >
+                    {t('Merchant Statement')}
+                  </button>
+                )}
               </div>
             </div>
           )}

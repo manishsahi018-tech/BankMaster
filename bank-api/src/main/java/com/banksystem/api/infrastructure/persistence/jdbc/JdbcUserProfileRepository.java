@@ -141,9 +141,9 @@ public class JdbcUserProfileRepository implements UserProfileRepository {
         return out.length() == 1 ? "" : out.toString();
     }
 
-    /** Trimmed, never-null column read (Hive CHAR padding, NULLs → ""). */
+    /** Trimmed, never-null column read (Hive CHAR padding, NULLs → ""), with
+     *  the extract's quote wrapper off it ({@link ArchivalText}). */
     private static String s(ResultSet rs, String column) throws SQLException {
-        String value = rs.getString(column);
-        return value == null ? "" : value.trim();
+        return ArchivalText.unquote(rs.getString(column));
     }
 }

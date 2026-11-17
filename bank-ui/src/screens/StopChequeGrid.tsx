@@ -50,7 +50,7 @@ export default function StopChequeGrid({
             kind: 'primary',
             onClick: ({ row, notify }) => {
               if (!row) {
-                notify('warn', 'Empty row selected — please select a cheque.')
+                notify('warn', 'Please select a cheque.')
                 return
               }
               onEnquiry(row)

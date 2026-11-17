@@ -73,7 +73,7 @@ export default function EnquirySelect({
   // the detail form by the customer's main category (individual vs juristic).
   const handleEnquiry = () => {
     if (!selectedRow) {
-      toast.warn('Empty row selected — please select a row with a value.')
+      toast.warn('Please select a customer.')
       return
     }
     onEnquiry?.(selectedRow)
@@ -82,7 +82,7 @@ export default function EnquirySelect({
   // cmdHistory_Click — opens Customer Update History for the selected row.
   const handleHistory = () => {
     if (!selectedRow) {
-      toast.warn('Empty row selected — please select a row with a value.')
+      toast.warn('Please select a customer.')
       return
     }
     onHistory?.(selectedRow)

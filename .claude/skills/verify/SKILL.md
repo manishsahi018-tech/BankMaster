@@ -112,8 +112,16 @@ Navigation map (button labels, exact text):
 - Results → **Enquiry** routes by customer type: mainCategory ≠ 01 → juristic
   profile (0417003, has **Owner / Management** + **References** + **Accounts**);
   mainCategory 01 + idType ≠ 'I' → read-only Others profile (0415742, has
-  **Heirs / Proxy**, **References**, **Joint Holders**); else the editable
-  Saudi profile (0415741, same three related-party buttons in its footer)
+  **Heirs / Proxy** and **References**); else the editable Saudi profile
+  (0415741, the same two related-party buttons in its footer). Both are
+  sub-category gated — see `partyPanelsFor` — so a customer outside 65 / 02 /
+  63 shows neither.
+- **Joint Account** is NOT on the profile: it sits on the account-details page
+  (Saudi page 2, Others page 3), enabled only when acct-info's
+  `singleJointAcc` is '1' and disabled with a tooltip otherwise. The mock
+  derives that flag from the joint-holder rows, so 0415741 / 0415742 / 0418220
+  / 0420877 / 0421905 / 0424002 have it enabled and 0415743 / 0417050 /
+  0417061 / 0419134 have it disabled.
 - Search screen → **Merchant** (needs `~81`) → Merchant Statement Printing, a
   self-contained form (no customer context). **Generate Statement** always
   fails with `MerchantSourceUnavailable` — the acquiring/POS source does not

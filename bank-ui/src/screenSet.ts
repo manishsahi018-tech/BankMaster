@@ -11,8 +11,11 @@
 // frmEnquirySelect.frm:643-666 reads both codes off the selected search row,
 // calls this, and refuses to open anything when the answer is '-1'.
 
-/** The legacy's screen-set identifiers. '-1' means "no form for this category". */
-export type ScreenSet = '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'A' | 'E' | '-1'
+/**
+ * The legacy's screen-set identifiers. '-1' means "no form for this category";
+ * '0' means "no category at all", which is the general customer form.
+ */
+export type ScreenSet = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'A' | 'E' | '-1'
 
 /** Individual, main category 01. */
 const SAUDI = ['01', '02', '59', '69', '73']
@@ -35,8 +38,11 @@ const within = (code: string, low: string, high: string) => code >= low && code 
 export function getScreenSetNo(mainCategoryCode?: string, subCategoryCode?: string): ScreenSet {
   const main = (mainCategoryCode ?? '').trim()
   const sub = (subCategoryCode ?? '').trim()
-  // frmEnquirySelect.frm:642 — the rule is only consulted when both are present.
-  if (!main || !sub) return '-1'
+  // frmEnquirySelect.frm:642 / frmCustUpdateHistory.frm:355 — both callers
+  // consult the rule ONLY when both codes carry a value, and set screenSetNo
+  // '0' otherwise. '0' is not "no form": it is frmCustomer, the general
+  // customer form, which is what an uncategorised customer opens on.
+  if (!main || !sub) return '0'
 
   if (main === '01') {
     if (SAUDI.includes(sub)) return '1'
@@ -66,6 +72,7 @@ export function getScreenSetNo(mainCategoryCode?: string, subCategoryCode?: stri
 
 /** The screen each set opens, as frmEnquirySelect.frm:814-844 dispatches them. */
 export type ProfileScreen =
+  | 'customer'            // frmCustomer — the general form, screen set '0'
   | 'detail'              // frmIndividualSaudi
   | 'individualOthers'    // frmIndividualOthers
   | 'juristic'            // frmJuristicMain
@@ -73,6 +80,7 @@ export type ProfileScreen =
   | 'juristicNonResident' // frmJuristicNonResident
 
 const SCREEN_FOR: Partial<Record<ScreenSet, ProfileScreen>> = {
+  '0': 'customer',
   '1': 'detail',
   A: 'detail',
   '2': 'individualOthers',
@@ -110,11 +118,18 @@ export function profileScreenFor(
  *                                                          not the Others one)
  *   anything else                                      -> the acct-info page
  *
- * Joint holders are absent on purpose. frmIndividualJoint is in the project
- * (statdata.vbp:69) and doJointSearch exists (search.bas:701), but no form in
- * the source shows the one or calls the other — it is a renamed frmCustomer3
- * (its grid still reads frmCustomer3Caption) whose entry point was cut. Nothing
- * in the legacy reaches it, so nothing here does either.
+ * Joint holders are not one of these panels, and not because nothing reaches
+ * them: cmdJointAcc on BOTH acct-info forms calls doJointSearch and shows
+ * frmIndividualJoint (frmIndividualSaudiAcctInfo.frm:3074/3099,
+ * frmIndividualOthersAcctInfo.frm:2448/2483). That entry point is a PAGE
+ * further in and keys on a different column — the Single/Joint A/c radio,
+ * stcusttab.singleJointAcc — so it is a button that greys out rather than a
+ * sub category that routes, and it lives on IndividualSaudiAcctInfo /
+ * IndividualOthersAcctInfo here (restored in cc1d387). The frmCustomer3
+ * lineage is real but says nothing about reachability: frmIndividualJoint is
+ * a copy of frmCustomer3 down to its frmCustomer3Caption grid titles, and
+ * frmCustomer2's own cmdJointAcc still drives the frmCustomer3 original
+ * (frmCustomer2.frm:2735).
  *
  * The juristic forms have no related-party page at all: all three
  * cmdNextPage_Click handlers go straight to frmJuristicAccountInfo.

@@ -128,7 +128,9 @@ public class MockCustomerRepository implements CustomerRepository {
     /**
      * Name search is a case-insensitive prefix match over both scripts, which
      * is close enough to the legacy's partial-key ISGTEQ scan for a demo and
-     * lets an operator type "al" and see the Al-Otaibis.
+     * lets an operator type "al" and see the Al-Otaibis. The archival
+     * repository folds case too (JdbcCustomerRepository#namePrefix); it still
+     * differs here in searching one script, the one the input is written in.
      */
     private static boolean matchesName(CustomerSummary r, CustomerSearchCriteria c) {
         DemoData.Customer cust = DemoData.customer(r.custNo());
@@ -162,8 +164,18 @@ public class MockCustomerRepository implements CustomerRepository {
 
     // Values mirror the legacy frmIndividualSaudi screenshot for 0415741, so the
     // rebuilt screen can be compared against the original field for field.
+    /**
+     * custType is the ARCHIVAL code, not a letter: '0' is a person and
+     * anything else an organisation. That is what the legacy branches on
+     * (fillFrmCustomer's ListIndex 0/1/2, getCustName at cbothers.c:8234) and
+     * what the live read already assumes — JdbcTransferRepository's name
+     * subquery picks the personal or the org short names on
+     * {@code custType = '0'}. These fixtures carried 'P' and 'C', which no
+     * archival row holds, so every mock customer read as juristic on any
+     * screen that makes that distinction.
+     */
     private static final Map<String, CustomerProfile> PROFILES = Map.of(
-            "0415741", new CustomerProfile("0415741", "P", "01", "01", "0127", "001", "0",
+            "0415741", new CustomerProfile("0415741", "0", "01", "01", "0127", "001", "0",
                     "I", "1009326404", "القطيف", "14140128", "19930717", "14340402", "20130212",
                     "حسين", "سعيد", "عبدالوهاب", "كاظم", "كاظم حسين سعيد عبدالوهاب",
                     "Hussain", "Saeed", "Abdulwahab", "Kadem", "Kadem Hussain Saeed Abdulwahab",
@@ -186,7 +198,7 @@ public class MockCustomerRepository implements CustomerRepository {
                                     "14140114", "19930703", "14340101", "20121115", "")),
                     new OpenUpdateInfo("19980704", "0127", "MIGRATION", "MIGRATION",
                             "20060531", "0127", "54302", "52551")),
-            "0415742", new CustomerProfile("0415742", "P", "01", "02", "0001", "002", "1",
+            "0415742", new CustomerProfile("0415742", "0", "01", "02", "0001", "002", "1",
                     "Q", "1004458821", "الرياض", "14250310", "20040429", "14480515", "20261125",
                     "احمد", "خالد", "", "العتيبي", "احمد خالد العتيبي",
                     "Ahmed", "Khalid", "", "Al-Otaibi", "Ahmed K. Al-Otaibi",
@@ -215,7 +227,7 @@ public class MockCustomerRepository implements CustomerRepository {
             // populated and poBox is empty, which is how a Wasel address is
             // held. address1 carries the street/area name, NOT a packed
             // "gprs street" string — the screens read the two columns.
-            "0415743", new CustomerProfile("0415743", "P", "01", "04", "0127", "001", "1",
+            "0415743", new CustomerProfile("0415743", "0", "01", "04", "0127", "001", "1",
                     "Q", "1006677341", "الدمام", "14330519", "20120411", "14530519", "20310923",
                     "عمر", "فيصل", "", "الحربي", "عمر فيصل الحربي",
                     "Omar", "Faisal", "", "Al-Harbi", "Omar F. Al-Harbi",
@@ -236,7 +248,7 @@ public class MockCustomerRepository implements CustomerRepository {
                                     "14330519", "20120411", "14530519", "20310923", "")),
                     new OpenUpdateInfo("20120311", "0127", "54302", "52551",
                             "20240418", "0127", "54302", "52551")),
-            "0417003", new CustomerProfile("0417003", "C", "02", "01", "0127", "001", "1",
+            "0417003", new CustomerProfile("0417003", "1", "02", "01", "0127", "001", "1",
                     "C", "4030099812", "جدة", "", "", "", "",
                     "", "", "", "", "",
                     "", "", "", "", "",
@@ -408,8 +420,20 @@ public class MockCustomerRepository implements CustomerRepository {
             "Tariq R. Al-Mutairi", "Huda K. Al-Sudairi", "Nabil W. Kassem",
             "Reem A. Al-Faisal", "Hassan D. Al-Yami", "Dana S. Al-Rashid");
 
-    private static String partyName(String custNo, int salt, boolean arabic) {
-        return DemoData.pick(custNo, salt, arabic ? ARABIC_NAMES : ENGLISH_NAMES);
+    /**
+     * One party's name, stepped by its ROW so a customer never shows the same
+     * person twice.
+     *
+     * <p>Salting per row is not enough: the pools hold twelve names and a grid
+     * draws up to three from one of them, so independent hashes collide often
+     * enough to be seen — and a heirs grid listing the same name on rows 1 and
+     * 3 under two different ID numbers reads as a data bug, which is exactly
+     * what a fixture must not teach. Rotating from a single per-customer draw
+     * makes the rows distinct by construction.
+     */
+    private static String partyName(String custNo, int salt, int row, boolean arabic) {
+        List<String> pool = arabic ? ARABIC_NAMES : ENGLISH_NAMES;
+        return pool.get((DemoData.pick(custNo, salt, pool.size()) + row) % pool.size());
     }
 
     /** Synthetic 10-digit national/iqama number, stable per party. */
@@ -485,10 +509,23 @@ public class MockCustomerRepository implements CustomerRepository {
                 "011", String.valueOf(4000000 + DemoData.pick(key, 92, 900000)), "",
                 "011", String.valueOf(4000000 + DemoData.pick(key, 93, 900000)), "",
                 "", "", "", "05" + DemoData.pick(key, 94, 90000000), "", "");
+        // The four name parts are SPLIT OUT OF THE ROW'S OWN short name, in the
+        // language that name is written in, rather than pinned. A fixed pair
+        // put "Saad Ali Al-Qahtani" on the panel behind every grid row, so the
+        // detail an operator opened contradicted the line they clicked — the
+        // same trap ownerDetail avoids by seeding both from one draw.
+        String[] parts = shortName.trim().isEmpty() ? new String[] { "" } : shortName.trim().split("\\s+");
+        boolean arabic = shortName.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF);
+        String first = parts[0];
+        String last = parts.length > 1 ? parts[parts.length - 1] : "";
+        String second = parts.length > 2 ? parts[1] : "";
+        String third = parts.length > 3 ? parts[2] : "";
         return new com.banksystem.api.domain.model.PartyDetail(
                 kind, custNo, partyNo, partyType, activeStatus, "", c.branchCode(),
-                "سعد", "علي", "", "القحطاني", shortName,
-                "Saad", "Ali", "", "Al-Qahtani", shortName,
+                arabic ? first : "", arabic ? second : "", arabic ? third : "",
+                arabic ? last : "", arabic ? shortName : "",
+                arabic ? "" : first, arabic ? "" : second, arabic ? "" : third,
+                arabic ? "" : last, arabic ? "" : shortName,
                 idType, idNo, c.city(), "1", "", "19970418", "", "20270417",
                 referenceReqdFor, proxyNo, proxyNo.isEmpty() ? "" : "1",
                 proxyIssueDateH, proxyIssueDateG, address);
@@ -505,7 +542,7 @@ public class MockCustomerRepository implements CustomerRepository {
         for (int i = 0; i < count; i++) {
             boolean proxy = i % 2 == 1;
             rows.add(new HeirEntry(String.format("%03d", i + 1), proxy ? "P" : "H",
-                    partyName(c.custNo(), 20 + i, true), "I", partyId(c.custNo(), 20 + i),
+                    partyName(c.custNo(), 20, i, true), "I", partyId(c.custNo(), 20 + i),
                     proxy ? "PRX-" + (2000 + DemoData.pick(c.custNo(), 30 + i, 900)) : "",
                     proxy ? "14290305" : "", proxy ? "20080312" : "",
                     "1", c.branchCode()));
@@ -541,7 +578,7 @@ public class MockCustomerRepository implements CustomerRepository {
             boolean arabic = i % 2 == 0;
             rows.add(new ReferenceEntry(String.format("%03d", i + 1),
                     i % 2 == 0 ? "L" : "R", i % 2 == 0 ? "N" : "M",
-                    partyName(c.custNo(), 60 + i, arabic), arabic ? "I" : "Q",
+                    partyName(c.custNo(), 60, i, arabic), arabic ? "I" : "Q",
                     partyId(c.custNo(), 60 + i), "1", c.branchCode()));
         }
         return List.copyOf(rows);
@@ -596,7 +633,7 @@ public class MockCustomerRepository implements CustomerRepository {
             remaining -= share;
             boolean arabic = i % 2 == 0;
             rows.add(new OwnerEntry(String.format("%03d", i + 1), i == 0 ? "O" : "M",
-                    partyName(c.custNo(), 70 + i, arabic), arabic ? "I" : "Q",
+                    partyName(c.custNo(), 70, i, arabic), arabic ? "I" : "Q",
                     partyId(c.custNo(), 70 + i),
                     i == 0 ? "" : c.shortName() + " Holding",
                     String.format("%03d.00", share), "1", c.branchCode()));
@@ -659,13 +696,24 @@ public class MockCustomerRepository implements CustomerRepository {
         // Six positional flags: rented house, own house, company accommodation,
         // rented car, own car, company transport.
         all.put("ownerShip", "010010");
-        // 0-single / 1-joint / 2-unknown (workbook row 87).
-        all.put("singleJointAcc", "0");
+        // 0-single / 1-joint / 2-unknown (workbook row 87). Derived from the
+        // joint-holder rows rather than pinned, so the two agree: this column
+        // is what enables the acct-info page's Joint Account button, and a
+        // hardcoded "0" left it disabled for every mock customer — including
+        // the ones jointHolders() does hand rows for.
+        all.put("singleJointAcc", jointHolders(custNo).isEmpty() ? "0" : "1");
         all.put("excludeFromAtmFees", "0");
         all.put("excludeFromMinBalFees", "0");
         all.put("pkgStmtFreqOverride", "0");
         all.put("interGroupAccNo", "");
         all.put("specialRefNo", "");
+        // frmJointAccName. Seeded only for a customer that HAS joint holders,
+        // the same condition singleJointAcc is derived from above — the dialog
+        // is reachable from the joint holders grid alone.
+        boolean joint = !jointHolders(custNo).isEmpty();
+        all.put("jointAccNameOnCheck1", joint ? "سامي حمزه ملا" : "");
+        all.put("jointAccNameOnCheck2", joint ? "عاصم وباسم حمزه ملا" : "");
+        all.put("jointAccNameOnReports", joint ? "سامي وعاصم وباسم ملا" : "");
         // stidtab 'M' — home country id.
         all.put("homeCountryId", "A1234567");
         all.put("homeCountryIdDateType", "1");

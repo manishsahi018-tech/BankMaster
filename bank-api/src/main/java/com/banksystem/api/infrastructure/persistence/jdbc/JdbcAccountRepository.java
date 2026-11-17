@@ -141,7 +141,7 @@ public class JdbcAccountRepository implements AccountRepository {
     /** Shared by both service-21 branches (customer scan / account exact read). */
     private static final org.springframework.jdbc.core.RowMapper<AccountSummary>
             ACCOUNT_SUMMARY_MAPPER = (rs, i) -> new AccountSummary(
-                    actualAccOf(rs.getString("accNo")),
+                    actualAccOf(trim(rs.getString("accNo"))),
                     plainAmount(rs.getString("bookBal")),
                     plainAmount(rs.getString("clearedBal")),
                     plainAmount(rs.getString("blockedAmt")),
@@ -310,12 +310,29 @@ public class JdbcAccountRepository implements AccountRepository {
                     return new AcctUpdateHistoryEntry(
                             trim(rs.getString("branchCode")),
                             userId,
-                            BmForms.isoToBmTimestamp(rs.getString("dateTime")),
-                            status,
+                            BmForms.isoToBmTimestamp(trim(rs.getString("dateTime"))),
+                            statusLabel(status),
                             pending ? "" : supervisorId,
-                            pending ? "" : BmForms.isoToBmTimestamp(rs.getString("lastUpdateDateTime")));
+                            pending ? "" : BmForms.isoToBmTimestamp(trim(rs.getString("lastUpdateDateTime"))));
                 });
         return rows.stream().filter(Objects::nonNull).toList();
+    }
+
+    /**
+     * stacclog.bmUpdateStatus code → the "Pending Status" text the legacy
+     * grid showed (frmAcctUpdateHistory.frm:238-248 — hardcoded literals
+     * there, not caption-table entries, and a different set from the
+     * customer screen's). The "code-label" form is also what
+     * bank-ui StatusBadge.statusTone matches on ("9-" / "3-").
+     */
+    private static String statusLabel(String code) {
+        return switch (code) {
+            case "1" -> "1-Pending with Supervisor";
+            case "2" -> "2-Pending with CSO";
+            case "3" -> "3-Rejected by supervisor";
+            case "9" -> "9-Update successful";
+            default -> code + "-Invalid status";
+        };
     }
 
     @Override
@@ -352,10 +369,10 @@ public class JdbcAccountRepository implements AccountRepository {
                     // never triggers here; the numeric-id branch overlay does.
                     String branch = trim(rs.getString("branchCode"));
                     return new SamaStatusEntry(
-                            BmForms.isoToBmTimestamp(rs.getString("dateTime")),
+                            BmForms.isoToBmTimestamp(trim(rs.getString("dateTime"))),
                             overlayBranch(trim(rs.getString("userId")), branch),
                             overlayBranch(trim(rs.getString("supervisorId")), branch),
-                            BmForms.isoToBmTimestamp(rs.getString("lastUpdateDateTime")),
+                            BmForms.isoToBmTimestamp(trim(rs.getString("lastUpdateDateTime"))),
                             trim(rs.getString("fromStatus")),
                             trim(rs.getString("toStatus")),
                             withReason ? trim(rs.getString("accStatusChangeReason")) : "");
@@ -654,7 +671,7 @@ public class JdbcAccountRepository implements AccountRepository {
                     if (delivery.isEmpty() || "0000".equals(delivery)) {
                         delivery = trim(rs.getString("custBranchCode"));
                     }
-                    String requestDateTime = BmForms.isoToBmTimestamp(rs.getString("requestDateTime"));
+                    String requestDateTime = BmForms.isoToBmTimestamp(trim(rs.getString("requestDateTime")));
                     return new ChequeBookRequest(
                             delivery,
                             overlayBranch(trim(rs.getString("requestUserId")),
@@ -708,7 +725,7 @@ public class JdbcAccountRepository implements AccountRepository {
                         trim(rs.getString("sodNo")),
                         trim(rs.getString("paymentType")),
                         trim(rs.getString("paymentAmt")),
-                        actualAccOf(rs.getString("payAccNo")),
+                        actualAccOf(trim(rs.getString("payAccNo"))),
                         trim(rs.getString("orderType")),
                         trim(rs.getString("paymentFrequency"))));
     }
@@ -738,7 +755,7 @@ public class JdbcAccountRepository implements AccountRepository {
                 (rs, i) -> new StopCheque(
                         trim(rs.getString("chequeNo")),
                         trim(rs.getString("amount")),
-                        BmForms.actualDate(rs.getString("dateStop")),
+                        BmForms.actualDate(trim(rs.getString("dateStop"))),
                         trim(rs.getString("payeeName")),
                         trim(rs.getString("chequeFrom"))));
     }
@@ -787,7 +804,7 @@ public class JdbcAccountRepository implements AccountRepository {
                         accNo,
                         trim(rs.getString("chequeNo")),
                         trim(rs.getString("amount")),
-                        BmForms.actualDate(rs.getString("dateStop")),
+                        BmForms.actualDate(trim(rs.getString("dateStop"))),
                         trim(rs.getString("payeeName")),
                         trim(rs.getString("chequeFrom")),
                         trim(rs.getString("stopChqUserId"))));
@@ -1248,8 +1265,18 @@ public class JdbcAccountRepository implements AccountRepository {
     // helpers
     // ------------------------------------------------------------------
 
+    /**
+     * Column value from a row mapper. Every character column of this
+     * repository arrives through here, so the ETL's quote wrapper comes off
+     * here too ({@link ArchivalText}) — an empty character column reaches the
+     * views as the two-char string {@code ""}, and the account grid rendered
+     * gld0data.anbDormantFlag raw (as the VB6 does, frmAccount.frm:1796), so
+     * the Dormant Flag column showed a pair of quote marks. The unwrap only
+     * fires on a value quoted end to end, which an amount, a date or a packed
+     * key never is.
+     */
     private static String trim(String value) {
-        return value == null ? "" : value.trim();
+        return ArchivalText.unquote(value);
     }
 
     /**
@@ -1341,7 +1368,8 @@ public class JdbcAccountRepository implements AccountRepository {
                     : new BigDecimal(value.toString());
             return amount.toPlainString();
         }
-        return value.toString().trim();
+        // Character columns: same quote-wrapper unwrap as trim() above.
+        return ArchivalText.unquote(value.toString());
     }
 
     private static void put(Map<String, String> map, String key, String value) {

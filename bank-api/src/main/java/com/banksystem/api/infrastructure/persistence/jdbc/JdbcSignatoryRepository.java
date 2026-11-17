@@ -4,6 +4,8 @@ import com.banksystem.api.domain.model.BmForms;
 import com.banksystem.api.domain.model.SignatoryDetail;
 import com.banksystem.api.domain.model.SignatorySummary;
 import com.banksystem.api.domain.repository.SignatoryRepository;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -53,9 +55,9 @@ public class JdbcSignatoryRepository implements SignatoryRepository {
                 """,
                 Map.of("bankingDate", bankingDate.bankingDate(), "custNo", padded),
                 (rs, i) -> new SignatorySummary(
-                        rs.getString("accNo"), rs.getString("signatoryNo"),
-                        rs.getString("idType"), rs.getString("idNo"),
-                        rs.getString("branchCode"), rs.getString("signatoryShortName")));
+                        s(rs, "accNo"), s(rs, "signatoryNo"),
+                        s(rs, "idType"), s(rs, "idNo"),
+                        s(rs, "branchCode"), s(rs, "signatoryShortName")));
     }
 
     @Override
@@ -66,9 +68,9 @@ public class JdbcSignatoryRepository implements SignatoryRepository {
                 """,
                 Map.of("bankingDate", bankingDate.bankingDate(), "accNo", accNo),
                 (rs, i) -> new SignatorySummary(
-                        rs.getString("accNo"), rs.getString("signatoryNo"),
-                        rs.getString("idType"), rs.getString("idNo"),
-                        rs.getString("branchCode"), rs.getString("signatoryShortName")));
+                        s(rs, "accNo"), s(rs, "signatoryNo"),
+                        s(rs, "idType"), s(rs, "idNo"),
+                        s(rs, "branchCode"), s(rs, "signatoryShortName")));
     }
 
     @Override
@@ -103,22 +105,30 @@ public class JdbcSignatoryRepository implements SignatoryRepository {
                 Map.of("bankingDate", bankingDate.bankingDate(),
                         "accNo", accNo, "signatoryNo", signatoryNo),
                 (rs, i) -> new SignatoryDetail(
-                        rs.getString("accNo"), rs.getString("signatoryNo"),
-                        rs.getString("custBranchCode"), rs.getString("idType"),
-                        rs.getString("idNo"), rs.getString("idDateType"),
-                        rs.getString("idIssuedAt"),
-                        BmForms.actualDate(rs.getString("idIssueDateH")), BmForms.actualDate(rs.getString("idIssueDateG")),
-                        BmForms.actualDate(rs.getString("idExpiryDateH")), BmForms.actualDate(rs.getString("idExpiryDateG")),
-                        rs.getString("signatoryShortName"),
-                        rs.getString("aFirstName"), rs.getString("aSecondName"),
-                        rs.getString("aThirdName"), rs.getString("aLastName"),
-                        rs.getString("aShortName"),
-                        rs.getString("eFirstName"), rs.getString("eSecondName"),
-                        rs.getString("eThirdName"), rs.getString("eLastName"),
-                        rs.getString("eShortName"),
-                        rs.getString("activeStatus"), rs.getString("reason"),
-                        BmForms.actualDate(rs.getString("signatureActionDate")),
-                        rs.getString("diplomaticPpNo")));
+                        s(rs, "accNo"), s(rs, "signatoryNo"),
+                        s(rs, "custBranchCode"), s(rs, "idType"),
+                        s(rs, "idNo"), s(rs, "idDateType"),
+                        s(rs, "idIssuedAt"),
+                        BmForms.actualDate(s(rs, "idIssueDateH")), BmForms.actualDate(s(rs, "idIssueDateG")),
+                        BmForms.actualDate(s(rs, "idExpiryDateH")), BmForms.actualDate(s(rs, "idExpiryDateG")),
+                        s(rs, "signatoryShortName"),
+                        s(rs, "aFirstName"), s(rs, "aSecondName"),
+                        s(rs, "aThirdName"), s(rs, "aLastName"),
+                        s(rs, "aShortName"),
+                        s(rs, "eFirstName"), s(rs, "eSecondName"),
+                        s(rs, "eThirdName"), s(rs, "eLastName"),
+                        s(rs, "eShortName"),
+                        s(rs, "activeStatus"), s(rs, "reason"),
+                        BmForms.actualDate(s(rs, "signatureActionDate")),
+                        s(rs, "diplomaticPpNo")));
         return rows.stream().findFirst();
+    }
+
+    /** Trimmed, never-null column read (Hive CHAR padding, NULLs → ""), with
+     *  the extract's quote wrapper off it ({@link ArchivalText}). These reads
+     *  used to hand the driver's string over as it came, so a signatory row
+     *  carried both the views' CHAR padding and a quoted-empty idType. */
+    private static String s(ResultSet rs, String column) throws SQLException {
+        return ArchivalText.unquote(rs.getString(column));
     }
 }

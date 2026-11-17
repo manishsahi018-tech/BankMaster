@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Field, TextInput, ReadOnlyInput, Select } from '../components/fields.tsx'
 import { useToast } from '../components/Toast.tsx'
 import { StatementCard, statementKey } from '../components/StatementCard.tsx'
+import { packLocale } from '../components/statementLocale.ts'
 import { StatementAnalysisReport } from '../components/StatementAnalysis.tsx'
 import { analyseStatements } from '../components/statementAnalysis.ts'
 import type { StatementAnalysis } from '../components/statementAnalysis.ts'
@@ -12,8 +13,16 @@ import { api } from '../api.ts'
 import { codeLabel } from '../codes.ts'
 import { hasAuthority } from '../session.ts'
 import { printDocument } from '../print.ts'
+import { downloadWorkbook } from '../xlsx.ts'
+import { DownloadExcelButton } from '../components/DownloadExcelButton.tsx'
+import {
+  archivedPeriod,
+  archivedStatementSheet,
+  statementFileName,
+} from '../components/statementExport.ts'
 
-import { t } from '../i18n/index.ts'
+import { t, translate } from '../i18n/index.ts'
+import { dirOf } from '../i18n/locale.ts'
 // Mirrors legacy frmHistStmt.frm ("Historical Statement Printing", the
 // frmAccount cmdHistStmt button, authority ~60/~61/~62).
 //
@@ -88,21 +97,21 @@ const LAST_ARCHIVED_MONTH = '07'
 // in frmHistStmt.frm — the errXxx(UserLang) string table is not in the source
 // dump, so those comments are the only record of the wording.
 const MSG = {
-  branchCode: 'Branch Code should be 4 characters..Please enter it again',
-  emptyAccount: 'Account number cannot be spaces...Please enter it...',
-  fromYear: 'From year cannot be blank...please enter it ..',
-  fromMonth: 'From month cannot be blank..please enter it...',
-  toYear: 'To Date cannot be blank...please enter it ..',
-  toMonth: 'To month cannot be blank..please enter it...',
+  branchCode: 'Branch code must be 4 characters.',
+  emptyAccount: 'Please enter an account number.',
+  fromYear: 'Please enter the from year.',
+  fromMonth: 'Please enter the from month.',
+  toYear: 'Please enter the to year.',
+  toMonth: 'Please enter the to month.',
   // errNoReportFound (:1414) — the legacy's outcome when every month's index
   // came back without the account.
   noReport: 'No report found for this account for a given period',
   // The status-bar text on success (:1409).
-  extracted: 'Statement extracted successfully.....',
+  extracted: 'Statement extracted successfully.',
   // errAnalysisSuccess (:532) — the status-bar text AND the MsgBox the legacy
   // raised when analyse.exe returned. Both said the same thing, so one toast
   // carries it.
-  analysisDone: 'Analysis successfully completed..',
+  analysisDone: 'Analysis completed successfully.',
 } as const
 
 const digitsOnly = (value: string) => value.replace(/\D/g, '')
@@ -152,7 +161,19 @@ export default function HistoricalStatement({
     toYear: LAST_ARCHIVED_YEAR,
   })
   const [statements, setStatements] = useState<Statement[] | null>(null)
+
+  // The DOCUMENT's language, from BM_STMT_HEADER's LANG_CODE — not the
+  // operator's. The form, the buttons and the counts line stay on the app
+  // locale: those are the app talking to the operator, where the cards are the
+  // bank talking to the customer. See statementLocale.ts.
+  //
+  // The ANALYSIS is not covered. It is not the archived document — it is a
+  // reading of it, computed here and never sent to anybody — so it stays in the
+  // operator's language along with the rest of the screen.
+  const docLocale = packLocale(statements ?? [])
+  const docName = translate(docLocale, documentName)
   const [generating, setGenerating] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   // cmdAnalyse's output, held separately from the statements it was computed
   // from: the legacy wrote it to its own file and the View/Print Analysis
   // buttons keyed off that file existing, not off the statement's.
@@ -246,11 +267,11 @@ export default function HistoricalStatement({
       [document, 'keydown'],
     ]
     for (const [target, type] of events) target.addEventListener(type, done, { once: true })
-    printDocument(t(printing === 'analysis' ? analysisDocumentName : documentName))
+    printDocument(printing === 'analysis' ? t(analysisDocumentName) : docName)
     return () => {
       for (const [target, type] of events) target.removeEventListener(type, done)
     }
-  }, [printing, analysisDocumentName, documentName])
+  }, [printing, analysisDocumentName, docName])
 
   // Legacy disableButtons (:1570): ANY edit re-enables Generate and kills
   // View/Print, so a report can never be shown against a changed form.
@@ -333,6 +354,43 @@ export default function HistoricalStatement({
   // deleted-account route, where there is no row to carry it.
   const hasReport = statements !== null && statements.length > 0
   const lineCount = (statements ?? []).reduce((n, s) => n + s.lines.length, 0)
+
+  /**
+   * The statement as a workbook — one transaction per row, each carrying its
+   * own statement's header (statementExport.ts).
+   *
+   * The legacy had no counterpart, and could not have: its report was a spool
+   * FILE it shelled wordpad on. What it did have was the reason for this — the
+   * Analysis button, which existed because an operator needs the statement
+   * ADDED UP, not just read. Analysis answers the questions the legacy's
+   * analyse.exe was written to answer; this hands over the rows so the operator
+   * can ask their own.
+   *
+   * clearReport() drops the statements on any edit to the form, so the account
+   * and period named in the file name always describe the rows inside it.
+   */
+  const handleDownload = async () => {
+    if (!hasReport) return
+    setDownloading(true)
+    try {
+      await downloadWorkbook(
+        statementFileName(
+          docName,
+          accNo.trim(),
+          archivedPeriod(
+            `${form.fromYear}${form.fromMonth}`,
+            `${form.toYear}${form.toMonth}`,
+          ),
+        ),
+        archivedStatementSheet(statements!, docName, docLocale),
+      )
+      toast.success(t('Statement downloaded — {txns} transactions.', { txns: lineCount }))
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   /**
    * cmdAnalyse_Click (:507), minus the shell-out. The legacy ran analyse.exe
@@ -665,23 +723,33 @@ export default function HistoricalStatement({
               screen it lives on. Just the title — the account, branch, month
               and customer all appear on every statement card below. Both routes
               print it under the one name. */}
-          <header className="print-only mb-4 border-b border-edge pb-3">
-            <h1 className="text-lg font-bold text-ink">{t(documentName)}</h1>
+          <header dir={dirOf(docLocale)} className="print-only mb-4 border-b border-edge pb-3">
+            <h1 className="text-lg font-bold text-ink">{docName}</h1>
           </header>
 
           {/* Translated through a placeholder form, like the PDP screen's — the
               English plural pair had no Arabic and showed through untranslated. */}
-          <p className="print-hidden mt-6 text-sm text-muted">
-            {t('{stmts} statements · {txns} transactions', {
-              stmts: statements!.length,
-              txns: lineCount,
-            })}
-          </p>
+          {/* The report's own header line: what it covers on the left, what
+              can be done with it on the right. The action bar above acts on the
+              FORM — enablePrintButtons (:1595) turns its buttons on and off
+              because they are there before there is a report; this acts on the
+              report itself, so it arrives and leaves with it. Off the paper,
+              like the line beside it. */}
+          <div className="print-hidden mt-6 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted">
+              {t('{stmts} statements · {txns} transactions', {
+                stmts: statements!.length,
+                txns: lineCount,
+              })}
+            </p>
+            <DownloadExcelButton onClick={handleDownload} busy={downloading} />
+          </div>
           <div className="mt-3 space-y-5 print-per-page">
             {paginateStatements(statements!).map((sheet, i, all) => (
               <StatementCard
                 key={`${statementKey(sheet.statement)}-${i}`}
                 statement={sheet.statement}
+                locale={docLocale}
                 lines={sheet.lines}
                 continued={sheet.continued}
                 page={i + 1}

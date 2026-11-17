@@ -522,7 +522,9 @@ public class JdbcTransferRepository implements TransferRepository {
         return a.length() == 13 ? BmForms.actualAcc(a) : a;
     }
 
-    /** Legacy NUL/non-printable scrubbing, done per-row in Java. */
+    /** Legacy NUL/non-printable scrubbing, done per-row in Java. Every
+     *  character column of this repository reads through here, so the
+     *  extract's quote wrapper comes off here too ({@link ArchivalText}). */
     private static String scrub(String value) {
         if (value == null) {
             return "";
@@ -532,7 +534,7 @@ public class JdbcTransferRepository implements TransferRepository {
             char ch = value.charAt(i);
             sb.append(ch < 0x20 ? ' ' : ch);
         }
-        return sb.toString().trim();
+        return ArchivalText.unquote(sb.toString());
     }
 
     private static boolean isBlank(String s) {

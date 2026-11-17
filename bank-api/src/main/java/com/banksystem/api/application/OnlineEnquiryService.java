@@ -28,7 +28,7 @@ public class OnlineEnquiryService {
     private static final String RESTRICTED_STMT_BRANCH = "0176";
 
     // Legacy message text, from the inline comments beside each MsgBox.
-    private static final String ERR_EMPTY_ACC = "Account Number cannot be empty..Please enter";
+    private static final String ERR_EMPTY_ACC = "Please enter an account number.";
     private static final String ERR_FROM_DATE = "From Date is blank or Incomplete From Date";
     private static final String ERR_TO_DATE = "To_Date is blank or Incomplete To Date";
     private static final String ERR_STAFF_ACC_STMT =
@@ -120,18 +120,29 @@ public class OnlineEnquiryService {
             return;
         }
         throw new BadRequestException(switch (status) {
-            case "03" -> "Incorrect Message sent..Check the Account Number and Dates";
-            case "05" -> "Given Main Account is incorrect...Please Check";
-            case "06" -> "Given contra Account is incorrect..Please Check";
-            case "08" -> "Restricted Account.. Please Check..";
-            case "12" -> "Communication Error occured..Try Again..";
+            case "03" -> "Request rejected. Check the account number and dates.";
+            case "05" -> "The main account number is incorrect.";
+            case "06" -> "The contra account number is incorrect.";
+            case "08" -> "This account is restricted.";
+            case "12" -> "Communication error. Please try again.";
             default -> "Error " + status + " occurred during communication";
         });
     }
 
-    /** A restricted branch's records are visible only to that branch's operators. */
+    /**
+     * A restricted branch's records are visible only to that branch's operators.
+     *
+     * <p>Currently a NO-OP for all three call sites above (staff branch on the
+     * statement and on the transaction enquiry, plus branch 0176 on the
+     * statement): {@link EnquiryRestrictions#ENABLED} is off, so a reply is
+     * returned whatever branch it came back from. The guard is here rather than
+     * at the call sites so the switch cannot be half-applied.
+     */
     private static void requireOwnBranch(
             OnlineStatementPage page, EnquiryUser caller, String branch, String message) {
+        if (!EnquiryRestrictions.ENABLED) {
+            return;
+        }
         if (branch.equals(trim(page.branchCode())) && !branch.equals(trim(caller.branchCode()))) {
             throw new BadRequestException(message);
         }

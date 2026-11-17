@@ -57,12 +57,30 @@ function lookupAr(key: string): string | undefined {
  * operator what the field is, where a thrown error or a bare key would not.
  */
 export function t(key: string, vars?: Record<string, string | number>): string {
+  return translate(getLocale(), key, vars)
+}
+
+/**
+ * The same lookup, in a locale named by the CALLER rather than by the operator.
+ *
+ * Almost everything wants t(): the app is in the operator's language and that
+ * is the end of it. The exception is a DOCUMENT that carries its own language.
+ * An archived statement does — BM_STMT_HEADER and PDP_STMT_HEADER record the
+ * LANG_CODE the statement was produced in — and the archive's answer, not the
+ * operator's current preference, is what that document has to be rendered in:
+ * an Arabic statement is an Arabic statement whoever pulls it up.
+ */
+export function translate(
+  locale: Locale,
+  key: string,
+  vars?: Record<string, string | number>,
+): string {
   const { text } = splitContext(key)
   // A blank label is a caller passing through an absent value, not a string
   // anyone needs translated — return it without recording a miss.
   if (!text) return text
   let out = text
-  if (getLocale() === 'ar') {
+  if (locale === 'ar') {
     const arabic = lookupAr(key)
     if (arabic) out = arabic
     else if (import.meta.env.DEV) missing.add(text)

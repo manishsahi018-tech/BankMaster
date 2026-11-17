@@ -28,14 +28,14 @@ public class MerchantService {
                                            String fromDate, String toDate, String lastTransPtr) {
         String merchant = merchantNo == null ? "" : merchantNo.trim();
         if (merchant.isEmpty()) {
-            throw new BadRequestException("Account Number cannot be empty..Please enter");
+            throw new BadRequestException("Please enter an account number.");
         }
         if (!isValidDate(fromDate) || !isValidDate(toDate)) {
             throw new BadRequestException("From Date is blank or Incomplete From Date");
         }
         String type = stmtType == null || stmtType.isBlank() ? "0" : stmtType.trim();
         if (!isValidMerchantNo(merchant, type)) {
-            throw new BadRequestException("Invalid Merchant no.. Please check and correct....");
+            throw new BadRequestException("Invalid merchant number.");
         }
         MerchantStatementPage page = merchants.statement(merchant, type,
                 fromDate.trim(), toDate.trim(),

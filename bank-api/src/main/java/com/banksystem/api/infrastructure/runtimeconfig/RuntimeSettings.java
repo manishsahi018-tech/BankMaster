@@ -5,11 +5,7 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.Properties;
-import java.util.Set;
-import java.util.TreeSet;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,15 +14,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * The two settings an operator may change <b>while the application is
- * running</b> — {@code allowed-users} and {@code banking-date}.
+ * The settings an operator may change <b>while the application is
+ * running</b> — {@code banking-date} and {@code card-banking-date}. (Who may
+ * log in is no longer here: it is decided by Active Directory group membership,
+ * {@code bank.ldap.required-groups} — see {@code AuthService}.)
  *
  * <p>They do not live in {@code application.yml} (baked into the jar, read once
  * at startup) but in a plain properties file NEXT TO THE JAR, named by
  * {@code bank.runtime-config.file} and defaulting to
  * {@code bank-runtime.properties} in the working directory the API was started
- * from. Edit that file and save it: the next login sees the new allow-list and
- * the next query binds the new BankingDate. Nothing is restarted, no endpoint
+ * from. Edit that file and save it: the next query binds the new BankingDate. Nothing is restarted, no endpoint
  * is called, no session is dropped.
  *
  * <p><b>How the reload works.</b> Every read checks the file's
@@ -37,27 +34,45 @@ import org.springframework.stereotype.Component;
  * live one atomically; readers always see one consistent pair of values.
  *
  * <p><b>A bad edit never breaks the running application.</b> The file is parsed
- * into a <i>candidate</i> snapshot first. If it cannot be read, or
- * {@code banking-date} is not a date the views could hold, the candidate is
+ * into a <i>candidate</i> snapshot first. If it cannot be read, or either
+ * banking date is not a date the views could hold, the candidate is
  * discarded, the error is logged once (not once per second) and the previously
  * loaded values stay in force. The same fingerprint is remembered either way,
  * so the next save — presumably the correction — is what gets picked up.
  *
  * <p>Every accepted change is logged as {@code old -> new}, so the audit trail
- * of who was let in on which snapshot is in the ordinary application log.
+ * of which snapshot was read when is in the ordinary application log.
  *
  * <p>If the file is absent at startup it is created with the documented
  * template below; if it cannot be created (read-only directory) the API still
- * starts on empty values — an empty allow-list means "allow all" and a blank
- * banking-date falls back to {@code MAX(BankingDate)}, both loudly logged.
+ * starts on empty values — a blank banking-date falls back to
+ * {@code MAX(BankingDate)}, loudly logged.
  */
 @Component
 public class RuntimeSettings {
 
     private static final Logger log = LoggerFactory.getLogger(RuntimeSettings.class);
 
-    static final String KEY_ALLOWED_USERS = "allowed-users";
+    /**
+     * The retired login allow-list. Not read any more; a file that still sets it
+     * gets a warning, so nobody believes the list is still guarding the login.
+     */
+    static final String RETIRED_KEY_ALLOWED_USERS = "allowed-users";
     static final String KEY_BANKING_DATE = "banking-date";
+
+    /**
+     * The BankingDate the two card views are read at, when it must differ from
+     * {@link #KEY_BANKING_DATE}. Blank — the default — means "use banking-date",
+     * so the setting is inert until someone deliberately splits the two.
+     *
+     * <p>It exists because the card views were not restored on the CSD side's
+     * snapshot: {@code stcardtab} extends to 08/12/2012 while the other CSD
+     * {@code st*} views are single-valued at 11/07/2009, so one global date
+     * cannot show the later cards. Note that {@code stcardlog} sits with the
+     * 2009 group, so a card date past that restore empties Card Update History
+     * and Card Tracking History — see docs/DENODO-VIEWS.md.
+     */
+    static final String KEY_CARD_BANKING_DATE = "card-banking-date";
 
     /**
      * The two forms a Denodo view can hold BankingDate in: the ISO rendering of
@@ -78,19 +93,9 @@ public class RuntimeSettings {
             # EDIT THIS FILE WHILE THE APPLICATION IS RUNNING. Save it and the
             # change takes effect within a second - do not restart the API.
             #
-            # Only these two settings live here. Everything else (database URL,
+            # Only these settings live here. Everything else (database URL,
             # credentials, JWT, ports) is startup configuration and still needs a
             # restart to change.
-
-            # Comma-separated user IDs allowed to log in. A user who authenticates
-            # against Active Directory but is not listed here is refused with
-            # "User is not allowed to access the application."
-            #
-            # LEAVING THIS BLANK ALLOWS EVERY AUTHENTICATED USER IN. That is a dev
-            # convenience only - fill it in before any real deployment.
-            #
-            #   allowed-users=DEVUSER,OPER1,ENQ1
-            allowed-users=
 
             # The archival BankingDate every query filters on - one restore
             # snapshot for the whole application.
@@ -103,13 +108,25 @@ public class RuntimeSettings {
             # "use MAX(BankingDate) from stcusttab", which is a dev convenience,
             # not a configuration.
             banking-date=2009-07-11
+
+            # The BankingDate the CARD views (stcardtab, stcardlog) are read at,
+            # for when they must sit on a different restore snapshot from
+            # everything else. Same format rules as banking-date.
+            #
+            # BLANK MEANS "use banking-date" - leave it blank unless you need the
+            # split. stcardtab extends to 2012-12-08 while the rest of the CSD
+            # views are single-valued at 2009-07-11, so a later date here is what
+            # makes the newer cards visible. But stcardlog sits with the 2009
+            # group: setting this past that restore empties Card Update History
+            # and Card Tracking History.
+            card-banking-date=
             """;
 
     /** The file this instance follows; {@code null} for a {@link #fixed} instance. */
     private final Path file;
     private final long pollNanos;
 
-    private volatile Snapshot snapshot = new Snapshot(Set.of(), "");
+    private volatile Snapshot snapshot = new Snapshot("", "");
     /** Fingerprint of the file contents currently loaded (or last rejected). */
     private volatile long loadedStamp = Long.MIN_VALUE;
     private volatile long nextCheckAt;
@@ -127,10 +144,10 @@ public class RuntimeSettings {
         // below already states the values it produced.
         reloadIfChanged(false);
         this.nextCheckAt = System.nanoTime() + pollNanos;
-        log.info("[runtime-config] {} — allowed-users={}, banking-date='{}'. "
+        log.info("[runtime-config] {} — banking-date='{}', card-banking-date={}. "
                 + "Edit that file while the app runs; changes apply within {} ms.",
-                file, describe(snapshot.allowedUsers()), snapshot.bankingDate(), pollMillis);
-        warnIfAllowAll(snapshot);
+                file, snapshot.bankingDate(), describeCardDate(snapshot), pollMillis);
+        warnIfCardDateSplit(snapshot);
     }
 
     private RuntimeSettings(Snapshot fixed) {
@@ -143,17 +160,18 @@ public class RuntimeSettings {
      * A file-less instance holding the given values for the life of the object —
      * for tests, which must not depend on a file in the working directory.
      */
-    public static RuntimeSettings fixed(String allowedUsersCsv, String bankingDate) {
-        return new RuntimeSettings(new Snapshot(
-                parseAllowedUsers(allowedUsersCsv), bankingDate == null ? "" : bankingDate.trim()));
+    public static RuntimeSettings fixed(String bankingDate) {
+        return fixed(bankingDate, "");
     }
 
     /**
-     * User IDs permitted to log in, compared case-insensitively. EMPTY means the
-     * gate is open — every authenticated user is allowed (and it has been logged).
+     * As {@link #fixed(String)} with the card views pinned separately; a blank
+     * {@code cardBankingDate} means "use {@code bankingDate}".
      */
-    public Set<String> allowedUsers() {
-        return current().allowedUsers();
+    public static RuntimeSettings fixed(String bankingDate, String cardBankingDate) {
+        return new RuntimeSettings(new Snapshot(
+                bankingDate == null ? "" : bankingDate.trim(),
+                cardBankingDate == null ? "" : cardBankingDate.trim()));
     }
 
     /**
@@ -162,6 +180,16 @@ public class RuntimeSettings {
      */
     public String bankingDate() {
         return current().bankingDate();
+    }
+
+    /**
+     * The BankingDate the card views are read at, exactly as the views store
+     * it, or "" meaning "use {@link #bankingDate()}". Resolving that fallback
+     * is {@code BankingDateProvider}'s job, not this class's — here the blank
+     * is preserved so the log and the health endpoint can say "not split".
+     */
+    public String cardBankingDate() {
+        return current().cardBankingDate();
     }
 
     /** Where these values came from, for log and error messages. */
@@ -197,8 +225,8 @@ public class RuntimeSettings {
 
         if (stamp == NO_FILE) {
             log.error("[runtime-config] {} is gone — keeping the values loaded before it "
-                    + "disappeared (allowed-users={}, banking-date='{}'). Restore the file.",
-                    file, describe(snapshot.allowedUsers()), snapshot.bankingDate());
+                    + "disappeared (banking-date='{}', card-banking-date={}). Restore the file.",
+                    file, snapshot.bankingDate(), describeCardDate(snapshot));
             return;
         }
 
@@ -209,11 +237,12 @@ public class RuntimeSettings {
                 props.load(reader);
             }
             candidate = parse(props);
+            warnIfAllowListStillSet(props);
         } catch (IOException | RuntimeException e) {
             log.error("[runtime-config] {} was changed but could not be applied ({}). "
-                    + "KEEPING the previous values: allowed-users={}, banking-date='{}'. "
-                    + "Fix the file and save it again.",
-                    file, e.getMessage(), describe(snapshot.allowedUsers()), snapshot.bankingDate());
+                    + "KEEPING the previous values: banking-date='{}', "
+                    + "card-banking-date={}. Fix the file and save it again.",
+                    file, e.getMessage(), snapshot.bankingDate(), describeCardDate(snapshot));
             return;
         }
 
@@ -229,36 +258,45 @@ public class RuntimeSettings {
             log.info("[runtime-config] banking-date: '{}' -> '{}'",
                     previous.bankingDate(), candidate.bankingDate());
         }
-        if (!previous.allowedUsers().equals(candidate.allowedUsers())) {
-            log.info("[runtime-config] allowed-users: {} -> {}",
-                    describe(previous.allowedUsers()), describe(candidate.allowedUsers()));
-            warnIfAllowAll(candidate);
+        if (!previous.cardBankingDate().equals(candidate.cardBankingDate())) {
+            log.info("[runtime-config] card-banking-date: {} -> {}",
+                    describeCardDate(previous), describeCardDate(candidate));
+            warnIfCardDateSplit(candidate);
         }
     }
 
     private static Snapshot parse(Properties props) {
-        String date = props.getProperty(KEY_BANKING_DATE, "").trim();
-        if (!date.isEmpty() && !BANKING_DATE_FORM.matcher(date).matches()) {
-            throw new IllegalArgumentException(KEY_BANKING_DATE + "='" + date
-                    + "' is neither yyyy-MM-dd nor yyyyMMdd");
-        }
-        return new Snapshot(parseAllowedUsers(props.getProperty(KEY_ALLOWED_USERS, "")), date);
+        return new Snapshot(
+                validDate(props, KEY_BANKING_DATE),
+                validDate(props, KEY_CARD_BANKING_DATE));
     }
 
-    private static Set<String> parseAllowedUsers(String csv) {
-        if (csv == null || csv.isBlank()) {
-            return Set.of();
+    /**
+     * One banking-date property, rejected unless it is blank or a form the
+     * views could hold. Blank is always legal: for {@code banking-date} it
+     * means MAX(BankingDate), for {@code card-banking-date} "not split".
+     */
+    private static String validDate(Properties props, String key) {
+        String date = props.getProperty(key, "").trim();
+        if (!date.isEmpty() && !BANKING_DATE_FORM.matcher(date).matches()) {
+            throw new IllegalArgumentException(key + "='" + date
+                    + "' is neither yyyy-MM-dd nor yyyyMMdd");
         }
-        // CASE_INSENSITIVE_ORDER, not an upcased set: the operator's id is never
-        // transformed, so the membership test is what tolerates the case instead.
-        Set<String> users = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        Arrays.stream(csv.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .forEach(users::add);
-        // Collections.unmodifiableSet, not Set.copyOf: copyOf hashes, which would
-        // lose CASE_INSENSITIVE_ORDER and with it the case-tolerant membership test.
-        return Collections.unmodifiableSet(users);
+        return date;
+    }
+
+    /**
+     * An old file (or an old deploy/ copy) may still carry {@code allowed-users}.
+     * It does nothing now, and an operator editing it must be told so rather than
+     * believe they just locked someone out.
+     */
+    private void warnIfAllowListStillSet(Properties props) {
+        if (props.containsKey(RETIRED_KEY_ALLOWED_USERS)) {
+            log.warn("[runtime-config] {} still sets '{}'. It is IGNORED: who may log in is "
+                    + "now decided by Active Directory group membership "
+                    + "(bank.ldap.required-groups). Delete the line.",
+                    file, RETIRED_KEY_ALLOWED_USERS);
+        }
     }
 
     /** last-modified and size folded together — enough to notice any save. */
@@ -286,22 +324,32 @@ public class RuntimeSettings {
             log.info("[runtime-config] created {} with the default values.", file);
         } catch (IOException e) {
             log.error("[runtime-config] could not create {} ({}). The application starts with "
-                    + "NO allow-list and no fixed banking date; create the file by hand.",
+                    + "no fixed banking date; create the file by hand.",
                     file, e.toString());
         }
     }
 
-    private static void warnIfAllowAll(Snapshot snapshot) {
-        if (snapshot.allowedUsers().isEmpty()) {
-            log.warn("[runtime-config] allowed-users is EMPTY — ALL directory-authenticated "
-                    + "users are allowed in. Set the list before any real deployment.");
+    private static String describeCardDate(Snapshot snapshot) {
+        return snapshot.cardBankingDate().isEmpty()
+                ? "<blank: same as banking-date>" : "'" + snapshot.cardBankingDate() + "'";
+    }
+
+    /**
+     * Splitting the card views off the global snapshot is a deliberate act with
+     * a known cost, so it is stated in the log rather than left to be
+     * rediscovered on a blank screen.
+     */
+    private static void warnIfCardDateSplit(Snapshot snapshot) {
+        if (!snapshot.cardBankingDate().isEmpty()
+                && !snapshot.cardBankingDate().equals(snapshot.bankingDate())) {
+            log.warn("[runtime-config] the card views (stcardtab, stcardlog) now read at "
+                    + "BankingDate '{}' while everything else reads at '{}'. stcardlog was "
+                    + "measured single-valued at the CSD restore, so a later card date shows "
+                    + "newer cards but leaves Card Update History and Card Tracking History "
+                    + "empty.", snapshot.cardBankingDate(), snapshot.bankingDate());
         }
     }
 
-    private static String describe(Set<String> users) {
-        return users.isEmpty() ? "<empty: allow all>" : users.toString();
-    }
-
-    /** One consistent pair of values; replaced wholesale, never mutated. */
-    private record Snapshot(Set<String> allowedUsers, String bankingDate) {}
+    /** One consistent set of values; replaced wholesale, never mutated. */
+    private record Snapshot(String bankingDate, String cardBankingDate) {}
 }

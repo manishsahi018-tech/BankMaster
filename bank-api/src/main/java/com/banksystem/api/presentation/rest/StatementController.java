@@ -85,9 +85,14 @@ public class StatementController {
      *
      * <p>Not under {@code /accounts/{accNo}} because an account number is not
      * required: the PDP header carries CUST_NUM, so the enquiry can be keyed on
-     * a CUSTOMER and answer with every account that customer holds. At least one
+     * a CUSTOMER and answer with every account that customer holds. Exactly one
      * of {@code custNo} and {@code accNo} must be given — the service refuses a
-     * request with neither rather than returning the whole branch.
+     * request with neither rather than returning the whole branch, and one with
+     * both rather than guessing which was meant.
+     *
+     * <p>The two routes are self-contained: {@code branchCode} + {@code custNo},
+     * or {@code accNo} alone. Which is why {@code branchCode} has a blank
+     * default — the account route never sends one.
      *
      * <p>Same authority as the historical screen. The PDP archive holds the same
      * kind of thing — a customer's archived statements — so there is no case for
@@ -96,7 +101,10 @@ public class StatementController {
      */
     @GetMapping("/pdp-statements")
     public List<HistoricalStatement> pdpStatements(
-            @RequestParam String branchCode,
+            // Blank on the account route, which needs no branch and offers no
+            // box for one. Required by the customer route, where the service
+            // refuses a request without it.
+            @RequestParam(defaultValue = "") String branchCode,
             @RequestParam(defaultValue = "") String custNo,
             @RequestParam(defaultValue = "") String accNo,
             @RequestParam String fromYearMonth,

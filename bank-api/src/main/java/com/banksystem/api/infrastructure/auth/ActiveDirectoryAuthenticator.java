@@ -65,7 +65,7 @@ public class ActiveDirectoryAuthenticator implements DirectoryAuthenticator {
         String configuredRoot = env.getProperty(PREFIX + "root-dn", "").trim();
         this.rootDn = configuredRoot.isEmpty() ? parseRootDn(rawUrl) : configuredRoot;
         this.allowLocalFallback =
-                Boolean.parseBoolean(env.getProperty(PREFIX + "fallback-to-local-users", "true"));
+                Boolean.parseBoolean(env.getProperty(PREFIX + "fallback-to-local-users", "false"));
 
         boolean requested = Boolean.parseBoolean(env.getProperty(PREFIX + "enabled", "false"));
         this.enabled = requested && !url.isEmpty() && !domain.isEmpty();
@@ -118,7 +118,15 @@ public class ActiveDirectoryAuthenticator implements DirectoryAuthenticator {
             if (result != null && result.getPrincipal() instanceof AdUserDetails u) {
                 displayName = u.displayName();
             }
-            return DirectoryAuthResult.authenticated(displayName);
+            // Spring's DefaultActiveDirectoryAuthoritiesPopulator turns each
+            // memberOf DN into an authority named by the group's CN
+            // (CN=BankMaster-Users,OU=Groups,DC=anb,... -> BankMaster-Users).
+            // memberOf lists DIRECT memberships only: a user who is in the group
+            // only through a nested group does not appear here.
+            List<String> groups = result == null ? List.of()
+                    : result.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList();
+            log.debug("[LDAP] {} — direct group memberships: {}", bare, groups);
+            return DirectoryAuthResult.authenticated(displayName, groups);
         } catch (BadCredentialsException | UsernameNotFoundException ex) {
             // The directory answered and said no — unknown user, bad password, or a
             // disabled/locked/expired account. Authoritative: the caller must NOT

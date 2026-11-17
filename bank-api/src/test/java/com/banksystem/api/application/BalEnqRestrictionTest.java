@@ -7,8 +7,10 @@ import com.banksystem.api.domain.model.EnquiryUser;
 import com.banksystem.api.domain.repository.AccountRepository;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assumptions;
 
 /**
  * The per-row balance-enquiry restriction, pinned against cbbranch2.c:5867-5888.
@@ -28,8 +30,19 @@ import org.junit.jupiter.api.Test;
  *
  * The inversion is the trap: ~86 GRANTS branch-scoped access. Without it the
  * operator is restricted outright on any branch whose flag is set.
+ *
+ * <p>The whole class is SKIPPED while {@link EnquiryRestrictions#ENABLED} is
+ * off, because there is then no restriction to observe — every row comes back
+ * unrestricted by design. The cases stay written so that turning the switch
+ * back on re-pins the rule against the C in the same breath.
  */
 class BalEnqRestrictionTest {
+
+    @BeforeEach
+    void onlyMeaningfulWhileRestrictionsAreOn() {
+        Assumptions.assumeTrue(EnquiryRestrictions.ENABLED,
+                "EnquiryRestrictions.ENABLED is off - no balance-enquiry restriction is applied");
+    }
 
     /** accNo layout CCMMM NNNNNNN SS — the customer sits at [5..11]. */
     private static AccountSummary account(String custNo, String branch) {

@@ -6,6 +6,10 @@ import type { Account } from '../types.ts'
 import type { OnlineStatementPage, OnlineTransaction } from '../api.ts'
 import { api, ApiError } from '../api.ts'
 import { printDocument } from '../print.ts'
+import { downloadWorkbook } from '../xlsx.ts'
+import { DownloadExcelButton } from '../components/DownloadExcelButton.tsx'
+import { onlineStatementSheet, statementFileName } from '../components/statementExport.ts'
+import { BankLogo } from '../components/BankLogo.tsx'
 import {
   balanceMarker,
   formatGatewayDate,
@@ -14,8 +18,8 @@ import {
   todayYyyymmdd,
 } from '../gateway.ts'
 
-import { t } from '../i18n/index.ts'
-import { cutIntoSheets, rowCost, ROW_PADDING } from '../components/statementPages.ts'
+import { getLocale, t } from '../i18n/index.ts'
+import { cutIntoSheets, LINES_PER_SHEET, rowCost, ROW_PADDING } from '../components/statementPages.ts'
 // Mirrors legacy frmInputform (OnlineStmt.frm, "OnLine Statement Printing") —
 // the frmAccount cmdStatement button, authority ~60/~61/~62.
 //
@@ -49,7 +53,7 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0
 
 // Legacy message text, from the inline comments beside each MsgBox.
 const MSG = {
-  emptyAccount: 'Account Number cannot be empty..Please enter',
+  emptyAccount: 'Please enter an account number.',
   invalidFromDate: 'From Date is blank or Incomplete From Date',
   invalidToDate: 'To_Date is blank or Incomplete To Date',
 } as const
@@ -119,6 +123,7 @@ export default function OnDemandStatement({
   const [rows, setRows] = useState<StatementRow[] | null>(null)
   const [unavailable, setUnavailable] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const toast = useToast()
 
   // Any edit invalidates a generated report, as disableButtons does.
@@ -233,10 +238,49 @@ export default function OnDemandStatement({
     rows ?? [],
     (r) => rowCost([r.txn.narrative1, r.txn.narrative2, r.txn.narrative3]),
     {
+      // Every sheet's header is a line taller than the one the budget was
+      // measured against: the account number row under the title.
+      budget: LINES_PER_SHEET - 1,
       firstSheetReserve: 1 + ROW_PADDING,            // brought forward
       lastSheetReserve: 2 * (1 + ROW_PADDING) + 1,   // two totals rows + the rule above them
     },
   )
+
+  /**
+   * The statement as a workbook — the same rows, opened by the brought forward
+   * line, with the running balance this screen computed (statementExport.ts).
+   *
+   * The movement totals do NOT go in: they close the printed document, and a
+   * totals row inside a filterable table is the one row that goes wrong the
+   * moment anyone sorts or filters. SUM does that job in the spreadsheet.
+   *
+   * Named for the period the GATEWAY reports back, not the boxes on the form.
+   * They agree — set() drops the report on any edit — but the reply is what the
+   * rows actually came from.
+   */
+  const handleDownload = async () => {
+    if (!hasReport || !page) return
+    setDownloading(true)
+    try {
+      const documentName = t('On Demand Statement')
+      await downloadWorkbook(
+        statementFileName(
+          documentName,
+          account.accountNumber,
+          `${page.fromDate} to ${page.toDate}`,
+        ),
+        // The operator's locale, not an archived LANG_CODE: this statement is
+        // produced now, for the person on the screen, and the screen it came
+        // off was in their language.
+        onlineStatementSheet(page, rows!, account.accountNumber, documentName, getLocale()),
+      )
+      toast.success(t('Statement downloaded — {txns} transactions.', { txns: rows!.length }))
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   const dateFields = (which: 'from' | 'to') => (
     <div className="flex gap-2">
@@ -355,6 +399,14 @@ export default function OnDemandStatement({
               printed on. The gateway hands back one long run of transactions —
               it has no idea where a page ends — and the browser will not say
               where it broke, so this is the only place that can know. */}
+          {/* Top right of the report, below the Exit button in the card
+              above. The action bar acts on the FORM; this acts on the report,
+              so it arrives with the report and goes when it does. Off the
+              paper — a button printed onto a bank statement would be absurd. */}
+          <div className="print-hidden mt-6 flex justify-end">
+            <DownloadExcelButton onClick={handleDownload} busy={downloading} />
+          </div>
+
           <div className="mt-5 space-y-5 print-per-page">
             {sheets.map((sheetRows, i) => {
               const first = i === 0
@@ -366,25 +418,44 @@ export default function OnDemandStatement({
                 >
                   <header className="border-b border-edge-soft bg-surface-muted px-4 py-4 sm:px-5">
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        {/* Every sheet repeats the whole heading, so a sheet
-                            that leaves the pile still says whose statement it
-                            is — and says which of them it is. */}
-                        <h2 className="text-base font-semibold text-ink">
-                          {t('ON DEMAND STATEMENT')}
-                          {!first && (
-                            <span className="ms-2 text-sm font-normal text-muted">
-                              {t('(continued)')}
-                            </span>
-                          )}
-                        </h2>
-                        <p className="mt-0.5 text-sm text-muted">
-                          {page.branchName} · {formatGatewayDate(page.fromDate)} to{' '}
-                          {formatGatewayDate(page.toDate)}
-                        </p>
-                        <p className="mt-1 text-sm text-ink-soft">
-                          {page.custName} — {page.address}
-                        </p>
+                      {/* The mark rides in the heading row, not above it: this
+                          card is a fixed-height sheet box and the rows were cut
+                          to fill it, so header height taken here comes off the
+                          last transaction on every sheet. The row is four
+                          lines tall and the mark is not, so it takes none. */}
+                      <div className="flex items-start gap-3">
+                        <BankLogo className="mt-0.5 h-6 w-auto shrink-0" />
+                        <div>
+                          {/* Every sheet repeats the whole heading, so a sheet
+                              that leaves the pile still says whose statement it
+                              is — and says which of them it is. */}
+                          <h2 className="text-base font-semibold text-ink">
+                            {t('ON DEMAND STATEMENT')}
+                            {!first && (
+                              <span className="ms-2 text-sm font-normal text-muted">
+                                {t('(continued)')}
+                              </span>
+                            )}
+                          </h2>
+                          {/* The account, first thing under the title, as the
+                              legacy's "A/C No" line led its report header
+                              (OnlineStmt.frm:769). The form above names it too,
+                              but the form does not print, and a sheet with no
+                              account number on it is a statement of nothing. */}
+                          <p className="mt-0.5 text-sm text-ink">
+                            <span className="text-xs uppercase tracking-wider text-muted-soft">
+                              {t('Account Number')}
+                            </span>{' '}
+                            <span dir="ltr" className="font-medium tabular-nums">{account.accountNumber}</span>
+                          </p>
+                          <p className="mt-0.5 text-sm text-muted">
+                            {page.branchName} · {formatGatewayDate(page.fromDate)} to{' '}
+                            {formatGatewayDate(page.toDate)}
+                          </p>
+                          <p className="mt-1 text-sm text-ink-soft">
+                            {page.custName} — {page.address}
+                          </p>
+                        </div>
                       </div>
                       {/* Top right, as on the archived-statement cards: the day
                           the document is produced, not the period it covers —

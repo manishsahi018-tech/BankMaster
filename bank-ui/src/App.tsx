@@ -44,6 +44,7 @@ import SignatoryGrid from './screens/SignatoryGrid.tsx'
 import SignatoryDetail from './screens/SignatoryDetail.tsx'
 import JuristicMain from './screens/JuristicMain.tsx'
 import JuristicAccountInfo from './screens/JuristicAccountInfo.tsx'
+import CustomerGeneric from './screens/CustomerGeneric.tsx'
 import IndividualOthers from './screens/IndividualOthers.tsx'
 import IndividualOthersAcctInfo from './screens/IndividualOthersAcctInfo.tsx'
 import IndividualOthersPage2 from './screens/IndividualOthersPage2.tsx'
@@ -341,20 +342,33 @@ export default function App() {
             goFetch('accounts', { from: 'search' }, async () => {
               // The header customer: typed (:5630), the 7 chars embedded at
               // accNo[5..11] (:5653), or the card's owner (:5673+).
-              const headerCustNo = custNo
-                ? custNo.padStart(7, '0')
-                : accNo
-                  ? accNo.padEnd(14).slice(5, 12)
-                  : (await api.searchCards({ cardNo: cardNo! })).custNo.padStart(7, '0')
+              let headerCustNo: string
+              if (custNo) headerCustNo = custNo.padStart(7, '0')
+              else if (accNo) headerCustNo = accNo.padEnd(14).slice(5, 12)
+              else {
+                // An unknown card is FAILURE at the isRead(ISEQUAL) on
+                // stcardtab (:5684-5692), and a card whose bmAccNo[5..11] is
+                // blank is the else branch at :5710-5716 — checkCustNo is
+                // never reached either way, so don't fall through to it with
+                // a blank (all-zero) custNo.
+                const card = await api.searchCards({ cardNo: cardNo! })
+                if (card.rows.length === 0) {
+                  throw new Error('Invalid card number.')
+                }
+                if (!card.custNo.trim()) {
+                  throw new Error('Invalid customer number.')
+                }
+                headerCustNo = card.custNo.padStart(7, '0')
+              }
 
               // checkCustNo gate (:5631-5643, :5654-5667): an unknown customer
-              // is "Invalid Customer Number..Please Check" and FAILURE — the C
+              // is "Invalid customer number." and FAILURE — the C
               // never opens the grid, and App's `customer &&` guard would
               // otherwise blank the page. A too-short account number lands here
               // too, exactly as it does in the C (accNo[5..11] = spaces).
               const cust = await api.searchCustomers({ custNo: headerCustNo })
               if (!cust.rows[0]) {
-                throw new Error('Invalid Customer Number..Please Check')
+                throw new Error('Invalid customer number.')
               }
 
               // accNo  -> index 1 + isRead(ISEQUAL): THAT account only, and an
@@ -414,8 +428,11 @@ export default function App() {
         <IndividualSaudi
           profile={screen.profile}
           historyAsOf={screen.historyAsOf}
+          // `from` is reset rather than left to default: go/goFetch MERGE into
+          // the previous screen state, so an earlier Accounts visit would leave
+          // its own `from` behind and send page 2's Previous Page there.
           onNextPage={() =>
-            goFetch('detail2', {}, async () => ({
+            goFetch('detail2', { from: 'detail' }, async () => ({
               acctInfo: await api.customerAcctInfo(customer!.custNo),
             }))
           }
@@ -517,6 +534,36 @@ export default function App() {
         />
       )}
 
+      {screen.name === 'customer' && screen.profile && (
+        <CustomerGeneric
+          profile={screen.profile}
+          historyAsOf={screen.historyAsOf}
+          onAccounts={() =>
+            goFetch('accounts', { from: 'customer' }, async () => {
+              const _r = await api.accounts(customer!.custNo)
+              return { accountRows: _r.rows, paging: { accountRows: { page: 0, hasMore: _r.hasMore } } }
+            })
+          }
+          onCards={() =>
+            goFetch('cards', { cardsFrom: 'customer' }, async () => ({
+              cardsResult: await api.searchCards({ custNo: customer!.custNo }),
+              cardsQuery: { custNo: customer!.custNo },
+              paging: { cardsResult: { page: 0, hasMore: false } },
+            }))
+          }
+          // cmdNextPage loads frmCustomer2, whose frames — education,
+          // profession, position, monthly income, segmentation, ownership —
+          // are the ones the acct-info page already renders from the same
+          // payload, so it opens that page rather than a second copy of it.
+          onNextPage={() =>
+            goFetch('detail2', { from: 'customer' }, async () => ({
+              acctInfo: await api.customerAcctInfo(customer!.custNo),
+            }))
+          }
+          onBack={() => go(screen.profileFrom ?? 'results')}
+        />
+      )}
+
       {screen.name === 'individualOthers' && screen.profile && (
         <IndividualOthers
           profile={screen.profile}
@@ -580,6 +627,7 @@ export default function App() {
         <JointHolders
           customer={customer}
           rows={screen.gridRows ?? []}
+          acctInfo={screen.acctInfo}
           hasMore={screen.paging?.gridRows?.hasMore ?? false}
           onMore={appendPage('gridRows', (p) => api.jointHolders(customer.custNo, p))}
           onEnquiry={(row) =>
@@ -626,7 +674,16 @@ export default function App() {
           customer={customer}
           acctInfo={screen.acctInfo}
           historyAsOf={screen.historyAsOf}
-          onPrevPage={() => go('detail')}
+          // frmCustomer reaches this page too (its cmdNextPage loads
+          // frmCustomer2, the same employment / income / ownership frames), so
+          // Previous Page returns to whichever profile opened it.
+          onPrevPage={() => go(screen.from ?? 'detail')}
+          onJointAcc={() =>
+            goFetch('jointHolders', { partyFrom: 'detail2' }, async () => {
+              const _r = await api.jointHolders(customer!.custNo)
+              return { gridRows: _r.rows, paging: { gridRows: { page: 0, hasMore: _r.hasMore } } }
+            })
+          }
           onDocuments={() =>
             // Reset docsFrom rather than relying on its default — the juristic
             // page 2 sets it, and `go` would carry that value into here.
@@ -661,6 +718,12 @@ export default function App() {
           acctInfo={screen.acctInfo}
           historyAsOf={screen.historyAsOf}
           onPrevPage={() => go('others2')}
+          onJointAcc={() =>
+            goFetch('jointHolders', { partyFrom: 'others3' }, async () => {
+              const _r = await api.jointHolders(customer!.custNo)
+              return { gridRows: _r.rows, paging: { gridRows: { page: 0, hasMore: _r.hasMore } } }
+            })
+          }
           onDocuments={() =>
             goFetch('documents', { docsFrom: 'others3' }, async () => ({
               documents: await fetchDocuments(customer!.custNo, screen.historyAsOf),
@@ -724,19 +787,27 @@ export default function App() {
               setError(NO_TIMESTAMP)
               return
             }
-            if (customer.mainCategoryCode !== '01') {
-              goFetch('juristic', { historyAsOf: dt, profileFrom: 'custHistory' }, async () => ({
-                profile: await api.customerProfileAsOf(customer.custNo, dt),
-              }))
-            } else if (customer.idType === 'I') {
-              goFetch('detail', { historyAsOf: dt, profileFrom: 'custHistory' }, async () => ({
-                profile: await api.customerProfileAsOf(customer.custNo, dt),
-              }))
-            } else {
-              goFetch('individualOthers', { historyAsOf: dt, profileFrom: 'custHistory' }, async () => ({
-                profile: await api.customerProfileAsOf(customer.custNo, dt),
-              }))
+            // getCustDetails (frmCustUpdateHistory.frm:345-360) takes the
+            // category pair off the SELECTED ROW — grid columns 6 and 7, the
+            // Main Cat / Sub Cat the grid already shows — not off the customer
+            // record, so a customer recategorised since the update opens the
+            // form its category was at THAT timestamp. Then the same
+            // getScreenSetNo the Enquiry route uses, and '-1' exits with a
+            // message rather than opening anything (:358).
+            const mainCat = String(row.samaMainCategory ?? '').trim()
+            const subCat = String(row.samaSubCategory ?? '').trim()
+            // A blank either side is screen set '0' — the general customer
+            // form — which profileScreenFor resolves like any other set.
+            const target = profileScreenFor(mainCat, subCat)
+            if (!target) {
+              toast.warn(
+                `No profile screen for main category ${mainCat} and sub category ${subCat}.`,
+              )
+              return
             }
+            goFetch(target, { historyAsOf: dt, profileFrom: 'custHistory' }, async () => ({
+              profile: await api.customerProfileAsOf(customer.custNo, dt),
+            }))
           }}
           onExit={() => go('results')}
         />

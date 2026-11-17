@@ -37,7 +37,7 @@ export default function CardGrid({
   const needRow = (fn: (row: GridRow) => void) =>
     ({ row, notify }: { row: GridRow | undefined; notify: (k: 'info' | 'warn', t: string) => void }) => {
       if (!row) {
-        notify('warn', 'Empty row selected — please select a card.')
+        notify('warn', 'Please select a card.')
         return
       }
       fn(row)

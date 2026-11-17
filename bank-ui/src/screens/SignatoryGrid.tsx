@@ -73,7 +73,7 @@ export default function SignatoryGrid({
             kind: 'primary',
             onClick: ({ row, notify }) => {
               if (!row) {
-                notify('warn', 'Empty row selected — please select a signatory.')
+                notify('warn', 'Please select a signatory.')
                 return
               }
               onDetail(row)

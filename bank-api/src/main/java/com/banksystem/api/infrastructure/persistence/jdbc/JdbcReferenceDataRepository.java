@@ -541,7 +541,9 @@ public class JdbcReferenceDataRepository implements ReferenceDataRepository {
         }
     }
 
+    /** Trimmed, never-null, and unwrapped ({@link ArchivalText}) — a
+     *  quoted-empty code would match nothing in the code set. */
     private static String trimmed(String value) {
-        return value == null ? "" : value.trim();
+        return ArchivalText.unquote(value);
     }
 }

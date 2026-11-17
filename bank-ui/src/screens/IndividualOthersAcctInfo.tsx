@@ -33,6 +33,7 @@ export default function IndividualOthersAcctInfo({
   acctInfo,
   historyAsOf,
   onPrevPage,
+  onJointAcc,
   onDocuments,
   onCancel,
 }: {
@@ -40,10 +41,12 @@ export default function IndividualOthersAcctInfo({
   acctInfo: Record<string, string>
   historyAsOf?: string
   onPrevPage: () => void
+  onJointAcc: () => void
   onDocuments: () => void
   onCancel: () => void
 }) {
   const a = acctInfo
+  const isJoint = a.singleJointAcc === '1'
   const mainCategory = codeLabel('samaMainCategory', customer?.mainCategoryCode)
   const subCategory = codeLabel('samaSubCategory', customer?.subCategoryCode)
 
@@ -86,6 +89,31 @@ export default function IndividualOthersAcctInfo({
 
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5">
           <PrevPageButton onClick={onPrevPage} />
+          {/* cmdJointAcc, in its legacy slot between Prev Page and Documents
+              (frmIndividualOthersAcctInfo.frm: Left 495 / 7215 / 8925 across that
+              button row). Always drawn, never hidden — the legacy only ever toggles
+              Enabled, and it toggles it on exactly one thing, repeated in every
+              mode branch (frmIndividualOthersAcctInfo.frm:2721-2736 — the first of those two
+              branches IS searchAction, our enquiry mode):
+
+                If optJoint.Value = True Then cmdJointAcc.Enabled = True _
+                                         Else cmdJointAcc.Enabled = False
+
+              optJoint is the Single / Joint A/c radio, i.e.
+              stcusttab.singleJointAcc = '1' (0 single, 2 unidentified) — the
+              same column AccountHolding draws above. The click handler's
+              errNotAJointAccount MsgBox is the create/update guard and never
+              runs under searchAction, so the Enabled rule is the whole story
+              for an enquiry. */}
+          <button
+            type="button"
+            onClick={isJoint ? onJointAcc : undefined}
+            disabled={!isJoint}
+            title={isJoint ? undefined : t('This account is not a joint account')}
+            className={isJoint ? btnKinds.secondary : btnKinds.disabled}
+          >
+            {t('Joint Account')}
+          </button>
           <button type="button" onClick={onDocuments} className={btnKinds.secondary}>
             {t('Documents')}
           </button>

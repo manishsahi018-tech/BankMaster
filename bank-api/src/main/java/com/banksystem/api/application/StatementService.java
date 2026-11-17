@@ -40,15 +40,15 @@ public class StatementService {
      * dump, so those comments are the only record of the wording.
      */
     private static final String ERR_BRANCH_CODE =
-            "Branch Code should be 4 characters..Please enter it again";
+            "Branch code must be 4 characters.";
     private static final String ERR_ACCOUNT =
-            "Account number cannot be spaces...Please enter it...";
+            "Please enter an account number.";
     private static final String ERR_FROM_YEAR =
-            "From year cannot be blank...please enter it ..";
+            "Please enter the from year.";
     private static final String ERR_FROM_MONTH =
-            "From month cannot be blank..please enter it...";
-    private static final String ERR_TO_YEAR = "To Date cannot be blank...please enter it ..";
-    private static final String ERR_TO_MONTH = "To month cannot be blank..please enter it...";
+            "Please enter the from month.";
+    private static final String ERR_TO_YEAR = "Please enter the to year.";
+    private static final String ERR_TO_MONTH = "Please enter the to month.";
     private static final String ERR_STAFF_BRANCH =
             "Not authorized to print the statement for the staff branch";
 
@@ -57,7 +57,7 @@ public class StatementService {
      * Worded like the ones that are, because it appears beside them.
      */
     private static final String ERR_CUST_OR_ACCOUNT =
-            "Customer number or account number cannot be spaces...Please enter one of them...";
+            "Please enter a customer number or an account number.";
 
     /**
      * The two identifiers are EXCLUSIVE. The screen disables one as soon as the
@@ -71,7 +71,7 @@ public class StatementService {
      * Not a legacy message — the System selector is new, so there is no MsgBox
      * to transcribe. Worded the same way as the ones that are.
      */
-    private static final String ERR_SYSTEM = "System must be BM or PDP..please select it...";
+    private static final String ERR_SYSTEM = "Please select a system (BM or PDP).";
 
     /**
      * errHistStmtNotAllowed (globalVaribles.bas:7358), verbatim — the legacy
@@ -152,10 +152,14 @@ public class StatementService {
             if (accounts.accountByNumber(account).isPresent()) {
                 throw new BadRequestException(ERR_ACCOUNT_STILL_EXISTS);
             }
-        } else if (STAFF_BRANCH.equals(branch) && !STAFF_BRANCH.equals(caller.branchCode())) {
+        } else if (EnquiryRestrictions.ENABLED
+                && STAFF_BRANCH.equals(branch) && !STAFF_BRANCH.equals(caller.branchCode())) {
             // frmHistStmt.frm:782 guards this with `tag <> "D"` — the staff-branch
             // rule keys on the account's branch as the GRID reported it, and the
             // deleted-account route has no grid row to have reported one.
+            //
+            // Off while EnquiryRestrictions.ENABLED is false: a staff-branch
+            // statement prints for any branch's operator.
             throw new BadRequestException(ERR_STAFF_BRANCH);
         }
 
@@ -186,9 +190,16 @@ public class StatementService {
      * wherever the same input exists (branch, the four date parts, the range
      * direction) and new only where the input itself is new.
      *
-     * @param branchCode 4-digit branch. A real predicate here, not only the
-     *                   staff-branch key it is for BM — a customer-number
-     *                   enquiry without it would sweep every branch.
+     * <p>There are two self-contained ways to key it, and the screen offers
+     * exactly one at a time: BRANCH + CUSTOMER NUMBER, or an ACCOUNT NUMBER on
+     * its own. Neither route asks for anything the other one needs.
+     *
+     * @param branchCode 4-digit branch. Required by the CUSTOMER route, where it
+     *                   is a real predicate — a customer number without one
+     *                   would sweep every branch. Blank on the account route,
+     *                   which has no box for it: an account number already
+     *                   identifies its own statements, and branch is neither
+     *                   checked nor applied there.
      * @param custNo     PDP CUST_NUM, or blank
      * @param accNo      account number, or blank. EXACTLY ONE of the two is
      *                   required — a customer number answers for every account
@@ -203,17 +214,23 @@ public class StatementService {
         String customer = trim(custNo);
         String account = trim(accNo);
 
-        // Same order as cmdGenerate_Click for the inputs it shares, so an
-        // operator moving between the two screens gets the same message for the
-        // same mistake.
-        if (branch.length() != 4) {
-            throw new BadRequestException(ERR_BRANCH_CODE);
-        }
+        // The identifier is checked FIRST here, unlike cmdGenerate_Click, which
+        // opens with the branch. It has to be: the two routes are
+        // self-contained — branch + customer number, or an account number on its
+        // own — so until one of the identifiers is known there is no route to
+        // say whether a branch is even wanted.
         if (customer.isEmpty() && account.isEmpty()) {
             throw new BadRequestException(ERR_CUST_OR_ACCOUNT);
         }
         if (!customer.isEmpty() && !account.isEmpty()) {
             throw new BadRequestException(ERR_BOTH_KEYED);
+        }
+        // Branch belongs to the CUSTOMER route alone, where it is a real
+        // predicate: CUST_NUM without one would sweep every branch. An account
+        // number identifies its own statements, so that route needs no branch
+        // and the screen no longer offers a box for one.
+        if (!customer.isEmpty() && branch.length() != 4) {
+            throw new BadRequestException(ERR_BRANCH_CODE);
         }
         requireYearMonth(fromYearMonth, ERR_FROM_YEAR, ERR_FROM_MONTH);
         requireYearMonth(toYearMonth, ERR_TO_YEAR, ERR_TO_MONTH);
@@ -226,7 +243,15 @@ public class StatementService {
         // the screen it is reached through — so it applies here too. It applies
         // with more force, if anything: the branch is typed on this screen
         // rather than carried from a grid row the operator already had.
-        if (STAFF_BRANCH.equals(branch) && !STAFF_BRANCH.equals(caller.branchCode())) {
+        //
+        // On the ACCOUNT route no branch is typed, so this cannot fire — the
+        // same position the BM deleted-account route is already in, and for the
+        // same reason: the rule keys on a branch the operator supplied, and
+        // there is none.
+        //
+        // Off while EnquiryRestrictions.ENABLED is false, like its BM twin above.
+        if (EnquiryRestrictions.ENABLED
+                && STAFF_BRANCH.equals(branch) && !STAFF_BRANCH.equals(caller.branchCode())) {
             throw new BadRequestException(ERR_STAFF_BRANCH);
         }
 

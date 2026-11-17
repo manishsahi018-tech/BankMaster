@@ -60,6 +60,14 @@ final class DemoData {
             int accountCount) {
 
         boolean juristic() {
+            // Blank is NOT juristic. A customer with no category at all is the
+            // frmCustomer fixture below, and it is a person: the general form
+            // shows the personal frames and the company ones together, so the
+            // fixture has to fill one of the two halves or the screen it exists
+            // to exercise renders entirely empty.
+            if (mainCategory == null || mainCategory.isBlank()) {
+                return false;
+            }
             return !"01".equals(mainCategory);
         }
 
@@ -73,12 +81,11 @@ final class DemoData {
     }
 
     /**
-     * Ten customers spanning the three profile routes EnquirySelect switches on:
-     * main category 01 + idType "I" opens the editable Saudi profile, 01 with a
-     * non-"I" idType the read-only Others profile, anything else the juristic
-     * one. The first three keep their original numbers because the profile
-     * fixtures, the verify skill's navigation map and the screenshots all
-     * reference them.
+     * Customers spanning every profile route getScreenSetNo can answer with:
+     * the Saudi profile, the Others profile, the three juristic variants, and
+     * the general customer form a blank category pair opens. The first three
+     * keep their original numbers because the profile fixtures, the verify
+     * skill's navigation map and the screenshots all reference them.
      */
     static final List<Customer> CUSTOMERS = List.of(
             new Customer("0415741", "I", "1009326404", "6642791", "", "0555877547",
@@ -162,7 +169,54 @@ final class DemoData {
                     "سلطان", "محمد", "علي", "العتيبي",
                     "Sultan", "Mohammed", "Ali", "Al-Otaibi",
                     "سلطان محمد علي العتيبي", "0003", "01", "01", "",
-                    "مكة المكرمة", "7788", "21955", "20200216", 2));
+                    "مكة المكرمة", "7788", "21955", "20200216", 2),
+            // The two customers below exist to make the RELATED-PARTY panels
+            // reachable. Both grids are gated on the sub category alone
+            // (partyPanelsFor, screenSet.ts) because the legacy reaches them
+            // by routing Next Page on it — so a fixture set without these two
+            // codes leaves the heirs grid, the reference grid and the party
+            // detail panel behind them unopenable in every local run, however
+            // many rows the mock generates for them.
+            //
+            // Sub category 65 → screen set A → the SAUDI profile, whose Next
+            // Page runs doHeirSearch (frmIndividualSaudi.frm:5920). The only
+            // fixture that shows Heirs / Proxy.
+            //
+            // THE NUMBER IS PART OF THE FIXTURE. heirs() takes its row count
+            // from 1 + pick(custNo, 11, 3) and makes every second row a proxy,
+            // so a number seeding 1 shows a lone heir and leaves the proxy
+            // columns — and the proxy frame on the detail panel — permanently
+            // blank. 0425110 seeds 3: heir, proxy, heir.
+            new Customer("0425110", "I", "1092338471", "6639215", "", "0555210934",
+                    "منيرة", "عبدالرحمن", "سعد", "الدوسري",
+                    "Munira", "Abdulrahman", "Saad", "Al-Dossary",
+                    "منيرة عبدالرحمن سعد الدوسري", "0127", "01", "65", "",
+                    "الرياض", "8841", "11492", "20110523", 2),
+            // Sub category 63 — "Minor Expats under expats' iqama"
+            // (globalFunctions.bas:4853) → screen set 2 → the OTHERS profile,
+            // whose Next Page runs doReferenceSearch (frmIndividualOthers.frm:
+            // 3829). References on the Saudi side is already covered by the
+            // sub-02 fixtures 0420877 / 0421905; this is the same grid reached
+            // from the other profile, which is a DIFFERENT code path. Chosen
+            // on the same rule as the heirs fixture above: references() counts
+            // 1 + pick(custNo, 13, 3), and 0426342 seeds 3 so both the legal
+            // representative and the plain reference types appear.
+            new Customer("0426342", "Q", "2377410256", "6628033", "", "0566718402",
+                    "", "", "", "",
+                    "Zainab", "Imran", "", "Siddiqui",
+                    "Zainab Imran Siddiqui", "0001", "01", "63", "",
+                    "جدة", "3390", "21411", "20190408", 1),
+            // NO CATEGORY — the only fixture that reaches frmCustomer, the
+            // general customer form (screen set '0'). getScreenSetNo is asked
+            // only when both codes carry a value; blank either side is '0',
+            // and every other fixture here carries a pair, which left that
+            // form unopenable in a local run. Both routes into a profile land
+            // on it, so this also covers the history route's copy of the rule.
+            new Customer("0427004", "I", "1077553311", "6634472", "", "0559043128",
+                    "طارق", "ناصر", "فهد", "الشمري",
+                    "Tariq", "Nasser", "Fahd", "Al-Shammari",
+                    "طارق ناصر فهد الشمري", "0127", "", "", "",
+                    "الرياض", "5512", "11564", "20150927", 2));
 
     private static final Map<String, Customer> BY_CUST_NO =
             CUSTOMERS.stream().collect(java.util.stream.Collectors.toMap(Customer::custNo, c -> c));

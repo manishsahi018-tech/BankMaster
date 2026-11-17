@@ -133,6 +133,23 @@ class StatementSqlTest {
     }
 
     @Test
+    void accountRouteWithNoBranchDropsTheBranchFilterEntirely() {
+        // The account route sends no branch — the screen greys the box out —
+        // and an empty bind would filter on '' and match nothing. The fragment
+        // has to leave the SQL, in the header query and in the subquery the
+        // detail query wraps around it.
+        List<String> sql = sqlOf(() ->
+                repo.pdpStatements("", "", "01008041574100", "200501", "200912"));
+
+        assertThat(sql.get(0)).doesNotContain("BRANCH_CODE = :branchCode");
+        assertThat(sql.get(1)).doesNotContain("BRANCH_CODE = :branchCode");
+        // The account number is still doing the narrowing, so the enquiry never
+        // degrades to the whole archive.
+        assertThat(sql.get(1)).contains("ACCT_NUM = :acctNum");
+        assertThat(sql.get(0)).contains("ACCT_NUM IN (SELECT ACCT_NUM");
+    }
+
+    @Test
     void pdpOrdersByAccountFirstBecauseTheAnswerCanSpanSeveral() {
         List<String> sql = pdp("0001234", "");
 

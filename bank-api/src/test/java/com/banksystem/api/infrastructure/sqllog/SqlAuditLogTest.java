@@ -5,7 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
@@ -46,12 +49,12 @@ class SqlAuditLogTest {
 
         String logged = read(file);
         assertTrue(logged.contains("[r-1] >>>> GET /api/customers/0123456/profile user=DEVUSER"), logged);
-        assertTrue(logged.contains("[r-1] SQL #1 · archival · 2 rows · "), logged);
+        assertTrue(logged.contains("[r-1] SQL #1 | archival | 2 rows | "), logged);
         // Values inlined, quoted as strings so the leading zero survives — the
         // line is the query, runnable as printed.
         assertTrue(logged.contains("WHERE c.custNo = '0123456' AND c.BankingDate = '2009-07-11'"), logged);
         assertFalse(logged.contains("ARGS"), "ARGS is redundant once every ? is substituted:\n" + logged);
-        assertTrue(logged.contains("[r-1] <<<< 200 · 1 query · "), logged);
+        assertTrue(logged.contains("[r-1] <<<< 200 | 1 query | "), logged);
         // The header is written once, not per query.
         assertEquals(1, logged.lines().filter(l -> l.contains(">>>>")).count(), logged);
     }
@@ -66,7 +69,7 @@ class SqlAuditLogTest {
 
         String logged = read(file);
         assertTrue(logged.contains("[r-2] >>>> GET /api/reference/branches"), logged);
-        assertTrue(logged.contains("[r-2] <<<< 304 · 0 queries · "), logged);
+        assertTrue(logged.contains("[r-2] <<<< 304 | 0 queries | "), logged);
     }
 
     @Test
@@ -84,7 +87,7 @@ class SqlAuditLogTest {
         String logged = read(file);
         assertTrue(logged.contains("FAILED: java.sql.SQLException: ORA-00942"), logged);
         assertTrue(logged.contains("WHERE c.custNo = '0123456' AND c.BankingDate = '2009-07-11'"), logged);
-        assertTrue(logged.contains("[r-3] <<<< 500 · 1 query · "), logged);
+        assertTrue(logged.contains("[r-3] <<<< 500 | 1 query | "), logged);
     }
 
     @Test
@@ -139,6 +142,63 @@ class SqlAuditLogTest {
 
         String logged = read(file);
         assertTrue(logged.contains("ARGS [1]='1' [2]='2' [3]='3'"), logged);
+    }
+
+    @Test
+    void consoleGetsTheSummaryButNeverTheQueries() throws Exception {
+        Path file = dir.resolve("sql.log");
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        SqlLogWriter writer = new SqlLogWriter(true, file.toString(), 50, 3,
+                new PrintStream(captured, true, StandardCharsets.UTF_8));
+        DataSource ds = new SqlLoggingDataSource(stubDataSource(2, null), writer, "archival");
+
+        writer.requestStarted("r-5", "GET /api/customers/0123456/profile user=DEVUSER");
+        runQuery(ds);
+        writer.requestFinished(200);
+
+        // The file has everything, SQL and values included.
+        String logged = read(file);
+        assertTrue(logged.contains("[r-5] SQL #1 | archival | 2 rows | "), logged);
+        assertTrue(logged.contains("WHERE c.custNo = '0123456'"), logged);
+
+        // The console has the request, statement summary and status lines only.
+        String out = captured.toString(StandardCharsets.UTF_8);
+        assertTrue(out.contains("[r-5] >>>> GET /api/customers/0123456/profile user=DEVUSER"), out);
+        assertTrue(out.contains("[r-5] SQL #1 | archival | 2 rows | "), out);
+        assertTrue(out.contains("[r-5] <<<< 200 | 1 query | "), out);
+        assertFalse(out.contains("SELECT"), out);
+        assertFalse(out.contains("BankingDate"), out);
+        assertEquals(3, out.lines().count(), out);
+    }
+
+    @Test
+    void consoleKeepsLoggingWhenTheFileCannotBeWritten() throws Exception {
+        // The "file" path sits under a regular file, so the directory cannot be created.
+        Path blocker = Files.writeString(dir.resolve("not-a-dir"), "x");
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        SqlLogWriter writer = new SqlLogWriter(true, blocker.resolve("sql.log").toString(), 50, 3,
+                new PrintStream(captured, true, StandardCharsets.UTF_8));
+
+        writer.requestStarted("r-6", "GET /api/x user=DEVUSER");
+        writer.requestFinished(200);
+        writer.requestStarted("r-7", "GET /api/y user=DEVUSER");
+        writer.requestFinished(200);
+
+        String out = captured.toString(StandardCharsets.UTF_8);
+        assertTrue(out.contains("[r-6] <<<< 200"), out);
+        assertTrue(out.contains("[r-7] <<<< 200"), out);
+    }
+
+    @Test
+    void disabledWritesNothingToTheConsoleEither() {
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        SqlLogWriter writer = new SqlLogWriter(false, dir.resolve("sql.log").toString(), 50, 3,
+                new PrintStream(captured, true, StandardCharsets.UTF_8));
+
+        writer.requestStarted("r-8", "GET /api/x user=DEVUSER");
+        writer.requestFinished(200);
+
+        assertEquals(0, captured.size());
     }
 
     private SqlLogWriter writer(Path file) {
