@@ -31,6 +31,9 @@ FROM nginx:alpine
 # Replaces nginx's stock localhost server block.
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+# Security headers, included from several blocks of nginx.conf.
+COPY security-headers.conf /etc/nginx/snippets/security-headers.conf
+
 # Only the built output ships — no node_modules, no source, no toolchain.
 COPY --from=build /build/dist /usr/share/nginx/html
 
